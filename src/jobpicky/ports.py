@@ -10,6 +10,7 @@ from .contracts import (
     HardFilterSpec,
     IngestionResult,
     JobFact,
+    JobQuery,
     MatchAssessment,
     Page,
     ProfileDraft,
@@ -18,6 +19,8 @@ from .contracts import (
     RunAccepted,
     RunView,
     SearchHit,
+    SourceInput,
+    SourcePatch,
     SourceView,
 )
 
@@ -55,6 +58,85 @@ class ProfileParserPort(Protocol):
     async def parse(self, resume_text: str, extra_request: str | None) -> ProfileDraft: ...
 
 
+class ProfileSnapshotReaderPort(Protocol):
+    async def get_snapshot(self, user_id: str, profile_id: str) -> ProfileSnapshot: ...
+
+
+class ProfileApplicationPort(Protocol):
+    async def create_profile(
+        self,
+        user_id: str,
+        *,
+        resume_text: str,
+        extra_request: str | None = None,
+    ) -> ProfileSnapshot: ...
+
+    async def get_current(self, user_id: str) -> ProfileSnapshot: ...
+
+    async def update_profile(
+        self,
+        user_id: str,
+        profile_id: str,
+        draft: ProfileDraft,
+    ) -> ProfileSnapshot: ...
+
+
+class SourceApplicationPort(Protocol):
+    async def create_source(self, admin_id: str, source: SourceInput) -> SourceView: ...
+
+    async def list_sources(
+        self,
+        admin_id: str,
+        page: int,
+        page_size: int,
+    ) -> Page[SourceView]: ...
+
+    async def get_source(self, admin_id: str, source_id: str) -> SourceView: ...
+
+    async def update_source(
+        self,
+        admin_id: str,
+        source_id: str,
+        patch: SourcePatch,
+    ) -> SourceView: ...
+
+
+class UserJobQueryPort(Protocol):
+    async def get_job(self, user_id: str, job_id: str) -> JobFact: ...
+
+
+class AdminJobQueryPort(Protocol):
+    async def list_jobs(
+        self,
+        admin_id: str,
+        query: JobQuery,
+        page: int,
+        page_size: int,
+    ) -> Page[JobFact]: ...
+
+    async def get_job(self, admin_id: str, job_id: str) -> JobFact: ...
+
+
+class MatchingPort(Protocol):
+    def build_filter_spec(
+        self,
+        profile: ProfileSnapshot,
+        effective_extra_request: str | None,
+    ) -> HardFilterSpec: ...
+
+    def build_query_text(
+        self,
+        profile: ProfileSnapshot,
+        effective_extra_request: str | None,
+    ) -> str: ...
+
+    def merge_candidates(
+        self,
+        keyword_hits: Sequence[SearchHit],
+        semantic_hits: Sequence[SearchHit],
+    ) -> list[Candidate]: ...
+
+
 class JobEvaluatorPort(Protocol):
     async def evaluate(
         self,
@@ -72,6 +154,13 @@ class CrawlOrchestratorPort(Protocol):
         idempotency_key: str | None = None,
     ) -> RunAccepted: ...
 
+    async def list_runs(
+        self,
+        admin_id: str,
+        page: int,
+        page_size: int,
+    ) -> Page[RunView]: ...
+
     async def get_run(self, admin_id: str, run_id: str) -> RunView: ...
 
 
@@ -84,6 +173,13 @@ class RecommendationOrchestratorPort(Protocol):
         idempotency_key: str | None = None,
     ) -> RunAccepted: ...
 
+    async def list_runs(
+        self,
+        user_id: str,
+        page: int,
+        page_size: int,
+    ) -> Page[RunView]: ...
+
     async def get_run(self, user_id: str, run_id: str) -> RunView: ...
 
     async def get_results(
@@ -95,11 +191,29 @@ class RecommendationOrchestratorPort(Protocol):
     ) -> Page[RecommendationItem]: ...
 
 
+class AdminRecommendationRunQueryPort(Protocol):
+    async def list_runs(
+        self,
+        admin_id: str,
+        page: int,
+        page_size: int,
+    ) -> Page[RunView]: ...
+
+    async def get_run(self, admin_id: str, run_id: str) -> RunView: ...
+
+
 __all__ = [
+    "AdminJobQueryPort",
+    "AdminRecommendationRunQueryPort",
     "CrawlOrchestratorPort",
     "JobCatalogPort",
     "JobEvaluatorPort",
+    "MatchingPort",
+    "ProfileApplicationPort",
     "ProfileParserPort",
+    "ProfileSnapshotReaderPort",
     "RecommendationOrchestratorPort",
+    "SourceApplicationPort",
     "SourceCollectorPort",
+    "UserJobQueryPort",
 ]

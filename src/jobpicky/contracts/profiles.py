@@ -23,3 +23,16 @@ class ProfileSnapshot(ProfileDraft):
     user_id: NonEmptyStr
     version: int = Field(ge=1)
     created_at: AwareDatetime
+
+
+def merge_extra_request(
+    profile_extra_request: str | None,
+    request_extra_request: str | None,
+) -> str | None:
+    """Keep profile guidance and one-off guidance in a deterministic order."""
+    parts = [
+        value.strip()
+        for value in (profile_extra_request, request_extra_request)
+        if value is not None and value.strip()
+    ]
+    return "\n\n".join(parts) or None

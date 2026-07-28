@@ -4,6 +4,7 @@ from .catalog import (
     FilterResult,
     HardFilterSpec,
     JobFact,
+    JobQuery,
     RetrievalChannel,
     SearchHit,
 )
@@ -12,6 +13,7 @@ from .collection import (
     CollectionBatch,
     IngestionResult,
     SourceInput,
+    SourcePatch,
     SourceView,
 )
 from .common import (
@@ -20,8 +22,10 @@ from .common import (
     HealthView,
     JobStatus,
     Page,
+    RecommendationRunInput,
     RecommendationStep,
     RunAccepted,
+    RunError,
     RunKind,
     RunStatus,
     RunView,
@@ -32,7 +36,7 @@ from .matching import (
     RecommendationItem,
     validate_assessments,
 )
-from .profiles import ProfileDraft, ProfileSnapshot
+from .profiles import ProfileDraft, ProfileSnapshot, merge_extra_request
 
 __all__ = [
     "Candidate",
@@ -47,20 +51,25 @@ __all__ = [
     "HealthView",
     "IngestionResult",
     "JobFact",
+    "JobQuery",
     "JobStatus",
     "MatchAssessment",
     "Page",
     "ProfileDraft",
     "ProfileSnapshot",
     "RecommendationItem",
+    "RecommendationRunInput",
     "RecommendationStep",
     "RetrievalChannel",
     "RunAccepted",
+    "RunError",
     "RunKind",
     "RunStatus",
     "RunView",
     "SearchHit",
     "SourceInput",
+    "SourcePatch",
     "SourceView",
+    "merge_extra_request",
     "validate_assessments",
 ]

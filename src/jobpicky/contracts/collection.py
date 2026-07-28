@@ -19,6 +19,14 @@ class SourceInput(ContractModel):
     metadata: JsonObject = Field(default_factory=dict)
 
 
+class SourcePatch(ContractModel):
+    company_name: NonEmptyStr | None = None
+    source_url: HttpUrlString | None = None
+    enabled: bool | None = None
+    platform_hint: NonEmptyStr | None = None
+    metadata: JsonObject | None = None
+
+
 class SourceView(SourceInput):
     id: NonEmptyStr
     platform: NonEmptyStr | None = None

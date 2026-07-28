@@ -11,11 +11,18 @@ from jobpicky.contracts import (
     JobFact,
     JobStatus,
     MatchAssessment,
+    Page,
     ProfileSnapshot,
     RecommendationItem,
+    RecommendationRunInput,
     RetrievalChannel,
+    RunError,
+    RunKind,
+    RunStatus,
+    RunView,
     SearchHit,
     SourceInput,
+    merge_extra_request,
     validate_assessments,
 )
 
@@ -158,3 +165,59 @@ def test_profile_snapshot_is_versioned_and_immutable() -> None:
 
     with pytest.raises(ValidationError):
         profile.version = 2
+
+
+def test_extra_request_merges_profile_before_one_off_request() -> None:
+    assert merge_extra_request("远程优先", "只看英文岗位") == "远程优先\n\n只看英文岗位"
+    assert merge_extra_request("  远程优先  ", None) == "远程优先"
+    assert merge_extra_request("  ", "\n") is None
+
+
+def test_run_error_is_not_an_http_error_body() -> None:
+    error = RunError(code="RECOMMENDATION_FAILED", message="The run failed.")
+    assert "request_id" not in error.model_dump()
+
+    with pytest.raises(ValidationError, match="request_id"):
+        RunError.model_validate(
+            {
+                "code": "RECOMMENDATION_FAILED",
+                "message": "The run failed.",
+                "request_id": "request-1",
+            }
+        )
+
+
+def test_run_view_persists_creation_and_recommendation_trace() -> None:
+    run = RunView(
+        run_id="run-1",
+        kind=RunKind.RECOMMENDATION,
+        status=RunStatus.SUCCEEDED,
+        created_at=NOW,
+        warnings=[],
+        recommendation_input=RecommendationRunInput(
+            profile_id="profile-1",
+            profile_version=3,
+            effective_extra_request="只看英文岗位",
+        ),
+        model_config_version="matching-2026-01",
+    )
+
+    assert run.created_at == NOW
+    assert run.recommendation_input is not None
+    assert run.recommendation_input.profile_version == 3
+    assert run.model_config_version == "matching-2026-01"
+
+
+def test_page_validates_pagination_and_keeps_run_items_typed() -> None:
+    run = RunView(
+        run_id="run-1",
+        kind=RunKind.RECOMMENDATION,
+        status=RunStatus.PENDING,
+        created_at=NOW,
+        warnings=[],
+    )
+    page = Page[RunView](items=[run], total=1, page=1, page_size=20)
+
+    assert page.items[0].run_id == "run-1"
+    with pytest.raises(ValidationError):
+        Page[RunView](items=[], total=0, page=0, page_size=20)

@@ -46,6 +46,13 @@ class JobFact(ContractModel):
     updated_at: AwareDatetime
 
 
+class JobQuery(ContractModel):
+    status: JobStatus | None = None
+    company_name: NonEmptyStr | None = None
+    location: NonEmptyStr | None = None
+    keyword: NonEmptyStr | None = None
+
+
 class HardFilterSpec(ContractModel):
     target_locations: list[NonEmptyStr] = Field(default_factory=list)
     excluded_roles: list[NonEmptyStr] = Field(default_factory=list)

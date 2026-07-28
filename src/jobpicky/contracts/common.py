@@ -92,12 +92,26 @@ class ErrorCode(StrEnum):
     INTERNAL_ERROR = "INTERNAL_ERROR"
 
 
+class RunError(ContractModel):
+    """Sanitized error persisted with a background business run."""
+
+    code: NonEmptyStr
+    message: NonEmptyStr
+    details: JsonObject = Field(default_factory=dict)
+
+
 class ErrorBody(ContractModel):
     code: NonEmptyStr
     message: NonEmptyStr
     details: JsonObject = Field(default_factory=dict)
     request_id: NonEmptyStr
     run_id: NonEmptyStr | None = None
+
+
+class RecommendationRunInput(ContractModel):
+    profile_id: NonEmptyStr
+    profile_version: PositiveInt
+    effective_extra_request: NonEmptyStr | None = None
 
 
 class RunAccepted(ContractModel):
@@ -109,12 +123,15 @@ class RunView(ContractModel):
     run_id: NonEmptyStr
     kind: RunKind
     status: RunStatus
+    created_at: AwareDatetime
     current_step: NonEmptyStr | None = None
     started_at: AwareDatetime | None = None
     finished_at: AwareDatetime | None = None
     counts: dict[str, NonNegativeInt] = Field(default_factory=dict)
     warnings: list[NonEmptyStr]
-    error: ErrorBody | None = None
+    recommendation_input: RecommendationRunInput | None = None
+    model_config_version: NonEmptyStr | None = None
+    error: RunError | None = None
 
 
 PageItem = TypeVar("PageItem")

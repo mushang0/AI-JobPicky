@@ -362,12 +362,19 @@ EXCLUDED_ROLE
 | `run_id` | `str` |
 | `kind` | `"CRAWL" \| "RECOMMENDATION"` |
 | `status` | `RunStatus` |
+| `created_at` | `datetime` |
 | `current_step` | `str \| null` |
 | `started_at` | `datetime \| null` |
 | `finished_at` | `datetime \| null` |
 | `counts` | `object` |
 | `warnings` | `list[str]` |
-| `error` | `ErrorBody \| null` |
+| `recommendation_input` | `RecommendationRunInput \| null` |
+| `model_config_version` | `str \| null` |
+| `error` | `RunError \| null` |
+
+`created_at` 是所有运行的创建时间。推荐运行必须填充 `recommendation_input` 和
+`model_config_version`；其中 `recommendation_input.profile_version` 是本次使用的不可变画像版本，
+`effective_extra_request` 是持久化的最终输入，而不是查询时重新从当前画像推导的值。
 
 分页响应：
 
@@ -403,6 +410,16 @@ PROFILE_PARSE_FAILED
 RECOMMENDATION_FAILED
 INTERNAL_ERROR
 ```
+
+`ErrorBody` 仅用于 HTTP 响应，必须带当前请求的 `request_id`，可选关联 `run_id`。
+后台运行持久化使用不含 `request_id` 的 `RunError`；运行历史不能因为查询请求不同而改变其错误内容。
+
+### 4.12 推荐请求输入合并
+
+画像快照中的 `extra_request` 是长期偏好，单次推荐请求中的 `extra_request` 是本次覆盖范围内的补充。
+两者都存在时按“画像要求、空行、单次要求”的顺序拼接；只存在一方时使用该方；两者为空或仅空白时为
+`null`。该合并在创建运行时完成，结果写入 `RecommendationRunInput.effective_extra_request`，后续恢复、
+重试和查询均使用已保存值，不读取当前画像重新计算。
 
 模块可以增加更具体的错误码，但同一错误码不得表达不同语义，外部依赖原始错误和堆栈不得直接成为公开 `message`。
 
@@ -476,7 +493,72 @@ class ProfileParserPort(Protocol):
 
 保存、读取和创建新版本由画像模块的应用服务负责。文件解析器只输出文本，不与模型画像契约耦合。
 
+```python
+class ProfileSnapshotReaderPort(Protocol):
+    async def get_snapshot(self, user_id: str, profile_id: str) -> ProfileSnapshot: ...
+```
+
+推荐编排器只能通过该只读端口读取画像快照；画像私有 Repository 或 ORM 不得出现在编排模块。
+
+画像 P0 应用服务最小契约为：按用户创建版本、读取当前版本、基于用户和画像 ID 修正并创建新版本。
+
+```python
+class ProfileApplicationPort(Protocol):
+    async def create_profile(
+        self,
+        user_id: str,
+        *,
+        resume_text: str,
+        extra_request: str | None = None,
+    ) -> ProfileSnapshot: ...
+
+    async def get_current(self, user_id: str) -> ProfileSnapshot: ...
+
+    async def update_profile(
+        self,
+        user_id: str,
+        profile_id: str,
+        draft: ProfileDraft,
+    ) -> ProfileSnapshot: ...
+```
+
+```python
+class SourceApplicationPort(Protocol):
+    async def create_source(self, admin_id: str, source: SourceInput) -> SourceView: ...
+    async def list_sources(self, admin_id: str, page: int, page_size: int) -> Page[SourceView]: ...
+    async def get_source(self, admin_id: str, source_id: str) -> SourceView: ...
+    async def update_source(
+        self,
+        admin_id: str,
+        source_id: str,
+        patch: SourcePatch,
+    ) -> SourceView: ...
+```
+
 ### 5.4 匹配评估端口
+
+匹配模块拥有画像到硬筛选条件、检索文本和候选融合的转换；编排器只调用匹配端口，再把结果交给目录端口。
+
+```python
+class MatchingPort(Protocol):
+    def build_filter_spec(
+        self,
+        profile: ProfileSnapshot,
+        effective_extra_request: str | None,
+    ) -> HardFilterSpec: ...
+
+    def build_query_text(
+        self,
+        profile: ProfileSnapshot,
+        effective_extra_request: str | None,
+    ) -> str: ...
+
+    def merge_candidates(
+        self,
+        keyword_hits: Sequence[SearchHit],
+        semantic_hits: Sequence[SearchHit],
+    ) -> list[Candidate]: ...
+```
 
 ```python
 class JobEvaluatorPort(Protocol):
@@ -501,6 +583,13 @@ class CrawlOrchestratorPort(Protocol):
         idempotency_key: str | None = None,
     ) -> RunAccepted: ...
 
+    async def list_runs(
+        self,
+        admin_id: str,
+        page: int,
+        page_size: int,
+    ) -> Page[RunView]: ...
+
     async def get_run(
         self,
         admin_id: str,
@@ -522,6 +611,13 @@ class RecommendationOrchestratorPort(Protocol):
         idempotency_key: str | None = None,
     ) -> RunAccepted: ...
 
+    async def list_runs(
+        self,
+        user_id: str,
+        page: int,
+        page_size: int,
+    ) -> Page[RunView]: ...
+
     async def get_run(
         self,
         user_id: str,
@@ -539,6 +635,35 @@ class RecommendationOrchestratorPort(Protocol):
 
 具体图节点和执行器不是端口的一部分。模型工具只包装上述业务端口，不应形成另一套平行业务接口。
 
+管理员推荐历史不复用用户侧 `get_run(user_id, run_id)`，而使用独立的管理员查询端口：
+
+```python
+class AdminRecommendationRunQueryPort(Protocol):
+    async def list_runs(self, admin_id: str, page: int, page_size: int) -> Page[RunView]: ...
+    async def get_run(self, admin_id: str, run_id: str) -> RunView: ...
+```
+
+来源管理、用户岗位详情和管理端岗位查询也由应用服务端口承接：`SourceApplicationPort`、
+`UserJobQueryPort` 和 `AdminJobQueryPort`。它们分别携带 `admin_id` 或 `user_id`，禁止通过调用者自带的
+资源 ID 推断权限。
+
+```python
+class UserJobQueryPort(Protocol):
+    async def get_job(self, user_id: str, job_id: str) -> JobFact: ...
+
+
+class AdminJobQueryPort(Protocol):
+    async def list_jobs(
+        self,
+        admin_id: str,
+        query: JobQuery,
+        page: int,
+        page_size: int,
+    ) -> Page[JobFact]: ...
+
+    async def get_job(self, admin_id: str, job_id: str) -> JobFact: ...
+```
+
 ## 6. HTTP API 公共契约
 
 ### 6.1 通用规则
@@ -550,6 +675,34 @@ class RecommendationOrchestratorPort(Protocol):
 - 列表使用统一分页，页大小上限由服务配置并写入 OpenAPI。
 - 错误使用统一错误响应；内部堆栈不得对外返回。
 - OpenAPI 是可执行接口清单，必须通过契约测试与本文语义保持一致。
+
+### 6.1.1 P0 HTTP API 覆盖表
+
+以下表是 P0 HTTP → 应用服务/端口 → DTO → 权限上下文的唯一覆盖清单。当前阶段只固化契约，未实现的
+业务 handler 不创建占位接口。
+
+| HTTP API | 应用服务/端口 | 输入/输出 DTO | 权限上下文 |
+|---|---|---|---|
+| `POST /api/v1/user/profiles` | `ProfileApplicationPort.create_profile` | `resume_text`/文件转文本 → `ProfileSnapshot` | `user_id` |
+| `GET /api/v1/user/profiles/current` | `ProfileApplicationPort.get_current` | `ProfileSnapshot` | `user_id` |
+| `PATCH /api/v1/user/profiles/{profile_id}` | `ProfileApplicationPort.update_profile` | `ProfileDraft` → `ProfileSnapshot` | `user_id` + `profile_id` |
+| `POST /api/v1/user/recommendation-runs` | `RecommendationOrchestratorPort.start` | `profile_id` + `extra_request` → `RunAccepted` | `user_id` |
+| `GET /api/v1/user/recommendation-runs` | `RecommendationOrchestratorPort.list_runs` | `Page[RunView]` | `user_id` |
+| `GET /api/v1/user/recommendation-runs/{run_id}` | `RecommendationOrchestratorPort.get_run` | `RunView` | `user_id` |
+| `GET /api/v1/user/recommendation-runs/{run_id}/results` | `RecommendationOrchestratorPort.get_results` | `Page[RecommendationItem]` | `user_id` |
+| `GET /api/v1/user/jobs/{job_id}` | `UserJobQueryPort.get_job` | `JobFact` | `user_id` |
+| `POST /api/v1/admin/sources` | `SourceApplicationPort.create_source` | `SourceInput` → `SourceView` | `admin_id` |
+| `GET /api/v1/admin/sources` | `SourceApplicationPort.list_sources` | `Page[SourceView]` | `admin_id` |
+| `GET /api/v1/admin/sources/{source_id}` | `SourceApplicationPort.get_source` | `SourceView` | `admin_id` |
+| `PATCH /api/v1/admin/sources/{source_id}` | `SourceApplicationPort.update_source` | `SourcePatch` → `SourceView` | `admin_id` + `source_id` |
+| `POST /api/v1/admin/crawl-runs` | `CrawlOrchestratorPort.start` | `source_ids` → `RunAccepted` | `admin_id` |
+| `GET /api/v1/admin/crawl-runs` | `CrawlOrchestratorPort.list_runs` | `Page[RunView]` | `admin_id` |
+| `GET /api/v1/admin/crawl-runs/{run_id}` | `CrawlOrchestratorPort.get_run` | `RunView` | `admin_id` |
+| `GET /api/v1/admin/jobs` | `AdminJobQueryPort.list_jobs` | `JobQuery` → `Page[JobFact]` | `admin_id` |
+| `GET /api/v1/admin/jobs/{job_id}` | `AdminJobQueryPort.get_job` | `JobFact` | `admin_id` |
+| `GET /api/v1/admin/recommendation-runs` | `AdminRecommendationRunQueryPort.list_runs` | `Page[RunView]` | `admin_id` |
+| `GET /api/v1/admin/recommendation-runs/{run_id}` | `AdminRecommendationRunQueryPort.get_run` | `RunView` | `admin_id` |
+| `GET /api/v1/system/health` | 应用健康检查 | `HealthView` | 无业务身份 |
 
 ### 6.2 P0 用户接口
 
