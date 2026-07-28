@@ -166,6 +166,7 @@ PENDING | PROFILE | FILTER | RETRIEVE | EVALUATE | SAVE | COMPLETE
 | `source_id` | `str` | 是 | 招聘源 |
 | `source_job_id` | `str \| null` | 否 | 来源系统的稳定岗位 ID |
 | `company_name` | `str` | 是 | 来源展示的公司名称 |
+| `company_nature` | `str \| null` | 否 | 企业性质（民企、央国企、事业单位等）；无法确认时为空 |
 | `title` | `str` | 是 | 岗位名称 |
 | `locations` | `list[str]` | 是 | 可为空但不能伪造 |
 | `description` | `str \| null` | 否 | 完整 JD 或已知正文 |
@@ -173,6 +174,10 @@ PENDING | PROFILE | FILTER | RETRIEVE | EVALUATE | SAVE | COMPLETE
 | `apply_url` | `str \| null` | 否 | 直接投递入口；与详情页不同时必须保留 |
 | `recruitment_type` | `str \| null` | 否 | 校招、社招、实习等标准化值 |
 | `education_requirement` | `str \| null` | 否 | 无法确认时为空或未知 |
+| `salary_min` | `int \| null` | 否 | 月薪下限（元）；无法确认时为空 |
+| `salary_max` | `int \| null` | 否 | 月薪上限（元）；无法确认时为空 |
+| `salary_months` | `int \| null` | 否 | 年发薪月数；无法确认时为空 |
+| `graduation_years` | `list[int]` | 否 | 岗位限定的届次（校招）；空列表表示未标明或不限 |
 | `published_at` | `datetime \| null` | 否 | 来源发布时间 |
 | `deadline_at` | `datetime \| null` | 否 | 投递截止时间 |
 | `source_ref` | `str \| null` | 否 | 可定位原始快照或响应的内部引用 |
@@ -222,6 +227,7 @@ PENDING | PROFILE | FILTER | RETRIEVE | EVALUATE | SAVE | COMPLETE
 | `id` | `str` | 是 |
 | `source_id` | `str` | 是 |
 | `company_name` | `str` | 是 |
+| `company_nature` | `str \| null` | 否 |
 | `title` | `str` | 是 |
 | `locations` | `list[str]` | 是 |
 | `description` | `str \| null` | 否 |
@@ -229,6 +235,10 @@ PENDING | PROFILE | FILTER | RETRIEVE | EVALUATE | SAVE | COMPLETE
 | `apply_url` | `str \| null` | 否 |
 | `recruitment_type` | `str \| null` | 否 |
 | `education_requirement` | `str \| null` | 否 |
+| `salary_min` | `int \| null` | 否 |
+| `salary_max` | `int \| null` | 否 |
+| `salary_months` | `int \| null` | 否 |
+| `graduation_years` | `list[int]` | 否 |
 | `status` | `JobStatus` | 是 |
 | `fact_version` | `str` | 是 |
 | `published_at` | `datetime \| null` | 否 |
@@ -250,6 +260,8 @@ PENDING | PROFILE | FILTER | RETRIEVE | EVALUATE | SAVE | COMPLETE
 | `skills` | `list[str]` | 是 | 有输入依据的技能 |
 | `excluded_roles` | `list[str]` | 是 | 明确不考虑的岗位 |
 | `education` | `str \| null` | 否 | 无法确认时为空 |
+| `graduation_year` | `int \| null` | 否 | 求职者届次（如 2027）；非校招场景可为空 |
+| `expected_salary_min` | `int \| null` | 否 | 期望月薪下限（元）；无法确认时为空 |
 | `experience_summary` | `str \| null` | 否 | 与匹配有关的经历摘要 |
 | `extra_request` | `str \| null` | 否 | 用户补充要求 |
 | `warnings` | `list[str]` | 是 | 冲突、缺失和低置信信息 |
@@ -275,6 +287,8 @@ PENDING | PROFILE | FILTER | RETRIEVE | EVALUATE | SAVE | COMPLETE
 | `excluded_roles` | `list[str]` | 空列表表示无明确排除 |
 | `education` | `str \| null` | 空值表示不执行学历排除 |
 | `recruitment_types` | `list[str]` | 空列表表示不限 |
+| `graduation_year` | `int \| null` | 空值表示不执行届次排除；岗位未标明届次时不得排除 |
+| `min_salary` | `int \| null` | 空值表示不执行薪资排除；仅当岗位 `salary_max` 已知且低于该值时排除 |
 | `only_open` | `bool` | `true` |
 
 筛选值必须使用画像与岗位目录共享的规范化语义；来源原始文本不能直接作为跨模块筛选值。
@@ -292,6 +306,8 @@ LOCATION_MISMATCH
 RECRUITMENT_TYPE_MISMATCH
 EDUCATION_MISMATCH
 EXCLUDED_ROLE
+GRADUATION_YEAR_MISMATCH
+SALARY_MISMATCH
 ```
 
 缺失信息只有在业务规则明确允许时才能成为排除原因。
