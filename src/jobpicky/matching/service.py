@@ -32,11 +32,16 @@ class BaselineMatchingService:
         # type, and insufficient information must not become an exclusion.
         # effective_extra_request is natural language; the baseline cannot
         # deterministically derive hard conditions from it.
+        # graduation_year / min_salary pass through as-is: None means the
+        # filter must not exclude on that dimension (R2), and jobs without
+        # salary or graduation-year facts are never excluded either.
         return HardFilterSpec(
             target_locations=list(profile.target_locations),
             excluded_roles=list(profile.excluded_roles),
             education=profile.education,
             recruitment_types=[],
+            graduation_year=profile.graduation_year,
+            min_salary=profile.expected_salary_min,
             only_open=True,
         )
 

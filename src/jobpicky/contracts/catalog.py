@@ -19,6 +19,8 @@ class FilterReasonCode(StrEnum):
     RECRUITMENT_TYPE_MISMATCH = "RECRUITMENT_TYPE_MISMATCH"
     EDUCATION_MISMATCH = "EDUCATION_MISMATCH"
     EXCLUDED_ROLE = "EXCLUDED_ROLE"
+    GRADUATION_YEAR_MISMATCH = "GRADUATION_YEAR_MISMATCH"
+    SALARY_MISMATCH = "SALARY_MISMATCH"
 
 
 class RetrievalChannel(StrEnum):
@@ -30,6 +32,7 @@ class JobFact(ContractModel):
     id: NonEmptyStr
     source_id: NonEmptyStr
     company_name: NonEmptyStr
+    company_nature: NonEmptyStr | None = None
     title: NonEmptyStr
     locations: list[NonEmptyStr]
     description: NonEmptyStr | None = None
@@ -37,6 +40,10 @@ class JobFact(ContractModel):
     apply_url: HttpUrlString | None = None
     recruitment_type: NonEmptyStr | None = None
     education_requirement: NonEmptyStr | None = None
+    salary_min: int | None = Field(default=None, ge=0)
+    salary_max: int | None = Field(default=None, ge=0)
+    salary_months: int | None = Field(default=None, ge=1)
+    graduation_years: list[int] = Field(default_factory=list)
     status: JobStatus
     fact_version: NonEmptyStr
     published_at: AwareDatetime | None = None
@@ -44,6 +51,16 @@ class JobFact(ContractModel):
     first_seen_at: AwareDatetime
     last_confirmed_at: AwareDatetime
     updated_at: AwareDatetime
+
+    @model_validator(mode="after")
+    def keep_salary_range_ordered(self) -> JobFact:
+        if (
+            self.salary_min is not None
+            and self.salary_max is not None
+            and self.salary_min > self.salary_max
+        ):
+            raise ValueError("salary_min must not exceed salary_max")
+        return self
 
 
 class JobQuery(ContractModel):
@@ -58,6 +75,8 @@ class HardFilterSpec(ContractModel):
     excluded_roles: list[NonEmptyStr] = Field(default_factory=list)
     education: NonEmptyStr | None = None
     recruitment_types: list[NonEmptyStr] = Field(default_factory=list)
+    graduation_year: int | None = None
+    min_salary: int | None = Field(default=None, ge=0)
     only_open: bool = True
 
 

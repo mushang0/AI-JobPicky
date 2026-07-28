@@ -16,6 +16,8 @@ def make_profile(**overrides: object) -> ProfileSnapshot:
         "skills": ["Python", "PostgreSQL"],
         "excluded_roles": [],
         "education": "本科",
+        "graduation_year": 2027,
+        "expected_salary_min": 20000,
         "experience_summary": "三年后端开发经验",
         "extra_request": None,
         "warnings": [],

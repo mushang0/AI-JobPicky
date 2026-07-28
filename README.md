@@ -2,7 +2,7 @@
 
 JobPicky 是一个以后端能力为主的岗位聚合与个性化推荐系统。它从企业官方招聘入口建立可追溯的岗位事实库，再用确定性硬筛选、关键词与语义召回、结构化模型评估生成可信推荐。
 
-当前仓库处于“公共底座”阶段：已经提供可执行的跨模块数据契约、服务端口、配置、统一错误响应、请求 ID、健康检查与测试基线；采集器、数据库、画像解析、检索和推荐工作流将在后续纵向切片中实现。
+当前仓库处于“公共底座”阶段：已经提供可执行的跨模块数据契约、服务端口、配置、统一错误响应、请求 ID、健康检查与测试基线；数据库底座（PostgreSQL + pgvector、Alembic 迁移与 `job` 表）已就位；采集器、画像解析、检索和推荐工作流将在后续纵向切片中实现。
 
 ## 架构
 
@@ -42,6 +42,32 @@ OpenAPI：
 ```text
 http://127.0.0.1:8000/docs
 ```
+
+## 本地数据库
+
+岗位事实存储在 PostgreSQL（pgvector 扩展）。需要 Docker（Docker Desktop 或兼容运行时）：
+
+```bash
+docker compose up -d db
+uv run alembic upgrade head
+```
+
+连接串默认为 `postgresql+asyncpg://jobpicky:jobpicky@localhost:5432/jobpicky`，
+可用环境变量 `JOBPICKY_DATABASE_URL` 覆盖（见 `.env.example`）。
+
+数据库集成测试默认跳过；起库并迁移后，设置
+`JOBPICKY_TEST_DATABASE_URL`（本地与默认值相同）再运行 `uv run pytest` 即可真实执行。
+
+### 灌入开发样本数据
+
+仓库自带校招汇总表样本（`data/raw/campus_jobs_sample.csv`），可灌入约 1000 条真实岗位：
+
+```bash
+uv run python scripts/ingest_campus_csv.py            # 默认前 1000 条
+uv run python scripts/ingest_campus_csv.py --limit 500
+```
+
+脚本幂等（按公告链接去重），重复执行不会新增数据。
 
 ## 验证
 
