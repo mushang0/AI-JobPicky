@@ -58,6 +58,17 @@ uv run alembic upgrade head
 数据库集成测试默认跳过；起库并迁移后，设置
 `JOBPICKY_TEST_DATABASE_URL`（本地与默认值相同）再运行 `uv run pytest` 即可真实执行。
 
+### 灌入开发样本数据
+
+仓库自带校招汇总表样本（`data/raw/campus_jobs_sample.csv`），可灌入约 1000 条真实岗位：
+
+```bash
+uv run python scripts/ingest_campus_csv.py            # 默认前 1000 条
+uv run python scripts/ingest_campus_csv.py --limit 500
+```
+
+脚本幂等（按公告链接去重），重复执行不会新增数据。
+
 ## 验证
 
 ```bash
