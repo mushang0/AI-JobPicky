@@ -39,6 +39,7 @@ class CollectedJob(ContractModel):
     source_id: NonEmptyStr
     source_job_id: NonEmptyStr | None = None
     company_name: NonEmptyStr
+    company_nature: NonEmptyStr | None = None
     title: NonEmptyStr
     locations: list[NonEmptyStr]
     description: NonEmptyStr | None = None
@@ -46,6 +47,10 @@ class CollectedJob(ContractModel):
     apply_url: HttpUrlString | None = None
     recruitment_type: NonEmptyStr | None = None
     education_requirement: NonEmptyStr | None = None
+    salary_min: int | None = Field(default=None, ge=0)
+    salary_max: int | None = Field(default=None, ge=0)
+    salary_months: int | None = Field(default=None, ge=1)
+    graduation_years: list[int] = Field(default_factory=list)
     published_at: AwareDatetime | None = None
     deadline_at: AwareDatetime | None = None
     source_ref: NonEmptyStr | None = None

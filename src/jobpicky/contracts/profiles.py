@@ -11,6 +11,8 @@ class ProfileDraft(ContractModel):
     skills: list[NonEmptyStr]
     excluded_roles: list[NonEmptyStr]
     education: NonEmptyStr | None = None
+    graduation_year: int | None = None
+    expected_salary_min: int | None = Field(default=None, ge=0)
     experience_summary: NonEmptyStr | None = None
     extra_request: NonEmptyStr | None = None
     warnings: list[NonEmptyStr]

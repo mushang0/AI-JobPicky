@@ -8,6 +8,8 @@ def test_maps_profile_fields_to_filter_spec() -> None:
         target_locations=["上海", "杭州"],
         excluded_roles=["销售"],
         education="硕士",
+        graduation_year=2026,
+        expected_salary_min=25000,
     )
 
     spec = BaselineMatchingService().build_filter_spec(profile, None)
@@ -15,16 +17,26 @@ def test_maps_profile_fields_to_filter_spec() -> None:
     assert spec.target_locations == ["上海", "杭州"]
     assert spec.excluded_roles == ["销售"]
     assert spec.education == "硕士"
+    assert spec.graduation_year == 2026
+    assert spec.min_salary == 25000
 
 
 def test_empty_profile_fields_mean_no_restriction() -> None:
-    profile = make_profile(target_locations=[], excluded_roles=[], education=None)
+    profile = make_profile(
+        target_locations=[],
+        excluded_roles=[],
+        education=None,
+        graduation_year=None,
+        expected_salary_min=None,
+    )
 
     spec = BaselineMatchingService().build_filter_spec(profile, None)
 
     assert spec.target_locations == []
     assert spec.excluded_roles == []
     assert spec.education is None
+    assert spec.graduation_year is None
+    assert spec.min_salary is None
 
 
 def test_recruitment_type_is_never_inferred_and_only_open_is_default() -> None:
