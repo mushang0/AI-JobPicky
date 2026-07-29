@@ -3,7 +3,6 @@ from __future__ import annotations
 import argparse
 import json
 import random
-import re
 from collections import defaultdict
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -11,28 +10,13 @@ from urllib.parse import urlsplit
 from openpyxl import load_workbook
 
 from jobpicky.collection.link_classification import UNKNOWN, classify_link
+from jobpicky.collection.spreadsheet import extract_links
 
-_URL_RE = re.compile(r"(?i)(?:https?://|mailto:)[^\s<>\"']+")
-_EMAIL_RE = re.compile(r"(?<![\w.+-])[\w.+-]+@[\w-]+(?:\.[\w-]+)+(?![\w.-])")
-_TRAILING_PUNCTUATION = "，,；;。！？!?)]}"
 _SEED = 20260728
 
 
 def _extract_links(value: object, hyperlink_target: str | None) -> list[str]:
-    sources = [source for source in (value, hyperlink_target) if isinstance(source, str)]
-    links: list[str] = []
-    for source in sources:
-        matches = []
-        for match in _URL_RE.findall(source):
-            matches.extend(re.split(r"[,，;；]\s*(?=(?:https?://|mailto:))", match))
-        matches.extend(_EMAIL_RE.findall(source))
-        if not matches and source.strip() and hyperlink_target is None:
-            matches = [source.strip()]
-        for link in matches:
-            link = link.rstrip(_TRAILING_PUNCTUATION)
-            if link and link not in links:
-                links.append(link)
-    return links
+    return extract_links(value, hyperlink_target)
 
 
 def _read_records(workbook_path: Path, sheet_name: str) -> tuple[int, list[dict[str, object]]]:
