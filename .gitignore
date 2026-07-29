@@ -12,3 +12,4 @@ dist/
 .idea/
 .vscode/
 artifacts/
+.claude/worktrees/fix-mailto-dedup/

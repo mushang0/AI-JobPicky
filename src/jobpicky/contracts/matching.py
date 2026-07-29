@@ -26,6 +26,19 @@ class MatchAssessment(ContractModel):
     evidence: list[NonEmptyStr] = Field(default_factory=list)
 
 
+class RecommendationCandidate(ContractModel):
+    """Pre-evaluation run result: a retrieved job snapshot plus its fusion score."""
+
+    job: JobFact
+    retrieval: Candidate
+
+    @model_validator(mode="after")
+    def require_consistent_job(self) -> RecommendationCandidate:
+        if self.job.id != self.retrieval.job_id:
+            raise ValueError("job and retrieval IDs must match")
+        return self
+
+
 class RecommendationItem(ContractModel):
     job: JobFact
     retrieval: Candidate

@@ -23,6 +23,10 @@ class BaselineMatchingService:
     def __init__(self, config: MatchingConfig | None = None) -> None:
         self._config = config or MatchingConfig()
 
+    @property
+    def config(self) -> MatchingConfig:
+        return self._config
+
     def build_filter_spec(
         self,
         profile: ProfileSnapshot,
