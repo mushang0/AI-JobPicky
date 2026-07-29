@@ -33,6 +33,7 @@ from .common import (
 from .matching import (
     Candidate,
     MatchAssessment,
+    RecommendationCandidate,
     RecommendationItem,
     validate_assessments,
 )
@@ -57,6 +58,7 @@ __all__ = [
     "Page",
     "ProfileDraft",
     "ProfileSnapshot",
+    "RecommendationCandidate",
     "RecommendationItem",
     "RecommendationRunInput",
     "RecommendationStep",

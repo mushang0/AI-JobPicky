@@ -15,7 +15,7 @@ from .contracts import (
     Page,
     ProfileDraft,
     ProfileSnapshot,
-    RecommendationItem,
+    RecommendationCandidate,
     RunAccepted,
     RunView,
     SearchHit,
@@ -188,7 +188,7 @@ class RecommendationOrchestratorPort(Protocol):
         run_id: str,
         page: int,
         page_size: int,
-    ) -> Page[RecommendationItem]: ...
+    ) -> Page[RecommendationCandidate]: ...
 
 
 class AdminRecommendationRunQueryPort(Protocol):
