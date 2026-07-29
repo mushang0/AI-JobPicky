@@ -9,9 +9,9 @@ from pathlib import Path
 
 from openpyxl import load_workbook  # type: ignore[import-untyped]
 
-_URL_RE = re.compile(r"(?i)(?:https?://|mailto:)[^\s<>\"']+")
-_EMAIL_RE = re.compile(r"(?<![\w.+-])[\w.+-]+@[\w-]+(?:\.[\w-]+)+(?![\w.-])")
-_TRAILING_PUNCTUATION = "，,；;。！？!?)]}"
+from .link_classification import UNKNOWN, classify_link
+from .link_extraction import extract_links as _extract_links
+
 _GRAD_YEAR_RE = re.compile(r"(\d{4})\s*届")
 
 # This is the fixed export layout used by the campus recruitment sheet.
@@ -78,20 +78,9 @@ def valid_url(value: object) -> str | None:
 
 
 def extract_links(value: object, hyperlink_target: str | None = None) -> list[str]:
-    sources = [source for source in (value, hyperlink_target) if isinstance(source, str)]
-    links: list[str] = []
-    for source in sources:
-        matches: list[str] = []
-        for match in _URL_RE.findall(source):
-            matches.extend(re.split(r"[,，;；]\s*(?=(?:https?://|mailto:))", match))
-        matches.extend(_EMAIL_RE.findall(source))
-        if not matches and source.strip().startswith(("http://", "https://", "mailto:")):
-            matches = [source.strip()]
-        for link in matches:
-            link = link.rstrip(_TRAILING_PUNCTUATION)
-            if link and link not in links:
-                links.append(link)
-    return links
+    return [
+        link for link in _extract_links(value, hyperlink_target) if classify_link(link) != UNKNOWN
+    ]
 
 
 def parse_locations(value: object) -> list[str]:

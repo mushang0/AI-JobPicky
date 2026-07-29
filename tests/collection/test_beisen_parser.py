@@ -86,7 +86,7 @@ def test_beisen_parser_reads_mobile_listing_and_each_detail() -> None:
     assert jobs[0]["detail_url"] == (
         "https://acme.m.zhiye.com/#/jobdetail?id=101&jc=2&isReward=false"
     )
-    assert jobs[0]["apply_url"] is None
+    assert jobs[0]["apply_url"] == jobs[0]["detail_url"]
     assert jobs[1]["detail_url"] == "https://acme.m.zhiye.com/custom-detail/102"
 
     path_jobs = parse("https://acme.m.zhiye.com/JobAd/List?jc=3", fetch)

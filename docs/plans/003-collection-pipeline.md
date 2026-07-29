@@ -2,7 +2,7 @@
 
 ## 当前状态
 
-分支：`feat/collection-pipeline`，尚未提交。
+分支：`feat/collection-pipeline`。
 
 本分支目标是打通：
 
@@ -25,8 +25,10 @@
 - `src/jobpicky/collection/spreadsheet.py`
   - 统一 CSV/XLSX 固定列读取。
   - 抽取公司、行业、岗位方向、城市、截止时间、届次、学历、批次、公告链接、投递链接等字段。
-  - 复用链接抽取、日期、届次和占位值清洗逻辑。
+  - 复用共享链接抽取逻辑，同时过滤表格中的普通文本和占位值。
   - 原始 `batch` 保留；`recruitment_type` 只做粗粒度归一化：实习、校招或原始值。
+- `src/jobpicky/collection/link_extraction.py`
+  - 统一 Excel 文本与超链接目标的链接抽取，避免 `mailto:` 链接和裸邮箱重复计数。
 - `src/jobpicky/collection/link_classification.py`
   - 按域名和链接形态识别北森、Moka、飞书等来源类型。
 - `src/jobpicky/collection/parsers/beisen.py`
@@ -34,9 +36,11 @@
   - 支持根域、自定义入口、`/campus` 等页面回退到语义匹配的岗位列表路径。
   - 支持单岗位详情按 `jobAdId` 过滤，不把详情链接扩大成公司全量岗位。
   - 清理移动端明显损坏的 `ky=π=1` 查询参数，同时保留有效分类筛选。
+  - 没有独立投递入口时，将岗位详情链接同时作为 `apply_url`；网站提供独立投递链接时保留原值。
 - `src/jobpicky/collection/pipeline.py`
   - 按链接类型选择解析器。
   - 网站字段优先，表格字段补充缺失内容。
+  - 缺少独立投递链接时，以详情链接补齐 `apply_url`。
   - 合并结果校验为 `CollectedJob`。
   - 不支持、解析失败、空结果和字段非法均记录为可定位失败，不伪造岗位。
 
@@ -49,7 +53,7 @@
   - 将 `CollectedJob` 转换为 `JobFact`，补充薪资字段并写入岗位表。
   - 当前仍默认把成功采集岗位写成 `OPEN`，没有实现历史岗位关闭和过期清洗。
 - `scripts/analyze_apply_links.py`
-  - 复用统一链接抽取逻辑，删除重复实现。
+  - 使用共享链接抽取逻辑，删除脚本内重复实现，并保留 `main` 中的 `mailto:` 去重修复。
 - `tests/collection/`、`tests/fixtures/`
   - 覆盖固定列抽取、来源分类、北森桌面/移动/内嵌 JSON、合并优先级和失败路径。
 - `AGENTS.md`
@@ -57,15 +61,15 @@
 
 ## 当前采集结果
 
-最新在线复跑结果：[`beisen-rerun-20260729/summary.json`](/Users/joy/Documents/toyproject/artifacts/collection-review/beisen-rerun-20260729/summary.json)
+最新在线复跑结果：[`beisen-current-20260729/summary.json`](/Users/joy/Documents/toyproject/artifacts/collection-review/beisen-current-20260729/summary.json)
 
 ```text
 selected_source_count: 63
 successful_source_count: 57
 failed_source_count: 6
-parsed_job_count: 2752
-merged_job_count: 2752
-schema_valid_count: 2752
+parsed_job_count: 2753
+merged_job_count: 2753
+schema_valid_count: 2753
 schema_invalid_count: 0
 duplicate_job_count: 166
 ```
@@ -80,7 +84,7 @@ duplicate_job_count: 166
 | 长江存储、美赞臣中国 | 校招列表完整返回但为空，当前没有可用校招岗位 |
 | 中芯国际 | 校招列表为空；同域实习列表仍有岗位，不能关闭公司全部岗位 |
 
-采集结果随网站实时状态变化；2752 是本次运行快照，不是永久基线。
+与前一次 `beisen-rerun-20260729` 摘要相比，来源成功/失败数、重复数和无效数一致，岗位数增加 1，属于网站实时状态变化，不视为代码回归。
 
 ## 设想中的正确职责边界
 
@@ -135,7 +139,9 @@ duplicate_job_count: 166
 uv run ruff check .
 uv run ruff format --check .
 uv run pytest
-93 passed, 3 skipped
+94 passed, 3 skipped
 ```
 
-本计划不包含提交、推送或数据库真实回填；当前工作区改动仍需评审后再决定提交范围。
+在线复核命令扫描原始 CSV 第 2–601 行，未写数据库；摘要结果为 63 个来源、57 个成功、6 个失败、2753 个解析和合并岗位、0 个 Schema 无效岗位、166 个重复岗位。
+
+本计划不包含推送或数据库真实回填；历史岗位关闭和过期清洗仍未接入 `ingest_campus_csv.py`。

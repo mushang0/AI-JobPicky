@@ -10,13 +10,9 @@ from urllib.parse import urlsplit
 from openpyxl import load_workbook
 
 from jobpicky.collection.link_classification import UNKNOWN, classify_link
-from jobpicky.collection.spreadsheet import extract_links
+from jobpicky.collection.link_extraction import extract_links
 
 _SEED = 20260728
-
-
-def _extract_links(value: object, hyperlink_target: str | None) -> list[str]:
-    return extract_links(value, hyperlink_target)
 
 
 def _read_records(workbook_path: Path, sheet_name: str) -> tuple[int, list[dict[str, object]]]:
@@ -34,7 +30,7 @@ def _read_records(workbook_path: Path, sheet_name: str) -> tuple[int, list[dict[
         if link_cell.value in (None, "") and not hyperlink_target:
             continue
         non_empty_cells += 1
-        links = _extract_links(link_cell.value, hyperlink_target)
+        links = extract_links(link_cell.value, hyperlink_target)
         for link in links:
             records.append(
                 {

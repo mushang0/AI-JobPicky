@@ -1,4 +1,8 @@
-from jobpicky.collection.spreadsheet import extract_row, rows_from_values
+from jobpicky.collection.spreadsheet import extract_links, extract_row, rows_from_values
+
+
+def test_spreadsheet_links_do_not_duplicate_mailto_email() -> None:
+    assert extract_links("mailto:hr@example.com") == ["mailto:hr@example.com"]
 
 
 def test_fixed_sheet_fields_are_extracted_without_splitting_job_directions() -> None:

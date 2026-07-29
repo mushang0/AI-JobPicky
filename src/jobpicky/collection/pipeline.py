@@ -105,7 +105,7 @@ def merge_job_fields(
         locations=locations,
         description=_string(website, "description"),
         detail_url=_string(website, "detail_url"),
-        apply_url=_string(website, "apply_url"),
+        apply_url=_string(website, "apply_url") or _string(website, "detail_url"),
         recruitment_type=_string(website, "recruitment_type") or row.recruitment_type,
         education_requirement=_string(website, "education_requirement")
         or row.education_requirement,

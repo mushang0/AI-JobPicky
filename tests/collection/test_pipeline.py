@@ -29,7 +29,7 @@ def make_row(*links: str) -> SpreadsheetRow:
     )
 
 
-def test_merge_prefers_website_fields_and_keeps_missing_website_values_null() -> None:
+def test_merge_prefers_website_fields_and_uses_detail_as_apply_url() -> None:
     job = merge_job_fields(
         "source-1",
         make_row("https://acme.zhiye.com/campus/jobs"),
@@ -51,7 +51,7 @@ def test_merge_prefers_website_fields_and_keeps_missing_website_values_null() ->
     assert job.title == "网站真实岗位"
     assert job.description is None
     assert job.detail_url == "https://acme.zhiye.com/job/1"
-    assert job.apply_url is None
+    assert job.apply_url == job.detail_url
     assert job.locations == ["网站地点"]
     assert job.salary_min == 12000
     assert job.education_requirement == "硕士"

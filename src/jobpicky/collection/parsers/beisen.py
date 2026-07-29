@@ -177,7 +177,9 @@ def _normalise(item: dict[str, object], page_url: str) -> dict[str, object]:
         "title": _text(_first(item, _TITLE_KEYS)),
         "description": _text(_first(item, _DESCRIPTION_KEYS)),
         "detail_url": urljoin(page_url, detail_url) if detail_url else None,
-        "apply_url": urljoin(page_url, apply_url) if apply_url else None,
+        "apply_url": urljoin(page_url, apply_url or detail_url)
+        if (apply_url or detail_url)
+        else None,
         "locations": _locations(_first(item, _LOCATION_KEYS)),
         "recruitment_type": _text(
             item.get("recruitmentType")
@@ -285,9 +287,8 @@ def _parse_mobile(url: str, fetch: Callable[[str], str]) -> list[dict[str, objec
             description = _text(job.get("description"))
             job["description"] = f"{description}\n{require}" if description else require
         job["detail_url"] = _mobile_detail_url(url, source_job_id, query, combined)
-        # The detail page already contains the apply action. The legacy endpoint
-        # redirects to login and is not a useful job-level URL.
-        job["apply_url"] = None
+        # The detail page is also the application entry point.
+        job["apply_url"] = job["detail_url"]
         results.append(job)
     return results
 
@@ -356,7 +357,7 @@ def _static_html(html: str, page_url: str) -> list[dict[str, object]]:
                 "title": title,
                 "description": title,
                 "detail_url": urljoin(page_url, link_match.group(1)) if link_match else None,
-                "apply_url": None,
+                "apply_url": urljoin(page_url, link_match.group(1)) if link_match else None,
                 "locations": [],
                 "recruitment_type": None,
                 "education_requirement": None,
@@ -461,7 +462,7 @@ def _parse_desktop(
             description = _text(job.get("description"))
             job["description"] = f"{description}\n{require}" if description else require
         job["detail_url"] = _desktop_detail_url(url, source_job_id)
-        job["apply_url"] = None
+        job["apply_url"] = job["detail_url"]
         results.append(job)
     return results
 
