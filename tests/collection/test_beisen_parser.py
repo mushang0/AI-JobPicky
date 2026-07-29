@@ -122,9 +122,10 @@ def test_beisen_parser_reads_modern_desktop_campus_api() -> None:
             ],
         }
     )
-    requests: list[tuple[str, object]] = []
+    requests: list[tuple[str, dict[str, object]]] = []
 
     def post(url: str, payload: object) -> str:
+        assert isinstance(payload, dict)
         requests.append((url, payload))
         return response
 
@@ -142,7 +143,9 @@ def test_beisen_parser_reads_modern_desktop_campus_api() -> None:
     assert requests[0][0] == "https://acme.zhiye.com/api/Jobad/GetJobAdPageList"
     assert requests[0][1]["Category"] == ["2"]
     assert requests[0][1]["PortalId"] == "portal-1"
-    assert "LocId" in requests[0][1]["DisplayFields"]
+    display_fields = requests[0][1]["DisplayFields"]
+    assert isinstance(display_fields, list)
+    assert "LocId" in display_fields
 
 
 def test_beisen_parser_falls_back_from_root_to_campus_listing() -> None:
