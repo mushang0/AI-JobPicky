@@ -362,6 +362,8 @@ SALARY_MISMATCH
 
 完整字段分别遵循 `JobFact`、`Candidate` 和 `MatchAssessment`。三个 `job_id` 必须一致；普通结果列表只包含 `matched=true` 的项。`job` 是保存推荐结果前从岗位目录读取并与结果一同保存的事实快照，其 `fact_version` 用于追溯；当前岗位状态可另通过岗位详情接口查询。
 
+评估器落地前，推荐运行的结果用 `RecommendationCandidate`（`job: JobFact` + `retrieval: Candidate`，无 `assessment`）承载；`job.id` 必须与 `retrieval.job_id` 一致。评估环节接入后再决定 `RecommendationItem` 与它的合并或分工。
+
 ### 4.11 运行与通用响应
 
 `RunAccepted`：
@@ -646,8 +648,10 @@ class RecommendationOrchestratorPort(Protocol):
         run_id: str,
         page: int,
         page_size: int,
-    ) -> Page[RecommendationItem]: ...
+    ) -> Page[RecommendationCandidate]: ...
 ```
+
+`get_results` 返回评估前的候选结果 `RecommendationCandidate`（见 §4.10）；评估器落地前不返回 `RecommendationItem`。
 
 具体图节点和执行器不是端口的一部分。模型工具只包装上述业务端口，不应形成另一套平行业务接口。
 
@@ -705,7 +709,7 @@ class AdminJobQueryPort(Protocol):
 | `POST /api/v1/user/recommendation-runs` | `RecommendationOrchestratorPort.start` | `profile_id` + `extra_request` → `RunAccepted` | `user_id` |
 | `GET /api/v1/user/recommendation-runs` | `RecommendationOrchestratorPort.list_runs` | `Page[RunView]` | `user_id` |
 | `GET /api/v1/user/recommendation-runs/{run_id}` | `RecommendationOrchestratorPort.get_run` | `RunView` | `user_id` |
-| `GET /api/v1/user/recommendation-runs/{run_id}/results` | `RecommendationOrchestratorPort.get_results` | `Page[RecommendationItem]` | `user_id` |
+| `GET /api/v1/user/recommendation-runs/{run_id}/results` | `RecommendationOrchestratorPort.get_results` | `Page[RecommendationCandidate]` | `user_id` |
 | `GET /api/v1/user/jobs/{job_id}` | `UserJobQueryPort.get_job` | `JobFact` | `user_id` |
 | `POST /api/v1/admin/sources` | `SourceApplicationPort.create_source` | `SourceInput` → `SourceView` | `admin_id` |
 | `GET /api/v1/admin/sources` | `SourceApplicationPort.list_sources` | `Page[SourceView]` | `admin_id` |

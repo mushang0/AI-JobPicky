@@ -1,6 +1,5 @@
-from factories import make_profile
-
 from jobpicky.matching import BaselineMatchingService
+from matching.factories import make_profile
 
 
 def test_composes_query_text_in_fixed_order() -> None:

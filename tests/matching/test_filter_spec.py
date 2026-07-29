@@ -1,6 +1,5 @@
-from factories import make_profile
-
 from jobpicky.matching import BaselineMatchingService
+from matching.factories import make_profile
 
 
 def test_maps_profile_fields_to_filter_spec() -> None:

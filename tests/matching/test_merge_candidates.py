@@ -1,8 +1,8 @@
 import pytest
-from factories import make_hit
 
 from jobpicky.contracts import RetrievalChannel
 from jobpicky.matching import BaselineMatchingService, MatchingConfig
+from matching.factories import make_hit
 
 KEYWORD = RetrievalChannel.KEYWORD
 SEMANTIC = RetrievalChannel.SEMANTIC
