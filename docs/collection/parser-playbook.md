@@ -90,6 +90,24 @@ uv run python scripts/verify_parser_pipeline.py \
 - Fixture：`tests/collection/fixtures/hotjob_list.json`、`hotjob_detail.json`；回归：
   `tests/collection/test_hotjob_parser.py`。
 
+## Moka 招聘（MOKA）
+
+- 域名：`mokahr.com`；常见入口包括 `/campus-recruitment/`、`/social-recruitment/`、
+  `/campus_apply/`、`/apply/`，以及会公开重定向到这些入口的 `/su/` 和推荐投递链接。
+- 页面服务端内嵌 `<input id="init-data">` JSON，包含站点信息和岗位列表；解析器优先使用
+  该公开数据，直达链接按 URL fragment 的 `job/<id>` 精确筛选，列表链接返回所有公开开放
+  岗位。`status` 为关闭类状态或存在 `closedAt` 的岗位不作为开放岗位返回。
+- Moka 详情接口的公开响应为加密数据；当前只写入内嵌清单已经确认的标题、地点、状态、
+  部门和时间，不把密钥、IV、密文或浏览器登录流程带入批处理。因而 `description` 可能为
+  空，这是已知字段边界，不用表格摘要冒充 JD。
+- 页面偶发自重定向；解析器使用带 CookieJar 的有限手动重试，最多 5 次，不跟随到登录、
+  验证码或其他站点。HTML 响应上限为 10 MiB。
+- 当前样本全量回放：93 个来源中 82 个成功，758 个岗位通过 schema 校验。剩余 11 个为
+  当前站点没有开放岗位，或直达岗位已关闭/不在公开首屏清单；不把其他岗位替换为失效直达
+  岗位。
+- Fixture：`tests/collection/fixtures/moka_init_data.html`；回归：
+  `tests/collection/test_moka_parser.py`。
+
 ## 跨平台沉淀
 
 - 失败先分成链接分类、入口发现、列表/分页、详情请求和字段校验五类；同一 ATS 的公司

@@ -10,10 +10,11 @@ from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 from jobpicky.contracts import CollectedJob, CollectionBatch
 from jobpicky.contracts.common import JsonObject
 
-from .link_classification import BEISEN, FEISHU, HOTJOB, classify_link
+from .link_classification import BEISEN, FEISHU, HOTJOB, MOKA, classify_link
 from .parsers.beisen import parse as parse_beisen
 from .parsers.feishu import parse as parse_feishu
 from .parsers.hotjob import parse as parse_hotjob
+from .parsers.moka import parse as parse_moka
 from .spreadsheet import SpreadsheetRow
 
 Parser = Callable[[str], Sequence[Mapping[str, object]]]
@@ -23,6 +24,7 @@ PARSERS: dict[str, Parser] = {
     BEISEN: lambda url: parse_beisen(url),
     FEISHU: lambda url: parse_feishu(url),
     HOTJOB: lambda url: parse_hotjob(url),
+    MOKA: lambda url: parse_moka(url),
 }
 
 

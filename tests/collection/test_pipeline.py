@@ -123,7 +123,7 @@ def test_unsupported_link_is_recorded_with_row_and_reason() -> None:
     assert failure.url.endswith("/acme")
     assert failure.link_type == "MOKA"
     assert failure.row_number == 12
-    assert "no parser implemented" in failure.reason
+    assert "parser failed" in failure.reason
 
 
 def test_invalid_website_job_is_not_replaced_by_table_direction() -> None:
