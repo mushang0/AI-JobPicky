@@ -1,0 +1,21 @@
+{
+  "code": 0,
+  "data": {
+    "job_post_detail": {
+      "id": "7665627986519296266",
+      "title": "2027届-嵌入式软件工程师",
+      "description": "负责车载系统开发。",
+      "requirement": "本科及以上学历。",
+      "channel_online_status": 1,
+      "publish_time": 1782864000000,
+      "city_list": [{"name": "北京"}, {"name": "苏州"}],
+      "department_info": {"name": "系统研发部"},
+      "job_function": {"name": "软件研发"},
+      "job_post_info": {"required_degree": 6},
+      "recruit_type": {
+        "name": "正式",
+        "parent": {"name": "校招"}
+      }
+    }
+  }
+}
