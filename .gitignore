@@ -13,3 +13,4 @@ dist/
 .vscode/
 artifacts/
 .claude/worktrees/fix-mailto-dedup/
+.env

@@ -26,6 +26,17 @@ class MatchAssessment(ContractModel):
     evidence: list[NonEmptyStr] = Field(default_factory=list)
 
 
+class MatchAssessmentResponse(ContractModel):
+    """The only accepted top-level shape returned by an evaluator."""
+
+    assessments: list[MatchAssessment]
+
+
+# A concise alias for callers that refer to the provider response as an
+# evaluation rather than an assessment batch.
+EvaluationResponse = MatchAssessmentResponse
+
+
 class RecommendationCandidate(ContractModel):
     """Pre-evaluation run result: a retrieved job snapshot plus its fusion score."""
 
@@ -69,4 +80,9 @@ def validate_assessments(
         if assessment.job_id in seen:
             raise ValueError(f"assessment contains duplicate job ID: {assessment.job_id}")
         seen.add(assessment.job_id)
+    if len(assessments) != len(candidate_job_ids):
+        raise ValueError("assessment job IDs must exactly match candidate job IDs")
+    missing = allowed - seen
+    if missing:
+        raise ValueError(f"assessment contains missing job IDs: {sorted(missing)}")
     return list(assessments)

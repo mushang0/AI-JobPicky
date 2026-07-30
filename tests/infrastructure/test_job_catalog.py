@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+from collections.abc import Sequence
 from datetime import UTC, datetime
 
 import pytest
@@ -25,12 +26,30 @@ pytestmark = pytest.mark.skipif(
     reason="JOBPICKY_TEST_DATABASE_URL is not set; start the compose db and run migrations",
 )
 
-_JOB_IDS = ("itest-job-1", "itest-job-2", "itest-job-3")
+_JOB_IDS = ("itest-job-1", "itest-job-2", "itest-job-3", "itest-job-4")
 
 
-def _catalog() -> PostgresJobCatalog:
+class FixedEmbedding:
+    dimension = 512
+
+    async def embed_query(self, text: str) -> list[float]:
+        return [1.0] + [0.0] * 511
+
+    async def embed_documents(self, texts: Sequence[str]) -> list[list[float]]:
+        return [[1.0] + [0.0] * 511 for _ in texts]
+
+
+def _catalog(
+    embedding: FixedEmbedding | None = None,
+    *,
+    semantic_limit: int = 50,
+) -> PostgresJobCatalog:
     engine = create_engine(_TEST_DATABASE_URL)
-    return PostgresJobCatalog(create_session_factory(engine))
+    return PostgresJobCatalog(
+        create_session_factory(engine),
+        embedding,
+        semantic_limit=semantic_limit,
+    )
 
 
 def _seed() -> None:
@@ -57,7 +76,19 @@ def _seed() -> None:
             locations=["上海"],
             status="CLOSED",
         ),
+        make_job(
+            id="itest-job-4",
+            title="平台工程师",
+            company_name="同分公司",
+            locations=["上海"],
+            description="平台服务开发。",
+        ),
     ]
+    embeddings = {
+        "itest-job-1": [1.0] + [0.0] * 511,
+        "itest-job-2": [0.8, 0.6] + [0.0] * 510,
+        "itest-job-4": [1.0] + [0.0] * 511,
+    }
 
     async def insert() -> None:
         engine = create_engine(_TEST_DATABASE_URL)
@@ -71,6 +102,7 @@ def _seed() -> None:
                         **job.model_dump(),
                         "status": str(job.status),
                         "published_at": job.published_at or now,
+                        "embedding": embeddings.get(job.id),
                     }
                     for job in rows
                 ],
@@ -132,6 +164,29 @@ def test_keyword_search_empty_terms_returns_no_hits() -> None:
     async def check() -> None:
         assert await _catalog().keyword_search("  ", ["itest-job-1"]) == []
         assert await _catalog().keyword_search("后端工程师", []) == []
+
+    asyncio.run(check())
+
+
+def test_semantic_search_uses_pgvector_distance_and_constraints() -> None:
+    _seed()
+
+    async def check() -> None:
+        hits = await _catalog(FixedEmbedding(), semantic_limit=2).semantic_search(
+            "后端工程师",
+            ["itest-job-3", "itest-job-4", "itest-job-2", "itest-job-1"],
+        )
+        assert [hit.job_id for hit in hits] == ["itest-job-1", "itest-job-4"]
+        assert hits[0].score == pytest.approx(1.0)
+        assert hits[1].score == pytest.approx(1.0)
+        assert all(hit.channel == RetrievalChannel.SEMANTIC for hit in hits)
+
+        restricted = await _catalog(FixedEmbedding()).semantic_search(
+            "后端工程师",
+            ["itest-job-2", "itest-job-3"],
+        )
+        assert [hit.job_id for hit in restricted] == ["itest-job-2"]
+        assert restricted[0].score == pytest.approx(0.8)
 
     asyncio.run(check())
 

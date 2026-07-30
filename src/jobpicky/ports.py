@@ -15,7 +15,7 @@ from .contracts import (
     Page,
     ProfileDraft,
     ProfileSnapshot,
-    RecommendationCandidate,
+    RecommendationItem,
     RunAccepted,
     RunView,
     SearchHit,
@@ -52,6 +52,29 @@ class JobCatalogPort(Protocol):
         query_text: str,
         eligible_job_ids: Sequence[str],
     ) -> list[SearchHit]: ...
+
+
+class EmbeddingPort(Protocol):
+    """Async embedding boundary with a fixed 512-dimensional contract."""
+
+    dimension: int
+
+    async def embed_query(self, text: str) -> list[float]: ...
+
+    async def embed_documents(self, texts: Sequence[str]) -> list[list[float]]: ...
+
+
+class JobEmbeddingStorePort(Protocol):
+    """Persistence boundary used by the explicit job embedding backfill."""
+
+    async def get_jobs_without_embeddings(
+        self,
+        *,
+        limit: int,
+        offset: int = 0,
+    ) -> list[JobFact]: ...
+
+    async def save_embeddings(self, embeddings: Mapping[str, Sequence[float]]) -> None: ...
 
 
 class ProfileParserPort(Protocol):
@@ -143,6 +166,7 @@ class JobEvaluatorPort(Protocol):
         profile: ProfileSnapshot,
         jobs: Sequence[JobFact],
         candidates: Sequence[Candidate],
+        effective_extra_request: str | None = None,
     ) -> list[MatchAssessment]: ...
 
 
@@ -188,7 +212,7 @@ class RecommendationOrchestratorPort(Protocol):
         run_id: str,
         page: int,
         page_size: int,
-    ) -> Page[RecommendationCandidate]: ...
+    ) -> Page[RecommendationItem]: ...
 
 
 class AdminRecommendationRunQueryPort(Protocol):
@@ -206,7 +230,9 @@ __all__ = [
     "AdminJobQueryPort",
     "AdminRecommendationRunQueryPort",
     "CrawlOrchestratorPort",
+    "EmbeddingPort",
     "JobCatalogPort",
+    "JobEmbeddingStorePort",
     "JobEvaluatorPort",
     "MatchingPort",
     "ProfileApplicationPort",

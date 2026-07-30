@@ -1,0 +1,147 @@
+from __future__ import annotations
+
+import asyncio
+
+import pytest
+from catalog.factories import make_job
+from matching.factories import make_profile
+
+from jobpicky.contracts import Candidate, ErrorCode, RetrievalChannel
+from jobpicky.errors import ApplicationError
+from jobpicky.infrastructure.llm_evaluator import DashScopeJobEvaluator
+
+
+def _candidate(job_id: str = "job-1") -> Candidate:
+    return Candidate(
+        job_id=job_id,
+        retrieval_score=0.8,
+        sources=[RetrievalChannel.KEYWORD],
+    )
+
+
+class FakeChat:
+    def __init__(self, response: object) -> None:
+        self.response = response
+        self.calls = 0
+
+    async def ainvoke(self, messages: object) -> object:
+        self.calls += 1
+        if isinstance(self.response, Exception):
+            raise self.response
+        return self.response
+
+
+def test_evaluator_accepts_only_strict_assessment_json() -> None:
+    async def check() -> None:
+        chat = FakeChat(
+            {
+                "assessments": [
+                    {
+                        "job_id": "job-1",
+                        "matched": True,
+                        "match_score": 88,
+                        "reason": "相关经验充分",
+                        "matched_strengths": ["Python"],
+                        "gaps": [],
+                        "evidence": ["后端开发经验"],
+                    }
+                ]
+            }
+        )
+        result = await DashScopeJobEvaluator(chat_model=chat).evaluate(
+            make_profile(),
+            [make_job()],
+            [_candidate()],
+            "只看英文岗位",
+        )
+        assert result[0].job_id == "job-1"
+        assert chat.calls == 1
+
+    asyncio.run(check())
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {
+            "assessments": [
+                {
+                    "job_id": "unknown",
+                    "matched": True,
+                    "match_score": 80,
+                    "reason": "x",
+                    "matched_strengths": [],
+                    "gaps": [],
+                }
+            ]
+        },
+        {
+            "assessments": [
+                {
+                    "job_id": "job-1",
+                    "matched": True,
+                    "match_score": 80,
+                    "reason": "x",
+                    "matched_strengths": [],
+                    "gaps": [],
+                    "company_name": "幻觉",
+                }
+            ]
+        },
+        {
+            "assessments": [
+                {
+                    "job_id": "job-1",
+                    "matched": True,
+                    "match_score": 101,
+                    "reason": "x",
+                    "matched_strengths": [],
+                    "gaps": [],
+                }
+            ]
+        },
+    ],
+)
+def test_evaluator_rejects_unknown_or_hallucinated_output(payload: object) -> None:
+    async def check() -> None:
+        with pytest.raises(ApplicationError) as error:
+            await DashScopeJobEvaluator(chat_model=FakeChat(payload)).evaluate(
+                make_profile(), [make_job()], [_candidate()]
+            )
+        assert error.value.code == str(ErrorCode.RECOMMENDATION_FAILED)
+        assert error.value.details == {"stage": "EVALUATE"}
+
+    asyncio.run(check())
+
+
+def test_evaluator_retries_provider_timeout_once() -> None:
+    class RetryChat:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        async def ainvoke(self, messages: object) -> object:
+            self.calls += 1
+            if self.calls == 1:
+                raise TimeoutError()
+            return {
+                "assessments": [
+                    {
+                        "job_id": "job-1",
+                        "matched": False,
+                        "match_score": 20,
+                        "reason": "证据不足",
+                        "matched_strengths": [],
+                        "gaps": ["缺少证据"],
+                    }
+                ]
+            }
+
+    async def check() -> None:
+        chat = RetryChat()
+        result = await DashScopeJobEvaluator(chat_model=chat, max_retries=1).evaluate(
+            make_profile(), [make_job()], [_candidate()]
+        )
+        assert result[0].matched is False
+        assert chat.calls == 2
+
+    asyncio.run(check())

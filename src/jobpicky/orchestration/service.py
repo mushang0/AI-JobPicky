@@ -10,9 +10,11 @@ from ..contracts import (
     Candidate,
     ErrorCode,
     JobFact,
+    MatchAssessment,
     Page,
     ProfileSnapshot,
     RecommendationCandidate,
+    RecommendationItem,
     RecommendationRunInput,
     RecommendationStep,
     RunAccepted,
@@ -20,10 +22,11 @@ from ..contracts import (
     RunStatus,
     RunView,
     merge_extra_request,
+    validate_assessments,
 )
 from ..contracts.common import JsonObject
 from ..errors import ApplicationError
-from ..ports import JobCatalogPort, MatchingPort, ProfileSnapshotReaderPort
+from ..ports import JobCatalogPort, JobEvaluatorPort, MatchingPort, ProfileSnapshotReaderPort
 from .store import (
     IdempotencyConflictError,
     RecommendationRunStore,
@@ -57,6 +60,32 @@ def assemble_candidates(
     ]
 
 
+def assemble_recommendations(
+    candidates: Sequence[Candidate],
+    assessments: Sequence[MatchAssessment],
+    jobs: Sequence[JobFact],
+) -> list[RecommendationItem]:
+    """Rebuild final items from catalog facts after evaluation."""
+    validate_assessments([candidate.job_id for candidate in candidates], assessments)
+    candidates_by_id = {candidate.job_id: candidate for candidate in candidates}
+    jobs_by_id = {job.id: job for job in jobs}
+    assessments_by_id = {assessment.job_id: assessment for assessment in assessments}
+    items: list[RecommendationItem] = []
+    for candidate in candidates:
+        job = jobs_by_id.get(candidate.job_id)
+        assessment = assessments_by_id[candidate.job_id]
+        if job is None or not assessment.matched:
+            continue
+        items.append(
+            RecommendationItem(
+                job=job,
+                retrieval=candidates_by_id[candidate.job_id],
+                assessment=assessment,
+            )
+        )
+    return items
+
+
 class RecommendationRunService:
     """RecommendationOrchestratorPort implementation over the deterministic chain.
 
@@ -76,8 +105,10 @@ class RecommendationRunService:
         profile_reader: ProfileSnapshotReaderPort,
         catalog: JobCatalogPort,
         matching: MatchingPort,
+        evaluator: JobEvaluatorPort,
         model_config_version: str,
         *,
+        evaluation_batch_size: int = 10,
         run_in_background: bool = True,
         now: Callable[[], datetime] | None = None,
     ) -> None:
@@ -85,7 +116,11 @@ class RecommendationRunService:
         self._profile_reader = profile_reader
         self._catalog = catalog
         self._matching = matching
+        self._evaluator = evaluator
         self._model_config_version = model_config_version
+        if evaluation_batch_size < 1:
+            raise ValueError("evaluation_batch_size must be at least 1")
+        self._evaluation_batch_size = evaluation_batch_size
         self._run_in_background = run_in_background
         self._now = now or (lambda: datetime.now(UTC))
         self._tasks: set[asyncio.Task[None]] = set()
@@ -153,7 +188,7 @@ class RecommendationRunService:
         run_id: str,
         page: int,
         page_size: int,
-    ) -> Page[RecommendationCandidate]:
+    ) -> Page[RecommendationItem]:
         _validate_pagination(page, page_size)
         record = await self._require_user_record(user_id, run_id)
         # An unfinished run has no results yet; that is a normal empty page,
@@ -185,15 +220,99 @@ class RecommendationRunService:
             record = replace(record, current_step=str(RecommendationStep.RETRIEVE))
             await self._store.save(record)
             query_text = self._matching.build_query_text(profile, run_input.effective_extra_request)
-            keyword_hits = await self._catalog.keyword_search(query_text, eligible_job_ids)
-            candidates = self._matching.merge_candidates(keyword_hits, [])
+            if eligible_job_ids:
+                keyword_hits, semantic_hits = await asyncio.gather(
+                    self._catalog.keyword_search(query_text, eligible_job_ids),
+                    self._catalog.semantic_search(query_text, eligible_job_ids),
+                )
+            else:
+                keyword_hits, semantic_hits = [], []
+            candidates = self._matching.merge_candidates(keyword_hits, semantic_hits)
             jobs = await self._catalog.get_jobs([c.job_id for c in candidates])
-            results = assemble_candidates(candidates, jobs)
-            job_ids = {job.id for job in jobs}
-            missing_job_count = sum(candidate.job_id not in job_ids for candidate in candidates)
+            jobs_by_id = {job.id: job for job in jobs}
+            missing_job_count = sum(candidate.job_id not in jobs_by_id for candidate in candidates)
             warnings = list(record.warnings)
             if missing_job_count:
                 warnings.append(f"{missing_job_count} candidate job facts could not be loaded")
+
+            results: list[RecommendationItem] = []
+            evaluated_count = 0
+            if candidates and jobs:
+                evaluable_candidates = [
+                    candidate for candidate in candidates if candidate.job_id in jobs_by_id
+                ]
+                record = replace(record, current_step=str(RecommendationStep.EVALUATE))
+                await self._store.save(record)
+                assessments: list[MatchAssessment] = []
+                for batch_index, start in enumerate(
+                    range(0, len(evaluable_candidates), self._evaluation_batch_size)
+                ):
+                    candidate_batch = evaluable_candidates[
+                        start : start + self._evaluation_batch_size
+                    ]
+                    batch_jobs = [jobs_by_id[candidate.job_id] for candidate in candidate_batch]
+                    try:
+                        batch_assessments = await self._evaluator.evaluate(
+                            profile,
+                            batch_jobs,
+                            candidate_batch,
+                            run_input.effective_extra_request,
+                        )
+                    except ApplicationError as exc:
+                        details: JsonObject = {
+                            "stage": "EVALUATE",
+                            "batch_index": batch_index,
+                        }
+                        if exc.code == str(ErrorCode.DEPENDENCY_UNAVAILABLE):
+                            details["dependency"] = "llm"
+                        raise ApplicationError(
+                            exc.code,
+                            "evaluator dependency unavailable"
+                            if exc.code == str(ErrorCode.DEPENDENCY_UNAVAILABLE)
+                            else "evaluator batch failed",
+                            status_code=exc.status_code,
+                            details=details,
+                        ) from exc
+                    except Exception as exc:
+                        raise ApplicationError(
+                            ErrorCode.RECOMMENDATION_FAILED,
+                            "evaluator batch failed",
+                            status_code=502,
+                            details={"stage": "EVALUATE", "batch_index": batch_index},
+                        ) from exc
+                    try:
+                        validate_assessments(
+                            [candidate.job_id for candidate in candidate_batch],
+                            batch_assessments,
+                        )
+                    except ValueError as exc:
+                        raise ApplicationError(
+                            ErrorCode.RECOMMENDATION_FAILED,
+                            "evaluator returned an incomplete assessment batch",
+                            status_code=502,
+                            details={"stage": "EVALUATE", "batch_index": batch_index},
+                        ) from exc
+                    assessments.extend(batch_assessments)
+                evaluated_count = len(assessments)
+                # The evaluator saw the pre-evaluation facts.  Re-read before
+                # saving so the persisted item is the completion-time catalog
+                # snapshot, not a stale copy held across the model call.
+                final_jobs = await self._catalog.get_jobs(
+                    [candidate.job_id for candidate in evaluable_candidates]
+                )
+                final_job_ids = {job.id for job in final_jobs}
+                missing_after_evaluation = sum(
+                    candidate.job_id not in final_job_ids for candidate in evaluable_candidates
+                )
+                if missing_after_evaluation:
+                    warnings.append(
+                        f"{missing_after_evaluation} candidate job facts could not be loaded "
+                        "after evaluation"
+                    )
+                results = assemble_recommendations(evaluable_candidates, assessments, final_jobs)
+
+            record = replace(record, current_step=str(RecommendationStep.SAVE))
+            await self._store.save(record)
 
             record = replace(
                 record,
@@ -203,7 +322,9 @@ class RecommendationRunService:
                 counts={
                     "eligible_jobs": len(eligible_job_ids),
                     "keyword_hits": len(keyword_hits),
+                    "semantic_hits": len(semantic_hits),
                     "candidates": len(candidates),
+                    "evaluated": evaluated_count,
                     "results": len(results),
                 },
                 warnings=warnings,
@@ -274,4 +395,9 @@ def _validate_pagination(page: int, page_size: int) -> None:
         )
 
 
-__all__ = ["RecommendationRunService", "assemble_candidates", "plan_run_input"]
+__all__ = [
+    "RecommendationRunService",
+    "assemble_candidates",
+    "assemble_recommendations",
+    "plan_run_input",
+]

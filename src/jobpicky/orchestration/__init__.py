@@ -1,4 +1,9 @@
-from .service import RecommendationRunService, assemble_candidates, plan_run_input
+from .service import (
+    RecommendationRunService,
+    assemble_candidates,
+    assemble_recommendations,
+    plan_run_input,
+)
 from .store import (
     IdempotencyConflictError,
     PostgresRecommendationRunStore,
@@ -14,6 +19,7 @@ __all__ = [
     "RecommendationRunStore",
     "RunRecord",
     "assemble_candidates",
+    "assemble_recommendations",
     "plan_run_input",
     "record_to_run_view",
 ]

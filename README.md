@@ -77,6 +77,19 @@ uv run ruff format --check .
 uv run pytest
 ```
 
+### 推荐模型配置
+
+语义召回只从本地 Hugging Face 文件加载，不会因模型缺失自动降级为关键词召回；模型路径和 DashScope
+密钥均通过环境变量提供。数据库迁移完成后，显式运行以下命令回填缺失的 512 维岗位向量：
+
+```bash
+JOBPICKY_EMBEDDING_MODEL_PATH=/path/to/bge-small-zh-v1.5 \
+  python scripts/backfill_job_embeddings.py
+```
+
+推荐运行需要 `JOBPICKY_LLM_MODEL` 和 `JOBPICKY_DASHSCOPE_API_KEY`。API key 不写入仓库、日志或运行快照；
+未配置模型依赖时，推荐运行会以明确的依赖错误失败。
+
 ## 文档
 
 - [需求基线](docs/requirements.md)

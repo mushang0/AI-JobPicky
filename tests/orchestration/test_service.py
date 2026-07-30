@@ -17,6 +17,7 @@ from jobpicky.contracts import (
     HardFilterSpec,
     IngestionResult,
     JobFact,
+    MatchAssessment,
     ProfileSnapshot,
     RecommendationRunInput,
     RetrievalChannel,
@@ -98,6 +99,7 @@ class FakeCatalog:
         jobs: Sequence[JobFact] = (),
         eligible_job_ids: Sequence[str] | None = None,
         hits: Sequence[SearchHit] = (),
+        semantic_hits: Sequence[SearchHit] = (),
         error: Exception | None = None,
     ) -> None:
         self._jobs = {job.id: job for job in jobs}
@@ -105,6 +107,7 @@ class FakeCatalog:
             list(eligible_job_ids) if eligible_job_ids is not None else [job.id for job in jobs]
         )
         self._hits = list(hits)
+        self._semantic_hits = list(semantic_hits)
         self._error = error
 
     async def ingest(self, run_id: str, batch: CollectionBatch) -> IngestionResult:
@@ -131,7 +134,29 @@ class FakeCatalog:
         query_text: str,
         eligible_job_ids: Sequence[str],
     ) -> list[SearchHit]:
-        raise NotImplementedError
+        eligible = set(eligible_job_ids)
+        return [hit for hit in self._semantic_hits if hit.job_id in eligible]
+
+
+class FakeEvaluator:
+    async def evaluate(
+        self,
+        profile: ProfileSnapshot,
+        jobs: Sequence[JobFact],
+        candidates: Sequence[Candidate],
+        effective_extra_request: str | None = None,
+    ) -> list[MatchAssessment]:
+        return [
+            MatchAssessment(
+                job_id=candidate.job_id,
+                matched=True,
+                match_score=88,
+                reason="The candidate has relevant experience.",
+                matched_strengths=["Python"],
+                gaps=[],
+            )
+            for candidate in candidates
+        ]
 
 
 def make_service(
@@ -139,6 +164,8 @@ def make_service(
     profiles: Sequence[ProfileSnapshot] = (),
     catalog: FakeCatalog | None = None,
     store: InMemoryRunStore | None = None,
+    evaluator: FakeEvaluator | None = None,
+    evaluation_batch_size: int = 10,
     run_in_background: bool = False,
 ) -> RecommendationRunService:
     return RecommendationRunService(
@@ -146,7 +173,9 @@ def make_service(
         FakeProfileReader(*(profiles or [make_profile()])),
         catalog or FakeCatalog(),
         BaselineMatchingService(),
-        "baseline-v1",
+        evaluator or FakeEvaluator(),
+        "recommendation-v1",
+        evaluation_batch_size=evaluation_batch_size,
         run_in_background=run_in_background,
     )
 
@@ -180,7 +209,7 @@ def test_start_freezes_input_and_completes() -> None:
     record = store.records[accepted.run_id]
     assert accepted.status == RunStatus.SUCCEEDED
     assert record.recommendation_input.effective_extra_request == "想远程\n\n只要外企"
-    assert record.model_config_version == "baseline-v1"
+    assert record.model_config_version == "recommendation-v1"
     assert record.finished_at is not None
 
 
@@ -233,7 +262,7 @@ def test_unfinished_run_results_are_empty_page() -> None:
         status=RunStatus.RUNNING,
         created_at=datetime(2026, 1, 1, tzinfo=UTC),
         recommendation_input=RecommendationRunInput(profile_id="p", profile_version=1),
-        model_config_version="baseline-v1",
+        model_config_version="recommendation-v1",
     )
     run(store.insert(record))
     service = make_service(store=store)
@@ -251,7 +280,9 @@ def test_zero_candidates_is_a_successful_empty_run() -> None:
     assert record.counts == {
         "eligible_jobs": 0,
         "keyword_hits": 0,
+        "semantic_hits": 0,
         "candidates": 0,
+        "evaluated": 0,
         "results": 0,
     }
 
@@ -319,6 +350,7 @@ def test_full_chain_returns_candidates_and_scopes_queries() -> None:
     assert page.total == 1
     item = page.items[0]
     assert item.job.id == "job-1" and item.retrieval.job_id == "job-1"
+    assert item.assessment.matched
     assert item.retrieval.retrieval_score == pytest.approx(0.4)
 
     runs = run(service.list_runs("user-1", 1, 10))
@@ -327,3 +359,102 @@ def test_full_chain_returns_candidates_and_scopes_queries() -> None:
     with pytest.raises(ApplicationError) as error:
         run(service.get_run("someone-else", accepted.run_id))
     assert error.value.code == str(ErrorCode.NOT_FOUND)
+
+
+def test_final_result_reloads_job_fact_after_evaluation() -> None:
+    initial = make_job(id="job-1", title="旧岗位", fact_version="v1")
+    refreshed = make_job(id="job-1", title="更新后的岗位", fact_version="v2")
+
+    class RefreshingCatalog(FakeCatalog):
+        def __init__(self) -> None:
+            super().__init__(
+                jobs=[initial],
+                hits=[SearchHit(job_id="job-1", score=0.8, channel=RetrievalChannel.KEYWORD)],
+            )
+            self.get_jobs_calls = 0
+
+        async def get_jobs(self, job_ids: Sequence[str]) -> list[JobFact]:
+            self.get_jobs_calls += 1
+            jobs = {initial.id: initial} if self.get_jobs_calls == 1 else {refreshed.id: refreshed}
+            return [jobs[job_id] for job_id in job_ids if job_id in jobs]
+
+    catalog = RefreshingCatalog()
+    service = make_service(catalog=catalog)
+
+    accepted = run(service.start("user-1", "profile-1"))
+    result = run(service.get_results("user-1", accepted.run_id, 1, 10)).items[0]
+
+    assert catalog.get_jobs_calls == 2
+    assert result.job.title == "更新后的岗位"
+    assert result.job.fact_version == "v2"
+
+
+def test_retrieve_fuses_keyword_and_semantic_channels_before_evaluation() -> None:
+    jobs = [make_job(id="job-1"), make_job(id="job-2", title="平台工程师")]
+    catalog = FakeCatalog(
+        jobs=jobs,
+        hits=[SearchHit(job_id="job-1", score=0.8, channel=RetrievalChannel.KEYWORD)],
+        semantic_hits=[SearchHit(job_id="job-2", score=0.9, channel=RetrievalChannel.SEMANTIC)],
+    )
+    store = InMemoryRunStore()
+    service = make_service(store=store, catalog=catalog)
+
+    accepted = run(service.start("user-1", "profile-1"))
+    record = store.records[accepted.run_id]
+
+    assert record.status == RunStatus.SUCCEEDED
+    assert record.counts["keyword_hits"] == 1
+    assert record.counts["semantic_hits"] == 1
+    assert {item.job.id for item in record.results} == {"job-1", "job-2"}
+    assert record.results[0].retrieval.sources
+
+
+def test_evaluation_batch_failure_does_not_persist_partial_results() -> None:
+    class FailingEvaluator(FakeEvaluator):
+        def __init__(self) -> None:
+            self.calls = 0
+
+        async def evaluate(
+            self,
+            profile: ProfileSnapshot,
+            jobs: Sequence[JobFact],
+            candidates: Sequence[Candidate],
+            effective_extra_request: str | None = None,
+        ) -> list[MatchAssessment]:
+            self.calls += 1
+            if self.calls == 2:
+                raise ApplicationError(
+                    ErrorCode.RECOMMENDATION_FAILED,
+                    "unsafe provider detail must not escape",
+                    status_code=502,
+                    details={"stage": "EVALUATE"},
+                )
+            return await super().evaluate(profile, jobs, candidates, effective_extra_request)
+
+    jobs = [make_job(id="job-1"), make_job(id="job-2", title="平台工程师")]
+    catalog = FakeCatalog(
+        jobs=jobs,
+        hits=[
+            SearchHit(job_id="job-1", score=0.8, channel=RetrievalChannel.KEYWORD),
+            SearchHit(job_id="job-2", score=0.7, channel=RetrievalChannel.KEYWORD),
+        ],
+    )
+    store = InMemoryRunStore()
+    service = make_service(
+        store=store,
+        catalog=catalog,
+        evaluator=FailingEvaluator(),
+        evaluation_batch_size=1,
+    )
+
+    accepted = run(service.start("user-1", "profile-1"))
+    record = store.records[accepted.run_id]
+
+    assert record.status == RunStatus.FAILED
+    assert record.results == []
+    assert record.error is not None
+    assert record.error.details == {
+        "stage": "EVALUATE",
+        "batch_index": 1,
+        "error_type": "ApplicationError",
+    }

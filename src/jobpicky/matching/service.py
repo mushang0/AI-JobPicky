@@ -10,6 +10,7 @@ from ..contracts import (
     SearchHit,
 )
 from .config import MatchingConfig
+from .embedding_text import build_query_embedding_text
 
 
 class BaselineMatchingService:
@@ -72,7 +73,7 @@ class BaselineMatchingService:
                 continue
             seen.add(text)
             lines.append(text)
-        return "\n".join(lines)
+        return build_query_embedding_text(lines)
 
     def merge_candidates(
         self,

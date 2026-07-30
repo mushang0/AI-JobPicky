@@ -10,7 +10,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from ..contracts import (
-    RecommendationCandidate,
+    RecommendationItem,
     RecommendationRunInput,
     RunError,
     RunKind,
@@ -56,7 +56,7 @@ class RunRecord:
     counts: dict[str, int] = field(default_factory=dict)
     warnings: list[str] = field(default_factory=list)
     error: RunError | None = None
-    results: list[RecommendationCandidate] = field(default_factory=list)
+    results: list[RecommendationItem] = field(default_factory=list)
     idempotency_key: str | None = None
 
 
@@ -129,7 +129,7 @@ def _row_to_record(row: sa.RowMapping) -> RunRecord:
         recommendation_input=RecommendationRunInput.model_validate(row.recommendation_input),
         model_config_version=row.model_config_version,
         error=RunError.model_validate(row.error) if row.error else None,
-        results=[RecommendationCandidate.model_validate(item) for item in row.results],
+        results=[RecommendationItem.model_validate(item) for item in row.results],
         idempotency_key=row.idempotency_key,
     )
 

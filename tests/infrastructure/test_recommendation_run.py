@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+from collections.abc import Sequence
 from datetime import UTC, datetime
 
 import pytest
@@ -9,7 +10,7 @@ import sqlalchemy as sa
 from catalog.factories import make_job
 from matching.factories import make_profile
 
-from jobpicky.contracts import RunStatus
+from jobpicky.contracts import MatchAssessment, RunStatus
 from jobpicky.infrastructure.database import create_engine, create_session_factory
 from jobpicky.infrastructure.job_catalog import JOB_TABLE, PostgresJobCatalog
 from jobpicky.infrastructure.profile_store import PROFILE_TABLE, PostgresProfileStore
@@ -81,11 +82,36 @@ def _service(run_in_background: bool = True) -> RecommendationRunService:
     engine = create_engine(_TEST_DATABASE_URL)
     factory = create_session_factory(engine)
     matching = BaselineMatchingService()
+
+    class FakeEmbedding:
+        dimension = 512
+
+        async def embed_query(self, text: str) -> list[float]:
+            return [1.0] + [0.0] * 511
+
+        async def embed_documents(self, texts: Sequence[str]) -> list[list[float]]:
+            return [[1.0] + [0.0] * 511 for _ in texts]
+
+    class FakeEvaluator:
+        async def evaluate(self, profile, jobs, candidates, effective_extra_request=None):
+            return [
+                MatchAssessment(
+                    job_id=candidate.job_id,
+                    matched=True,
+                    match_score=90,
+                    reason="Relevant experience.",
+                    matched_strengths=["Python"],
+                    gaps=[],
+                )
+                for candidate in candidates
+            ]
+
     return RecommendationRunService(
         PostgresRecommendationRunStore(factory),
         PostgresProfileStore(factory),
-        PostgresJobCatalog(factory),
+        PostgresJobCatalog(factory, FakeEmbedding()),
         matching,
+        FakeEvaluator(),
         matching.config.version,
         run_in_background=run_in_background,
     )
@@ -107,7 +133,7 @@ def test_end_to_end_run_persists_results_snapshot() -> None:
             view = await service.get_run(_USER_ID, accepted.run_id)
         assert view.status == RunStatus.SUCCEEDED
         assert view.current_step == "COMPLETE"
-        assert view.model_config_version == "baseline-v1"
+        assert view.model_config_version == "recommendation-v1"
         assert view.recommendation_input is not None
         assert view.recommendation_input.profile_id == _PROFILE_ID
         assert view.counts["results"] >= 1
@@ -122,6 +148,7 @@ def test_end_to_end_run_persists_results_snapshot() -> None:
         assert "itest-run-job-2" not in by_id
         assert by_id["itest-run-job-1"].job.company_name == "示例科技"
         assert by_id["itest-run-job-1"].retrieval.retrieval_score > 0
+        assert by_id["itest-run-job-1"].assessment.matched
 
         replay = await service.start(_USER_ID, _PROFILE_ID, None, "itest-key-1")
         assert replay.run_id == accepted.run_id
