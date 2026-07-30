@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import hashlib
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
 from typing import cast
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from jobpicky.contracts import CollectedJob, CollectionBatch
 from jobpicky.contracts.common import JsonObject
@@ -30,6 +32,23 @@ class UnsupportedLink:
 class PipelineResult:
     batch: CollectionBatch
     unsupported: list[UnsupportedLink]
+
+
+def source_id_for_entry(company_name: str, url: str) -> str:
+    parts = urlsplit(url.strip())
+    path = parts.path.rstrip("/") or "/"
+    query = urlencode(sorted(parse_qsl(parts.query, keep_blank_values=True)), doseq=True)
+    hostname = (parts.hostname or "").lower()
+    port = parts.port
+    netloc = hostname
+    if port and not (
+        (parts.scheme.lower() == "http" and port == 80)
+        or (parts.scheme.lower() == "https" and port == 443)
+    ):
+        netloc = f"{hostname}:{port}"
+    normalized_url = urlunsplit((parts.scheme.lower(), netloc, path, query, ""))
+    evidence = f"{company_name.strip().casefold()}\n{normalized_url}"
+    return f"entry-{hashlib.sha256(evidence.encode()).hexdigest()[:20]}"
 
 
 def _value(fields: Mapping[str, object], name: str) -> object | None:
@@ -198,10 +217,23 @@ def run_pipeline(source_id: str, rows: Sequence[SpreadsheetRow]) -> PipelineResu
     )
 
 
+def run_pipeline_by_source(rows: Sequence[SpreadsheetRow]) -> list[PipelineResult]:
+    grouped: dict[str, list[SpreadsheetRow]] = {}
+    for row in rows:
+        if row.company_name is None:
+            continue
+        for url in row.apply_links:
+            source_id = source_id_for_entry(row.company_name, url)
+            grouped.setdefault(source_id, []).append(replace(row, apply_links=[url]))
+    return [run_pipeline(source_id, source_rows) for source_id, source_rows in grouped.items()]
+
+
 __all__ = [
     "PARSERS",
     "PipelineResult",
     "UnsupportedLink",
     "merge_job_fields",
     "run_pipeline",
+    "run_pipeline_by_source",
+    "source_id_for_entry",
 ]

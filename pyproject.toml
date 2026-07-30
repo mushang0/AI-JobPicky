@@ -39,7 +39,7 @@ jobpicky = ["py.typed"]
 
 [tool.pytest.ini_options]
 addopts = "-q"
-pythonpath = ["src"]
+pythonpath = ["src", "tests"]
 testpaths = ["tests"]
 
 [tool.ruff]
@@ -53,8 +53,13 @@ select = ["B", "E", "F", "I", "SIM", "UP"]
 python_version = "3.11"
 check_untyped_defs = true
 disallow_any_generics = true
+follow_imports_for_stubs = true
 no_implicit_optional = true
 pretty = true
 strict_equality = true
 warn_redundant_casts = true
 warn_unused_ignores = true
+
+[[tool.mypy.overrides]]
+module = ["numpy", "numpy.*"]
+follow_imports = "skip"
