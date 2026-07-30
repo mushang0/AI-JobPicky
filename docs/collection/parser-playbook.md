@@ -123,6 +123,28 @@ uv run python scripts/verify_parser_pipeline.py \
 - Fixture：`tests/collection/fixtures/wechat_article.html`；回归：
   `tests/collection/test_wechat_parser.py`。
 
+## 智联招聘（ZHAOPIN）
+
+- 常见入口分为 Grace 自定义站、`/zk/` 招考站、智联校园服务端渲染页和移动端详情页；先
+  跟随公开重定向，再按最终页面选择入口，登录页不作为岗位事实。
+- Grace 页面从同域公开 JavaScript 的 `globalData` 发现 `companyId`、`xiaozhaoId` 和
+  `scene`，调用 `POST https://fe.zhaopin.com/grace/api/dsc/search-job-list`。旧版页面的
+  岗位源 ID 可能只写在公开组件 bundle 中，解析器动态发现它，并兼容 `orgNumbers` 的
+  数组/字符串形态和 `jobSource` 的 1/2 两种公开值；按 `pageInfo.totalPage` 翻页，最多
+  200 页。只保留接口中有岗位编号和标题的记录。
+- `/zk/` 使用公开 `GET site/portal/pc/site` 和 `POST
+  site/portal/pc/job-info/portal-list-reformc`；站点返回空岗位列表时保持失败，不用公告标题
+  冒充岗位。详情链接使用公开的前端岗位详情路由。
+- 智联校园详情优先读取 `window.__INITIAL_DATA__`；公司页中的招聘岗位列表也可直接使用。
+  移动详情读取公开的 `window.$positionData`，不解密、不调用登录态投递接口。职责要求从
+  HTML 字段转为文本，地点、学历、薪资和公开时间只在页面/API 明确给出时写入。
+- 当前样本全量回放：45 个去重来源中 23 个成功，1357 个岗位通过 schema 校验。其余主要
+  是公开接口明确返回空岗位、已失效的自定义页面、当前只剩公司介绍的页面，或重定向到登录
+  页；不把这些页面的招聘标题、表格摘要或历史岗位补成新的开放岗位。
+- Fixture：`tests/collection/fixtures/zhaopin_initial_data.html`、
+  `zhaopin_mobile_position.html`、`zhaopin_zk.html`；回归：
+  `tests/collection/test_zhaopin_parser.py`。
+
 ## 跨平台沉淀
 
 - 失败先分成链接分类、入口发现、列表/分页、详情请求和字段校验五类；同一 ATS 的公司
