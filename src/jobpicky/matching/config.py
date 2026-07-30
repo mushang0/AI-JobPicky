@@ -11,9 +11,9 @@ class MatchingConfig:
     semantic_weight: float = 0.5
     max_candidates: int = 50
     min_retrieval_score: float = 0.0
-    # Fills RunView.model_config_version until a real model configuration
-    # exists: honest marker that a run used only the deterministic baseline.
-    version: str = "baseline-v1"
+    # One version covers the embedding, evaluator, prompt/schema, and fusion
+    # choices used by the recommendation pipeline.
+    version: str = "recommendation-v1"
 
     def __post_init__(self) -> None:
         if self.keyword_weight < 0 or self.semantic_weight < 0:

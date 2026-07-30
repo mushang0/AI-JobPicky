@@ -32,7 +32,9 @@ from .common import (
 )
 from .matching import (
     Candidate,
+    EvaluationResponse,
     MatchAssessment,
+    MatchAssessmentResponse,
     RecommendationCandidate,
     RecommendationItem,
     validate_assessments,
@@ -45,6 +47,7 @@ __all__ = [
     "CollectionBatch",
     "ErrorBody",
     "ErrorCode",
+    "EvaluationResponse",
     "FilterExclusion",
     "FilterReasonCode",
     "FilterResult",
@@ -55,6 +58,7 @@ __all__ = [
     "JobQuery",
     "JobStatus",
     "MatchAssessment",
+    "MatchAssessmentResponse",
     "Page",
     "ProfileDraft",
     "ProfileSnapshot",

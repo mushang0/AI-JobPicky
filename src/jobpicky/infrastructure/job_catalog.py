@@ -6,6 +6,20 @@ import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+try:
+    from pgvector.sqlalchemy import Vector
+except ModuleNotFoundError:  # pragma: no cover - only used by dependency-light offline tests
+
+    class Vector(sa.types.UserDefinedType[object]):  # type: ignore[no-redef]
+        cache_ok = True
+
+        def __init__(self, dimension: int) -> None:
+            self.dimension = dimension
+
+        def get_col_spec(self, **_: object) -> str:
+            return f"vector({self.dimension})"
+
+
 from ..catalog import apply_filter, extract_terms, term_hit_score
 from ..contracts import (
     CollectionBatch,
@@ -18,6 +32,7 @@ from ..contracts import (
     SearchHit,
 )
 from ..errors import ApplicationError
+from ..ports import EmbeddingPort
 
 # Lightweight Core mapping of the job table for read queries. The Alembic
 # migrations remain the single source of truth for the schema (plan 003).
@@ -45,6 +60,7 @@ JOB_TABLE = sa.table(
     sa.column("first_seen_at", sa.DateTime(timezone=True)),
     sa.column("last_confirmed_at", sa.DateTime(timezone=True)),
     sa.column("updated_at", sa.DateTime(timezone=True)),
+    sa.column("embedding", Vector(512)),
 )
 
 
@@ -83,13 +99,23 @@ class PostgresJobCatalog:
     single source of deterministic, offline-testable logic beats SQL pushdown
     (plan 003, decision 2).
 
-    ingest belongs to the collection slice and semantic_search waits on the
-    embedding vendor decision (architecture section 7.3); both fail
-    explicitly instead of faking capability.
+    ingest belongs to the collection slice and is still an explicit failure in
+    this slice. Semantic search is backed by the injected embedding port and
+    the pgvector index added by migration 0005.
     """
 
-    def __init__(self, session_factory: async_sessionmaker[AsyncSession]) -> None:
+    def __init__(
+        self,
+        session_factory: async_sessionmaker[AsyncSession],
+        embedding: EmbeddingPort | None = None,
+        *,
+        semantic_limit: int = 50,
+    ) -> None:
         self._session_factory = session_factory
+        self._embedding = embedding
+        if semantic_limit < 1:
+            raise ValueError("semantic_limit must be at least 1")
+        self._semantic_limit = semantic_limit
 
     async def ingest(self, run_id: str, batch: CollectionBatch) -> IngestionResult:
         raise ApplicationError(
@@ -137,12 +163,51 @@ class PostgresJobCatalog:
         query_text: str,
         eligible_job_ids: Sequence[str],
     ) -> list[SearchHit]:
-        raise ApplicationError(
-            ErrorCode.DEPENDENCY_UNAVAILABLE,
-            "semantic search is not available: embedding vendor is not selected "
-            "and the job.embedding column does not exist yet",
-            status_code=503,
+        if not eligible_job_ids or not query_text.strip():
+            return []
+        if self._embedding is None:
+            raise ApplicationError(
+                ErrorCode.DEPENDENCY_UNAVAILABLE,
+                "semantic search requires a configured embedding dependency",
+                status_code=503,
+                details={"dependency": "embedding", "stage": "RETRIEVE"},
+            )
+
+        query_vector = await self._embedding.embed_query(query_text)
+        if len(query_vector) != 512:
+            raise ApplicationError(
+                ErrorCode.DEPENDENCY_UNAVAILABLE,
+                "embedding query vector has an invalid dimension",
+                status_code=503,
+                details={"dependency": "embedding", "expected_dimension": 512},
+            )
+
+        # Use the pgvector cosine-distance operator directly so the query is
+        # identical with or without the optional Python comparator helper.
+        distance = JOB_TABLE.c.embedding.op("<=>", return_type=sa.Float())(query_vector).label(
+            "distance"
         )
+        async with self._session_factory() as session:
+            result = await session.execute(
+                sa.select(JOB_TABLE.c.id, distance)
+                .where(
+                    JOB_TABLE.c.id.in_(eligible_job_ids),
+                    JOB_TABLE.c.embedding.is_not(None),
+                )
+                .order_by(distance.asc(), JOB_TABLE.c.id.asc())
+                .limit(self._semantic_limit)
+            )
+            rows = result.mappings().all()
+
+        return [
+            SearchHit(
+                job_id=row.id,
+                score=max(0.0, min(1.0, 1.0 - float(row.distance))),
+                channel=RetrievalChannel.SEMANTIC,
+            )
+            for row in rows
+            if row.distance is not None
+        ]
 
 
 __all__ = ["JOB_TABLE", "PostgresJobCatalog", "row_to_job_fact"]

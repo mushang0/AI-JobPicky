@@ -1,7 +1,7 @@
 from inspect import signature
 from typing import get_type_hints
 
-from jobpicky.contracts import Page, RecommendationCandidate
+from jobpicky.contracts import Page, RecommendationItem
 from jobpicky.ports import (
     AdminJobQueryPort,
     AdminRecommendationRunQueryPort,
@@ -31,11 +31,9 @@ def test_user_run_queries_are_paginated_and_user_scoped() -> None:
     ]
 
 
-def test_get_results_returns_recommendation_candidates() -> None:
-    # Pre-evaluation results are RecommendationCandidate; RecommendationItem
-    # only exists once an evaluator produces matched assessments.
+def test_get_results_returns_final_recommendation_items() -> None:
     hints = get_type_hints(RecommendationOrchestratorPort.get_results)
-    assert hints["return"] == Page[RecommendationCandidate]
+    assert hints["return"] == Page[RecommendationItem]
 
 
 def test_crawl_history_is_paginated_and_admin_scoped() -> None:
