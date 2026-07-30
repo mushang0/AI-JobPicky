@@ -1,0 +1,88 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["profile", "candidates"],
+  "properties": {
+    "profile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "target_locations",
+        "target_roles",
+        "skills",
+        "excluded_roles",
+        "education",
+        "graduation_year",
+        "expected_salary_min",
+        "experience_summary",
+        "warnings",
+        "extra_request"
+      ],
+      "properties": {
+        "target_locations": {"type": "array", "items": {"type": "string"}},
+        "target_roles": {"type": "array", "items": {"type": "string"}},
+        "skills": {"type": "array", "items": {"type": "string"}},
+        "excluded_roles": {"type": "array", "items": {"type": "string"}},
+        "education": {"type": ["string", "null"]},
+        "graduation_year": {"type": ["integer", "null"]},
+        "expected_salary_min": {"type": ["integer", "null"], "minimum": 0},
+        "experience_summary": {"type": ["string", "null"]},
+        "warnings": {"type": "array", "items": {"type": "string"}},
+        "extra_request": {"type": ["string", "null"]}
+      }
+    },
+    "candidates": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "job_id",
+          "retrieval_score",
+          "keyword_score",
+          "semantic_score",
+          "sources",
+          "job"
+        ],
+        "properties": {
+          "job_id": {"type": "string", "minLength": 1},
+          "retrieval_score": {"type": "number", "minimum": 0, "maximum": 1},
+          "keyword_score": {"type": ["number", "null"], "minimum": 0, "maximum": 1},
+          "semantic_score": {"type": ["number", "null"], "minimum": 0, "maximum": 1},
+          "sources": {"type": "array", "items": {"type": "string", "minLength": 1}},
+          "job": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "company_name",
+              "title",
+              "locations",
+              "description",
+              "recruitment_type",
+              "education_requirement",
+              "salary_min",
+              "salary_max",
+              "salary_months",
+              "graduation_years"
+            ],
+            "properties": {
+              "id": {"type": "string", "minLength": 1},
+              "company_name": {"type": "string", "minLength": 1},
+              "title": {"type": "string", "minLength": 1},
+              "locations": {"type": "array", "items": {"type": "string", "minLength": 1}},
+              "description": {"type": ["string", "null"]},
+              "recruitment_type": {"type": ["string", "null"]},
+              "education_requirement": {"type": ["string", "null"]},
+              "salary_min": {"type": ["integer", "null"], "minimum": 0},
+              "salary_max": {"type": ["integer", "null"], "minimum": 0},
+              "salary_months": {"type": ["integer", "null"], "minimum": 1},
+              "graduation_years": {"type": "array", "items": {"type": "integer"}}
+            }
+          }
+        }
+      }
+    }
+  }
+}

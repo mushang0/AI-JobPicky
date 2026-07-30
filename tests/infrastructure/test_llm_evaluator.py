@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from typing import cast
 
 import pytest
 from catalog.factories import make_job
@@ -8,6 +9,11 @@ from matching.factories import make_profile
 
 from jobpicky.contracts import Candidate, ErrorCode, RetrievalChannel
 from jobpicky.errors import ApplicationError
+from jobpicky.infrastructure.evaluation_resources import (
+    load_evaluation_input_schema,
+    load_evaluation_output_schema,
+    load_evaluation_prompt,
+)
 from jobpicky.infrastructure.llm_evaluator import DashScopeJobEvaluator
 
 
@@ -19,13 +25,28 @@ def _candidate(job_id: str = "job-1") -> Candidate:
     )
 
 
+def test_evaluation_prompt_and_schemas_are_external_resources() -> None:
+    prompt = load_evaluation_prompt()
+    input_schema = load_evaluation_input_schema()
+    output_schema = load_evaluation_output_schema()
+
+    assert "{{INPUT_SCHEMA}}" not in prompt
+    assert "{{OUTPUT_SCHEMA}}" not in prompt
+    assert "target_locations" in prompt
+    assert "assessments" in prompt
+    assert input_schema["required"] == ["profile", "candidates"]
+    assert set(output_schema["properties"]) == {"assessments"}
+
+
 class FakeChat:
     def __init__(self, response: object) -> None:
         self.response = response
         self.calls = 0
+        self.messages: list[object] = []
 
     async def ainvoke(self, messages: object) -> object:
         self.calls += 1
+        self.messages.append(messages)
         if isinstance(self.response, Exception):
             raise self.response
         return self.response
@@ -56,6 +77,9 @@ def test_evaluator_accepts_only_strict_assessment_json() -> None:
         )
         assert result[0].job_id == "job-1"
         assert chat.calls == 1
+        system_message = cast(list[tuple[str, str]], chat.messages[0])[0][1]
+        assert "{{INPUT_SCHEMA}}" not in system_message
+        assert "target_locations" in system_message
 
     asyncio.run(check())
 
