@@ -20,10 +20,15 @@ Use Ponytail throughout. This is a developer-triggered workflow; never schedule 
 4. Inspect only public pages. Prefer a stable public API, then embedded JSON, then server HTML.
    Use command-line HTTP and deterministic code first. Browser-control skills are an exploration
    fallback only when those methods cannot reveal a platform's runtime structure; use them to learn
-   the minimum DOM/API behavior, never as the production or batch parser. Stop at login, CAPTCHA,
-   access control, or unstable private mechanisms.
+   the minimum DOM/API behavior, including rendered navigation links and page-config routes when a
+   homepage must be opened before the job list. Never use the browser as the production or batch
+   parser. Stop at login, CAPTCHA, access control, or unstable private mechanisms.
 5. Make the smallest change. Do not change public contracts, add an Agent framework or dependency,
-   refactor unrelated code, or claim unsupported pagination/templates are complete.
+   refactor unrelated code, or claim unsupported pagination/templates are complete. Keep concurrency
+   bounded and configurable; verify the default against a 200–300 job fixture instead of making it
+   unbounded.
+   When a discovered list route returns no links, retry without stale listing filters while preserving
+   tracking parameters; never hardcode a tenant or company-specific route.
 6. Add one minimal sanitized fixture and focused tests for the successful path and the important
    unsupported/error boundary.
    For a manual review, run `scripts/verify_parser_pipeline.py --platform <PLATFORM>`;

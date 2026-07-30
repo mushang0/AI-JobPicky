@@ -97,6 +97,22 @@ def test_one_sheet_row_creates_one_collected_job_per_website_job(monkeypatch) ->
     assert result.unsupported == []
 
 
+def test_feishu_link_uses_the_platform_parser(monkeypatch) -> None:
+    monkeypatch.setattr(
+        pipeline,
+        "parse_feishu",
+        lambda _: [{"source_job_id": "feishu-1", "title": "飞书岗位"}],
+    )
+
+    result = run_pipeline(
+        "source-1",
+        [make_row("https://acme.jobs.feishu.cn/531403/position/list")],
+    )
+
+    assert [item.source_job_id for item in result.batch.items] == ["feishu-1"]
+    assert result.batch.complete is True
+
+
 def test_unsupported_link_is_recorded_with_row_and_reason() -> None:
     result = run_pipeline("source-1", [make_row("https://app.mokahr.com/campus-recruitment/acme")])
 

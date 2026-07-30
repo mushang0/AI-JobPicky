@@ -196,6 +196,37 @@ PR 或等价评审说明只需回答：
 有什么已知风险或未完成项？
 ```
 
+### 已验证的 GitHub 发布路径
+
+下次需要从本地分支提交、推送、开 PR 并合并到 `main` 时，先从仓库根目录执行；路径不确定
+时用 `git rev-parse --show-toplevel` 定位，避免在错误目录运行 Git 命令：
+
+```bash
+cd "$(git rev-parse --show-toplevel)"
+git status -sb
+git diff --check
+uv run ruff check .
+uv run ruff format --check .
+uv run mypy src tests
+uv run pytest
+git add <本次改动文件>
+git commit -m "fix: <简短描述>"
+git push -u origin "$(git branch --show-current)"
+gh pr create --base main --head "$(git branch --show-current)" \
+  --title "<PR 标题>" --body-file /tmp/jobpicky-pr.md
+gh pr checks <PR编号> --watch
+gh pr merge <PR编号> --squash --delete-branch
+git switch main
+git pull --ff-only origin main
+git branch -d <已合并分支>
+git push origin --delete <已合并分支>
+```
+
+`gh auth status` 用于确认 GitHub 登录状态；`git branch -d` 删除本地分支，`git push
+origin --delete` 删除远端分支。合并前先确认 PR 检查通过；如果 PR 已启用自动合并或仓库策略
+不允许 CLI 合并，改在 GitHub 页面完成合并后再执行最后三条清理命令。不要用 `git add .`
+带入不属于本次任务的生成物或其他人的改动。
+
 Worktree 是并行任务的可选隔离手段，不是完成任务的要求。任务结束后再删除对应 Worktree 和分支，删除前确认改动已提交或不再需要。
 
 ## 8. 公共契约变更
