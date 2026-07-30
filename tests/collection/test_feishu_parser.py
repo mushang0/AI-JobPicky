@@ -1,4 +1,6 @@
 import json
+import threading
+import time
 from pathlib import Path
 
 import pytest
@@ -94,6 +96,110 @@ def test_feishu_listing_deduplicates_links() -> None:
     links = discover_detail_urls("https://momenta.jobs.feishu.cn/campus/", lambda _: html)
 
     assert links == ["https://momenta.jobs.feishu.cn/campus/position/101/detail"]
+
+
+def test_feishu_listing_follows_rendered_position_navigation() -> None:
+    root_url = "https://radrocktech.jobs.feishu.cn/531403/?spread=Q13728Z"
+    root_html = '<a href="/531403/position/list">职位</a>'
+    listing_html = '<a href="/531403/position/101/detail?spread=Q13728Z">岗位一</a>'
+    rendered: list[str] = []
+
+    def render(url: str) -> str:
+        rendered.append(url)
+        return root_html if url == root_url else listing_html
+
+    def fetch(api_url: str, _website_path: str) -> object:
+        response = fixture_response()
+        detail = response["data"]["job_post_detail"]  # type: ignore[index]
+        detail["id"] = api_url.split("/job/posts/", 1)[1].split("?", 1)[0]
+        detail["title"] = "岗位一"
+        return response
+
+    jobs = parse(root_url, fetch, render)
+
+    assert [job["source_job_id"] for job in jobs] == ["101"]
+    assert any("/531403/position/list" in url for url in rendered)
+    assert all("spread=Q13728Z" in url for url in rendered if "/position/list" in url)
+
+
+def test_feishu_listing_can_find_a_route_in_page_configuration() -> None:
+    root_url = "https://kwh0jtf778.jobs.feishu.cn/229043/"
+    root_html = '<script type="application/json">{"path":"/position/list"}</script>'
+    listing_html = '<a href="/229043/position/101/detail">岗位一</a>'
+
+    def fetch(api_url: str, _website_path: str) -> object:
+        response = fixture_response()
+        detail = response["data"]["job_post_detail"]  # type: ignore[index]
+        detail["id"] = api_url.split("/job/posts/", 1)[1].split("?", 1)[0]
+        return response
+
+    jobs = parse(
+        root_url,
+        fetch,
+        lambda url: root_html if url == root_url else listing_html,
+    )
+
+    assert [job["source_job_id"] for job in jobs] == ["101"]
+
+
+def test_feishu_listing_retries_without_stale_listing_filters() -> None:
+    root_url = "https://tarsrobot.jobs.feishu.cn/021343/?project=stale&spread=track"
+    root_html = '<script type="application/json">{"path":"/position/list"}</script>'
+    listing_html = '<a href="/021343/position/101/detail?spread=track">岗位一</a>'
+    rendered: list[str] = []
+
+    def render(url: str) -> str:
+        rendered.append(url)
+        return root_html if url == root_url else ("" if "project=stale" in url else listing_html)
+
+    links = discover_detail_urls(root_url, render)
+
+    assert links == ["https://tarsrobot.jobs.feishu.cn/021343/position/101/detail?spread=track"]
+    assert any("project=stale" in url for url in rendered)
+    assert any("spread=track" in url and "project=stale" not in url for url in rendered)
+
+
+def test_feishu_listing_reads_direct_cards_from_a_project_page() -> None:
+    url = "https://tarsrobot.jobs.feishu.cn/021343/?keywords=&project=&current=1&limit=10"
+    html = """
+    <a>招聘项目</a>
+    <a href="/021343/position/101/detail">岗位一</a>
+    <a href="/021343/position/102/detail">岗位二</a>
+    """
+
+    def fetch(api_url: str, _website_path: str) -> object:
+        response = fixture_response()
+        detail = response["data"]["job_post_detail"]  # type: ignore[index]
+        detail["id"] = api_url.split("/job/posts/", 1)[1].split("?", 1)[0]
+        detail["title"] = f"岗位{detail['id']}"
+        return response
+
+    jobs = parse(url, fetch, lambda _: html)
+
+    assert [job["source_job_id"] for job in jobs] == ["101", "102"]
+
+
+def test_feishu_listing_uses_more_parallel_detail_requests() -> None:
+    html = "".join(f'<a href="/021343/position/{number}/detail">岗位</a>' for number in range(240))
+    state = {"active": 0, "maximum": 0}
+    lock = threading.Lock()
+
+    def fetch(api_url: str, _website_path: str) -> object:
+        with lock:
+            state["active"] += 1
+            state["maximum"] = max(state["maximum"], state["active"])
+        time.sleep(0.01)
+        with lock:
+            state["active"] -= 1
+        response = fixture_response()
+        detail = response["data"]["job_post_detail"]  # type: ignore[index]
+        detail["id"] = api_url.split("/job/posts/", 1)[1].split("?", 1)[0]
+        return response
+
+    jobs = parse("https://tarsrobot.jobs.feishu.cn/021343/", fetch, lambda _: html)
+
+    assert len(jobs) == 240
+    assert state["maximum"] >= 8
 
 
 def test_feishu_listing_reports_missing_browser() -> None:

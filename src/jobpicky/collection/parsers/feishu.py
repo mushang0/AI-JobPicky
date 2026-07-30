@@ -5,7 +5,6 @@ import os
 import re
 import shutil
 import subprocess
-import time
 from collections.abc import Callable, Mapping
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
@@ -14,7 +13,24 @@ from pathlib import Path
 from urllib.parse import parse_qsl, urlencode, urljoin, urlsplit, urlunsplit
 from urllib.request import Request, urlopen
 
-_DETAIL_RE = re.compile(r"/(?:[^/?#]+/)?position/(\d+)/detail/?$")
+_DETAIL_RE = re.compile(r"(?:^|/)position/(\d+)/detail/?$", re.IGNORECASE)
+_LIST_RE = re.compile(r"(?:^|/)position/list/?$", re.IGNORECASE)
+_LIST_IN_TEXT_RE = re.compile(r"/(?:[^/?#\"'\\]+/)?position/list/?", re.IGNORECASE)
+_LISTING_FILTER_KEYS = frozenset(
+    {
+        "keywords",
+        "category",
+        "location",
+        "project",
+        "type",
+        "job_hot_flag",
+        "current",
+        "limit",
+        "functionCategory",
+        "tag",
+        "sessionid",
+    }
+)
 _CHROMIUM_ENV = "JOBPICKY_CHROMIUM_PATH"
 _CHROMIUM_CANDIDATES = (
     "chromium",
@@ -26,7 +42,8 @@ _MAC_CHROME = Path("/Applications/Google Chrome.app/Contents/MacOS/Google Chrome
 _PAGE_SIZE = 100
 _MAX_PAGES = 100
 _WORKERS_ENV = "JOBPICKY_FEISHU_WORKERS"
-_DEFAULT_WORKERS = 4
+_DEFAULT_WORKERS = 16
+_MAX_WORKERS = 32
 
 
 class ClosedJobError(ValueError):
@@ -41,18 +58,25 @@ class BrowserRenderError(RuntimeError):
     pass
 
 
-class _DetailLinkParser(HTMLParser):
+class _RenderedPageParser(HTMLParser):
     def __init__(self, page_url: str) -> None:
         super().__init__()
         self.page_url = page_url
-        self.links: list[str] = []
+        self.detail_links: list[str] = []
+        self.list_links: list[str] = []
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         if tag != "a":
             return
         href = dict(attrs).get("href")
-        if href and _DETAIL_RE.search(urlsplit(href).path):
-            self.links.append(urljoin(self.page_url, href))
+        if not href:
+            return
+        path = urlsplit(href).path
+        absolute_url = urljoin(self.page_url, href)
+        if _DETAIL_RE.search(path):
+            self.detail_links.append(absolute_url)
+        elif _LIST_RE.search(path):
+            self.list_links.append(absolute_url)
 
 
 def _chromium_path() -> str:
@@ -131,23 +155,117 @@ def _listing_page_url(url: str, page: int) -> str:
     return urlunsplit((parts.scheme, parts.netloc, parts.path, urlencode(query), ""))
 
 
+def _url_equivalent(left: str, right: str) -> bool:
+    left_parts = urlsplit(left)
+    right_parts = urlsplit(right)
+    return (
+        left_parts.scheme.lower(),
+        left_parts.netloc.lower(),
+        left_parts.path.rstrip("/") or "/",
+        sorted(parse_qsl(left_parts.query, keep_blank_values=True)),
+    ) == (
+        right_parts.scheme.lower(),
+        right_parts.netloc.lower(),
+        right_parts.path.rstrip("/") or "/",
+        sorted(parse_qsl(right_parts.query, keep_blank_values=True)),
+    )
+
+
+def _with_source_query(source_url: str, target_url: str) -> str | None:
+    source = urlsplit(source_url)
+    target = urlsplit(target_url)
+    if source.netloc.lower() != target.netloc.lower():
+        return None
+    query = dict(parse_qsl(source.query, keep_blank_values=True))
+    query.update(parse_qsl(target.query, keep_blank_values=True))
+    return urlunsplit(
+        (
+            target.scheme or source.scheme,
+            target.netloc,
+            target.path,
+            urlencode(query),
+            "",
+        )
+    )
+
+
+def _without_listing_filters(url: str) -> str:
+    parts = urlsplit(url)
+    query = [
+        (key, value)
+        for key, value in parse_qsl(parts.query, keep_blank_values=True)
+        if key not in _LISTING_FILTER_KEYS
+    ]
+    return urlunsplit((parts.scheme, parts.netloc, parts.path, urlencode(query), ""))
+
+
+def _portal_route_url(source_url: str, route_path: str) -> str:
+    """Resolve a config route against the portal prefix without tenant constants."""
+    source = urlsplit(source_url)
+    path = route_path
+    if path == "/position/list":
+        segments = [segment for segment in source.path.split("/") if segment]
+        if segments:
+            path = f"/{segments[0]}{path}"
+    return urlunsplit((source.scheme, source.netloc, path, "", ""))
+
+
+def _listing_candidates(source_url: str, html: str, page: _RenderedPageParser) -> list[str]:
+    candidates = list(page.list_links)
+    for match in _LIST_IN_TEXT_RE.finditer(html):
+        candidates.append(_portal_route_url(source_url, match.group(0)))
+
+    result: list[str] = []
+    for candidate in candidates:
+        with_source_query = _with_source_query(source_url, candidate)
+        if with_source_query is None:
+            continue
+        for variant in (with_source_query, _without_listing_filters(with_source_query)):
+            if variant not in result:
+                result.append(variant)
+    return result
+
+
 def discover_detail_urls(url: str, render: Callable[[str], str] = render_html) -> list[str]:
-    discovered: list[str] = []
-    seen: set[str] = set()
-    for page in range(1, _MAX_PAGES + 1):
-        page_url = _listing_page_url(url, page)
-        parser = _DetailLinkParser(page_url)
-        parser.feed(render(page_url))
-        page_links = list(dict.fromkeys(parser.links))
-        new_links = [link for link in page_links if link not in seen]
-        if not new_links:
-            break
-        discovered.extend(new_links)
-        seen.update(new_links)
-        if len(page_links) < _PAGE_SIZE:
-            break
-        time.sleep(1)
-    return discovered
+    """Find detail links, following the rendered Feishu job-list route if needed."""
+    initial_html = render(url)
+    initial_page = _RenderedPageParser(url)
+    initial_page.feed(initial_html)
+
+    listing_urls: list[str]
+    if initial_page.detail_links:
+        listing_urls = [url]
+    else:
+        listing_urls = _listing_candidates(url, initial_html, initial_page)
+        if not listing_urls:
+            return []
+
+    for listing_url in listing_urls:
+        discovered: list[str] = []
+        seen: set[str] = set()
+        first_page_url = _listing_page_url(listing_url, 1)
+        first_page_html = (
+            initial_html if _url_equivalent(first_page_url, url) else render(first_page_url)
+        )
+
+        for page_number in range(1, _MAX_PAGES + 1):
+            page_url = _listing_page_url(listing_url, page_number)
+            html = first_page_html if page_number == 1 else render(page_url)
+            parser = _RenderedPageParser(page_url)
+            parser.feed(html)
+            page_links = list(dict.fromkeys(parser.detail_links))
+            if page_number == 1 and not page_links and initial_page.detail_links:
+                page_links = list(dict.fromkeys(initial_page.detail_links))
+            new_links = [link for link in page_links if link not in seen]
+            if not new_links:
+                break
+            discovered.extend(new_links)
+            seen.update(new_links)
+            if len(page_links) < _PAGE_SIZE:
+                break
+        if discovered:
+            return discovered
+    return []
 
 
 def _name(value: object) -> str | None:
@@ -171,7 +289,10 @@ def _recruitment_type(detail: Mapping[str, object]) -> str | None:
 def _published_at(value: object) -> datetime | None:
     if not isinstance(value, (int, float)):
         return None
-    published_at = datetime.fromtimestamp(value / 1000, tz=UTC)
+    try:
+        published_at = datetime.fromtimestamp(value / 1000, tz=UTC)
+    except (OSError, OverflowError, ValueError):
+        return None
     return published_at if 2000 <= published_at.year < 2200 else None
 
 
@@ -247,6 +368,8 @@ def _worker_count() -> int:
         raise ValueError(f"{_WORKERS_ENV} must be an integer") from exc
     if workers < 1:
         raise ValueError(f"{_WORKERS_ENV} must be at least 1")
+    if workers > _MAX_WORKERS:
+        raise ValueError(f"{_WORKERS_ENV} must be at most {_MAX_WORKERS}")
     return workers
 
 
@@ -266,7 +389,7 @@ def parse(
             return None
 
     detail_urls = discover_detail_urls(url, render)
-    with ThreadPoolExecutor(max_workers=_worker_count()) as executor:
+    with ThreadPoolExecutor(max_workers=min(_worker_count(), max(len(detail_urls), 1))) as executor:
         return [job for job in executor.map(parse_open_job, detail_urls) if job is not None]
 
 

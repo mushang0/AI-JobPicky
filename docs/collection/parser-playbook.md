@@ -53,10 +53,26 @@ uv run python scripts/verify_parser_pipeline.py \
 - 列表接口需要前端 `_signature`，不复制混淆签名。使用 Chromium CLI 执行官网
   JavaScript、提取详情链接；详情仍走 HTTP API。
 - 列表按 `current`、`limit=100` 翻页并去重；无新链接或不足一页时停止。
-- 详情默认 4 路线程并发；用 `JOBPICKY_FEISHU_WORKERS=1` 串行，遇限流时降低，不做
-  无界并发。
+- 首页可能只渲染“职位”导航，真实岗位列表在同域 `/position/list`；也可能直接渲染
+  “招聘项目”和岗位卡片。先从渲染后的 DOM 或页面配置发现详情链接，没有详情链接时再
+  跟进列表路由；不写死租户 ID 或 `spread` 值。默认继承入口查询参数；若继承的岗位筛选
+  导致列表为空，再移除 `project`、`keywords` 等列表状态参数重试，但保留 `spread` 等
+  追踪参数。
+- 详情默认 16 路线程并发，`JOBPICKY_FEISHU_WORKERS` 可在 1–32 之间调节；遇限流时
+  降低，不做无界并发。
 - Chromium 通过 `JOBPICKY_CHROMIUM_PATH` 配置；缺失或渲染超时应明确失败。
-- 2026-07-30 全量样本：33 个来源中 27 个成功，解析并校验 1381 个岗位；关闭岗位和
-  无效入口保留为失败证据。
+- 2026-07-31 重跑样本：33 个来源中 31 个成功，本轮快照解析并校验 1901 个岗位；它石
+  智航入口因失效项目筛选由无筛选兜底恢复，剩余失败为一次详情请求超时和一个关闭岗位。
 - Fixture：`tests/collection/fixtures/feishu_detail.json`；回归：
   `tests/collection/test_feishu_parser.py`。
+
+## 跨平台沉淀
+
+- 失败先分成链接分类、入口发现、列表/分页、详情请求和字段校验五类；同一 ATS 的公司
+  差异优先沉淀为入口参数或发现逻辑，不复制公司专属解析器。
+- 数据入口优先级为公开 API、内嵌 JSON、服务端 HTML、JavaScript 渲染 DOM；浏览器用于
+  调查和找路，批量采集复用已验证的稳定入口。
+- 无法证明分页完整、空结果真实性或详情请求完整时，保持失败/部分成功，不把空列表当作
+  成功，也不关闭历史岗位。
+- 每个平台保留最小脱敏 Fixture，覆盖列表、详情、分页和关键失败边界；不得保存 Cookie、
+  Token、完整响应或个人联系方式。
