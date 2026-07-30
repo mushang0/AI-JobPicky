@@ -66,6 +66,30 @@ uv run python scripts/verify_parser_pipeline.py \
 - Fixture：`tests/collection/fixtures/feishu_detail.json`；回归：
   `tests/collection/test_feishu_parser.py`。
 
+## Hotjob 招聘（HOTJOB）
+
+- 域名：`hotjob.cn`；同一类型下同时存在 `wecruit` 的 PB/MC 套件、租户根入口、现代
+  移动站和旧式 `/wt/` 页面，不能只按链接路径选择一种接口。
+- 新套件使用公开表单 `POST /wecruit/positionInfo/listPosition/<suite>`，请求体的
+  `recruitType` 使用数字代码（1 校招、2 社招、12 实习、13 海外）；详情使用同域
+  `POST /wecruit/positionInfo/listPositionDetail/<suite>`。请求体必须是
+  `application/x-www-form-urlencoded`，不能发送 JSON。
+- 现代移动站从公开 HTML 的脚本配置读取套件和公开请求头，再用 GET 列表接口；不执行
+  浏览器 JavaScript。租户根入口先调用 `wecruit/common/getSLD`，HTTP 入口失败时只重试
+  同域 HTTPS；根入口没有招聘类型时按公开接口逐类探测，但不把空列表当成成功。
+- 列表按 `totalPage` 翻页并去重，最多 200 页；详情请求默认 8 路并发，
+  `JOBPICKY_HOTJOB_WORKERS` 可在 1–16 之间调节。详情暂时不可用时保留列表中已确认的
+  岗位事实，并在 metadata 写入 `detail_status=unavailable-fallback`；详情明确返回关闭
+  状态时不把它当成新的开放事实。
+- 旧式 `/wt/` 页面从服务端 HTML 中读取公开列表/详情接口路径和 `recruitType`，再按
+  `pageCount` 读取 JSON；接口中的 `operational` 参数只在运行时从当前页面读取，不写入
+  Fixture 或代码。
+- 当前样本全量回放：59 个来源中 52 个成功，3853 个岗位通过 schema 校验。剩余 7 个
+  为公开接口明确关闭的官网、已失效/关闭的直达岗位，或当前实习入口确实返回空列表；不
+  用其他招聘类型的岗位替代这些链接。
+- Fixture：`tests/collection/fixtures/hotjob_list.json`、`hotjob_detail.json`；回归：
+  `tests/collection/test_hotjob_parser.py`。
+
 ## 跨平台沉淀
 
 - 失败先分成链接分类、入口发现、列表/分页、详情请求和字段校验五类；同一 ATS 的公司

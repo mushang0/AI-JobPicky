@@ -1,0 +1,25 @@
+{
+  "state": "200",
+  "type": "json",
+  "data": {
+    "pageForm": {
+      "currentPage": 1,
+      "dataCount": 1,
+      "pageData": [
+        {
+          "postId": "post-001",
+          "postName": "软件工程师",
+          "workPlaceStr": "北京、苏州",
+          "recruitType": 1,
+          "educationStr": "本科及以上",
+          "publishDate": "2026-07-01 09:00:00",
+          "endDate": "2026-08-31 23:59:59",
+          "company": "示例公司",
+          "projectName": "2026校园招聘"
+        }
+      ],
+      "pageSize": 100,
+      "totalPage": 1
+    }
+  }
+}
