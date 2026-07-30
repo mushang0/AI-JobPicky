@@ -108,6 +108,21 @@ uv run python scripts/verify_parser_pipeline.py \
 - Fixture：`tests/collection/fixtures/moka_init_data.html`；回归：
   `tests/collection/test_moka_parser.py`。
 
+## 微信公众文章（WECHAT）
+
+- 主要入口是 `mp.weixin.qq.com/s/<article-id>`；解析器读取公开 HTML 中的
+  `#activity-name`、`#js_content` 和公开发布时间，不执行文章脚本，也不调用登录态接口。
+- 一篇文章对应一条“公告级岗位信息”记录，`source_job_id` 使用文章 ID；由于正文通常把
+  多个职位、条件和报名方式混在一起，当前不把段落臆拆成多个岗位。标题中可明确识别
+  `校招`、`社招`、`实习` 时才写 recruitment type，地点留给表格事实回退。
+- 正文最多保留 80,000 字，超出时 metadata 标记 `description_truncated`；HTML 响应最多
+  8 MiB。`weixin.qq.com/r/...`、企业微信个人页和在线表单不是公众文章，保持明确失败，
+  不把入口页当成岗位事实。
+- 当前样本全量回放：422 个来源中 407 个成功，407 条公告记录通过 schema 校验。剩余
+  15 个为文章已不可公开访问或链接本身不是公众文章。
+- Fixture：`tests/collection/fixtures/wechat_article.html`；回归：
+  `tests/collection/test_wechat_parser.py`。
+
 ## 跨平台沉淀
 
 - 失败先分成链接分类、入口发现、列表/分页、详情请求和字段校验五类；同一 ATS 的公司
