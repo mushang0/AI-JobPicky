@@ -1,0 +1,9 @@
+{
+  "code": 200,
+  "msg": "OK",
+  "data": {
+    "company_id": "company-guopin-1",
+    "project_id": "",
+    "title": "示例招聘平台"
+  }
+}

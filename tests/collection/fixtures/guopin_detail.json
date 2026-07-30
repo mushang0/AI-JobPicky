@@ -1,0 +1,21 @@
+{
+  "code": 200,
+  "msg": "OK",
+  "data": {
+    "job_id": "job-guopin-1",
+    "job_name": "测试岗位",
+    "company_id": "company-guopin-1",
+    "company_name": "示例集团",
+    "contents": "<p>负责公开示例工作。</p><p>任职要求：本科。</p>",
+    "district_list": [{"area_cn": "北京"}],
+    "education_cn": "本科",
+    "nature_cn": "校招",
+    "min_wage": 5000,
+    "max_wage": 7000,
+    "months": 13,
+    "wage_unit_cn": "元/月",
+    "create_time": "2026-07-01 09:00:00",
+    "end_time": "2026-08-01 23:59:59",
+    "status": 1
+  }
+}

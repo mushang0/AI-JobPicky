@@ -142,6 +142,27 @@ uv run python scripts/verify_parser_pipeline.py \
 - Fixture：`tests/collection/fixtures/wechat_article.html`；回归：
   `tests/collection/test_wechat_parser.py`。
 
+## 国聘（GUOPIN）
+
+- 普通详情使用公开 `GET https://gp-api.iguopin.com/api/jobs/v1/info?id=<岗位ID>`；查询键是
+  `id`，不是 `job_id`。公司页、关键词页和定制子域统一使用公开
+  `POST /api/jobs/v1/list`，岗位列表按 `page`、`page_size` 翻页；公司页本单位无岗位时再用
+  `company_id_with_sub` 读取公开的下级单位岗位。
+- `*.iguopin.com` 定制站先读取公开的
+  `GET /api/activity/exclusive/v1/info?domain=<子域>`，再使用配置返回的公司 ID。定制站的
+  页面只是 SPA 壳，不能把空 HTML 当岗位；`zp.iguopin.com/detail/companyDetail` 是公开招聘会
+  公司岗位页，使用 `/api/activity/jobfair/company/v1/jobs-list`，保留 `jobfair_id` 和公司 ID。
+- 岗位正文来自 `contents`，地点来自 `district_list`，学历、招聘类型、薪资、发布时间和截止
+  时间只在接口明确给出时写入；岗位详情链接使用稳定的公开岗位路由。v3 签名接口、公司管理接口
+  和登录/权限错误均保持失败，不复制公共客户端密钥，也不绕过访问控制。
+- 当前样本全量回放：15 个来源中 11 个成功，409 个岗位通过 schema 校验。剩余 4 个经公开
+  列表接口和页面 DOM 双重确认当前没有岗位：一个本单位职位数为 0、两个定制站岗位列表为空，
+  一个定制站当前页面没有可用岗位；不使用历史岗位或公告标题填充。空列表会明确记录为失败，避免
+  把不完整采集当成完整来源。
+- Fixture：`tests/collection/fixtures/guopin_detail.json`、`guopin_list.json`、
+  `guopin_site_config.json`、`guopin_fair_list.json`；回归：
+  `tests/collection/test_guopin_parser.py`。
+
 ## 智联招聘（ZHAOPIN）
 
 - 常见入口分为 Grace 自定义站、`/zk/` 招考站、智联校园服务端渲染页和移动端详情页；先

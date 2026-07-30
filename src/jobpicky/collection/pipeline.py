@@ -13,6 +13,7 @@ from jobpicky.contracts.common import JsonObject
 from .link_classification import (
     BEISEN,
     FEISHU,
+    GUOPIN,
     HOTJOB,
     JOB_51,
     MOKA,
@@ -22,6 +23,7 @@ from .link_classification import (
 )
 from .parsers.beisen import parse as parse_beisen
 from .parsers.feishu import parse as parse_feishu
+from .parsers.guopin import parse as parse_guopin
 from .parsers.hotjob import parse as parse_hotjob
 from .parsers.job_51 import parse as parse_job_51
 from .parsers.moka import parse as parse_moka
@@ -35,6 +37,7 @@ Parser = Callable[[str], Sequence[Mapping[str, object]]]
 PARSERS: dict[str, Parser] = {
     BEISEN: lambda url: parse_beisen(url),
     FEISHU: lambda url: parse_feishu(url),
+    GUOPIN: lambda url: parse_guopin(url),
     HOTJOB: lambda url: parse_hotjob(url),
     JOB_51: lambda url: parse_job_51(url),
     MOKA: lambda url: parse_moka(url),
