@@ -10,10 +10,20 @@ from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 from jobpicky.contracts import CollectedJob, CollectionBatch
 from jobpicky.contracts.common import JsonObject
 
-from .link_classification import BEISEN, FEISHU, HOTJOB, MOKA, WECHAT, ZHAOPIN, classify_link
+from .link_classification import (
+    BEISEN,
+    FEISHU,
+    HOTJOB,
+    JOB_51,
+    MOKA,
+    WECHAT,
+    ZHAOPIN,
+    classify_link,
+)
 from .parsers.beisen import parse as parse_beisen
 from .parsers.feishu import parse as parse_feishu
 from .parsers.hotjob import parse as parse_hotjob
+from .parsers.job_51 import parse as parse_job_51
 from .parsers.moka import parse as parse_moka
 from .parsers.wechat import parse as parse_wechat
 from .parsers.zhaopin import parse as parse_zhaopin
@@ -26,6 +36,7 @@ PARSERS: dict[str, Parser] = {
     BEISEN: lambda url: parse_beisen(url),
     FEISHU: lambda url: parse_feishu(url),
     HOTJOB: lambda url: parse_hotjob(url),
+    JOB_51: lambda url: parse_job_51(url),
     MOKA: lambda url: parse_moka(url),
     WECHAT: lambda url: parse_wechat(url),
     ZHAOPIN: lambda url: parse_zhaopin(url),

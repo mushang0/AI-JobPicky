@@ -90,6 +90,25 @@ uv run python scripts/verify_parser_pipeline.py \
 - Fixture：`tests/collection/fixtures/hotjob_list.json`、`hotjob_detail.json`；回归：
   `tests/collection/test_hotjob_parser.py`。
 
+## 前程无忧（JOB_51）
+
+- 公开入口分为校园静态页、`jobs.51job.com` 详情页、`xyz.51job.com` 报名页和部分
+  `xyzp.51job.com` 单页应用。优先从 URL 直接取岗位 ID 调用公开 `job_detail.php`，再从
+  页面及同域公开脚本发现 `ctmid`，调用 `job_list.php`；列表按返回总数有限翻页并去重。
+- `coapi` 的签名材料只从当前公开客户端脚本运行时提取，不把页面中可见的客户端字符串写
+  入代码或 Fixture；请求保持无登录态、限时和响应大小上限。静态页内嵌的 JSON/JavaScript
+  岗位数组、报名链接和公开详情 ID 作为 API 为空时的通用回退；不执行页面脚本。
+- 对单页应用，解析公开 bundle 中明确的岗位名称、职责、地点和学历字段；对只有招聘说明
+  的公开页，最多生成一条公告级记录，并在 metadata 标注 `record_kind`，不把公告标题拆成
+  未验证的岗位。带登录、消费者投递页、公开接口空列表、WAF 公司页保持失败。
+- 入口带跟踪 query 且返回 405 时，只重试去掉 query 的同一路径；岗位 ID 或 `ctmid` 已由
+  URL 提供时不会因页面跳转到登录而放弃公开列表/详情。公开岗位状态原样保存在 metadata，
+  不依据未确认的数字状态码关闭历史岗位。
+- 当前样本全量回放：30 个去重来源中 21 个成功，1010 个岗位/公告记录通过 schema 校验。
+  其余 9 个为登录入口、公开接口明确为空，或被 WAF 保护的公司职位页；不绕过访问控制。
+- Fixture：`tests/collection/fixtures/job_51_detail.json`、`job_51_static.html`；回归：
+  `tests/collection/test_job_51_parser.py`。
+
 ## Moka 招聘（MOKA）
 
 - 域名：`mokahr.com`；常见入口包括 `/campus-recruitment/`、`/social-recruitment/`、
