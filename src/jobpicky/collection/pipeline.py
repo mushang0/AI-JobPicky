@@ -10,14 +10,18 @@ from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 from jobpicky.contracts import CollectedJob, CollectionBatch
 from jobpicky.contracts.common import JsonObject
 
-from .link_classification import BEISEN, classify_link
+from .link_classification import BEISEN, FEISHU, classify_link
 from .parsers.beisen import parse as parse_beisen
+from .parsers.feishu import parse as parse_feishu
 from .spreadsheet import SpreadsheetRow
 
 Parser = Callable[[str], Sequence[Mapping[str, object]]]
 
 # Keep routing visible and boring. Add a parser here only when it is implemented.
-PARSERS: dict[str, Parser] = {BEISEN: lambda url: parse_beisen(url)}
+PARSERS: dict[str, Parser] = {
+    BEISEN: lambda url: parse_beisen(url),
+    FEISHU: lambda url: parse_feishu(url),
+}
 
 
 @dataclass(frozen=True)
@@ -26,6 +30,7 @@ class UnsupportedLink:
     link_type: str
     row_number: int
     reason: str
+    company_name: str | None = None
 
 
 @dataclass(frozen=True)
@@ -158,6 +163,7 @@ def run_pipeline(source_id: str, rows: Sequence[SpreadsheetRow]) -> PipelineResu
                         link_type=link_type,
                         row_number=row.row_number,
                         reason=f"no parser implemented for link type {link_type}",
+                        company_name=row.company_name,
                     )
                 )
                 continue
@@ -170,6 +176,7 @@ def run_pipeline(source_id: str, rows: Sequence[SpreadsheetRow]) -> PipelineResu
                         link_type=link_type,
                         row_number=row.row_number,
                         reason=f"parser failed: {type(exc).__name__}: {exc}",
+                        company_name=row.company_name,
                     )
                 )
                 continue
@@ -180,6 +187,7 @@ def run_pipeline(source_id: str, rows: Sequence[SpreadsheetRow]) -> PipelineResu
                         link_type=link_type,
                         row_number=row.row_number,
                         reason="parser returned no jobs",
+                        company_name=row.company_name,
                     )
                 )
                 continue
@@ -193,6 +201,7 @@ def run_pipeline(source_id: str, rows: Sequence[SpreadsheetRow]) -> PipelineResu
                             link_type=link_type,
                             row_number=row.row_number,
                             reason=f"job fields invalid: {type(exc).__name__}: {exc}",
+                            company_name=row.company_name,
                         )
                     )
 
@@ -205,7 +214,7 @@ def run_pipeline(source_id: str, rows: Sequence[SpreadsheetRow]) -> PipelineResu
             source_id=source_id,
             items=items,
             complete=not unsupported and not warnings,
-            method="spreadsheet+beisen",
+            method="spreadsheet+platform-parser",
             warnings=warnings,
             metrics={
                 "spreadsheet_rows": len(rows),
