@@ -1,6 +1,12 @@
 from __future__ import annotations
 
+import hashlib
+import json
+import re
+import unicodedata
 from collections.abc import Sequence
+from datetime import UTC, datetime
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
@@ -22,6 +28,7 @@ except ModuleNotFoundError:  # pragma: no cover - only used by dependency-light 
 
 from ..catalog import apply_filter, extract_terms, term_hit_score
 from ..contracts import (
+    CollectedJob,
     CollectionBatch,
     ErrorCode,
     FilterResult,
@@ -61,7 +68,122 @@ JOB_TABLE = sa.table(
     sa.column("last_confirmed_at", sa.DateTime(timezone=True)),
     sa.column("updated_at", sa.DateTime(timezone=True)),
     sa.column("embedding", Vector(512)),
+    sa.column("identity_key", sa.String),
+    sa.column("source_job_id", sa.String),
+    sa.column("content_hash", sa.String),
+    sa.column("last_seen_run_id", sa.String),
 )
+
+_CLOSE_WARNING = (
+    "historical jobs were not closed: pagination completeness and source scope "
+    "are not yet sufficient for safe closing"
+)
+_SPACE_RE = re.compile(r"\s+")
+
+
+def _normalized_text(value: str) -> str:
+    return _SPACE_RE.sub(" ", unicodedata.normalize("NFKC", value)).strip().casefold()
+
+
+def _normalized_identifier(value: str) -> str:
+    return unicodedata.normalize("NFKC", value).strip()
+
+
+def _normalized_url(value: str) -> str:
+    parts = urlsplit(value.strip())
+    hostname = (parts.hostname or "").lower()
+    port = parts.port
+    netloc = hostname
+    if port and not (
+        (parts.scheme.lower() == "http" and port == 80)
+        or (parts.scheme.lower() == "https" and port == 443)
+    ):
+        netloc = f"{hostname}:{port}"
+    path = parts.path.rstrip("/") or "/"
+    query = urlencode(sorted(parse_qsl(parts.query, keep_blank_values=True)), doseq=True)
+    return urlunsplit((parts.scheme.lower(), netloc, path, query, ""))
+
+
+def _digest(value: object) -> str:
+    encoded = json.dumps(
+        value,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+        default=lambda item: (
+            item.astimezone(UTC).isoformat() if isinstance(item, datetime) else str(item)
+        ),
+    ).encode()
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def _identity_key(job: CollectedJob) -> str:
+    if job.source_job_id:
+        evidence: object = ["source_job_id", _normalized_identifier(job.source_job_id)]
+    elif job.detail_url:
+        evidence = ["detail_url", _normalized_url(job.detail_url)]
+    else:
+        evidence = [
+            "facts",
+            _normalized_text(job.company_name),
+            _normalized_text(job.title),
+            sorted(_normalized_text(location) for location in job.locations),
+        ]
+    return _digest([job.source_id, evidence])
+
+
+def _content_hash(job: CollectedJob) -> str:
+    return _digest(
+        {
+            "source_id": job.source_id,
+            "company_name": job.company_name,
+            "company_nature": job.company_nature,
+            "title": job.title,
+            "locations": job.locations,
+            "description": job.description,
+            "detail_url": job.detail_url,
+            "apply_url": job.apply_url,
+            "recruitment_type": job.recruitment_type,
+            "education_requirement": job.education_requirement,
+            "salary_min": job.salary_min,
+            "salary_max": job.salary_max,
+            "salary_months": job.salary_months,
+            "graduation_years": job.graduation_years,
+            "published_at": job.published_at,
+            "deadline_at": job.deadline_at,
+        }
+    )
+
+
+def _job_values(
+    job: CollectedJob,
+    *,
+    identity_key: str,
+    content_hash: str,
+    run_id: str,
+) -> dict[str, object]:
+    return {
+        "source_id": job.source_id,
+        "company_name": job.company_name,
+        "company_nature": job.company_nature,
+        "title": job.title,
+        "locations": job.locations,
+        "description": job.description,
+        "detail_url": job.detail_url,
+        "apply_url": job.apply_url,
+        "recruitment_type": job.recruitment_type,
+        "education_requirement": job.education_requirement,
+        "salary_min": job.salary_min,
+        "salary_max": job.salary_max,
+        "salary_months": job.salary_months,
+        "graduation_years": job.graduation_years,
+        "published_at": job.published_at,
+        "deadline_at": job.deadline_at,
+        "identity_key": identity_key,
+        "source_job_id": job.source_job_id,
+        "content_hash": content_hash,
+        "last_seen_run_id": run_id,
+    }
 
 
 def row_to_job_fact(row: sa.RowMapping) -> JobFact:
@@ -92,16 +214,15 @@ def row_to_job_fact(row: sa.RowMapping) -> JobFact:
 
 
 class PostgresJobCatalog:
-    """PostgreSQL implementation of the search side of JobCatalogPort.
+    """PostgreSQL implementation of JobCatalogPort.
 
     Rows are read into JobFact contracts and all judgement happens in the
     pure catalog functions: the data volume is campus-sample scale, so a
     single source of deterministic, offline-testable logic beats SQL pushdown
     (plan 003, decision 2).
 
-    ingest belongs to the collection slice and is still an explicit failure in
-    this slice. Semantic search is backed by the injected embedding port and
-    the pgvector index added by migration 0005.
+    Ingestion owns stable job identity and fact lifecycle. Semantic search is
+    backed by the injected embedding port and pgvector.
     """
 
     def __init__(
@@ -118,10 +239,96 @@ class PostgresJobCatalog:
         self._semantic_limit = semantic_limit
 
     async def ingest(self, run_id: str, batch: CollectionBatch) -> IngestionResult:
-        raise ApplicationError(
-            ErrorCode.DEPENDENCY_UNAVAILABLE,
-            "job ingestion is not implemented yet; it belongs to the collection slice",
-            status_code=503,
+        unique: dict[str, tuple[CollectedJob, str]] = {}
+        for job in batch.items:
+            identity_key = _identity_key(job)
+            content_hash = _content_hash(job)
+            previous = unique.get(identity_key)
+            if previous and previous[1] != content_hash:
+                raise ApplicationError(
+                    ErrorCode.CONFLICT,
+                    "one collection batch contains conflicting facts for the same job identity",
+                    details={"source_id": batch.source_id},
+                    run_id=run_id,
+                )
+            unique.setdefault(identity_key, (job, content_hash))
+
+        created_count = 0
+        updated_count = 0
+        unchanged_count = 0
+        job_ids: list[str] = []
+
+        async with self._session_factory() as session, session.begin():
+            for identity_key, (job, content_hash) in sorted(unique.items()):
+                await session.execute(
+                    sa.text("SELECT pg_advisory_xact_lock(hashtextextended(:key, 0))"),
+                    {"key": identity_key},
+                )
+                result = await session.execute(
+                    sa.select(JOB_TABLE)
+                    .where(JOB_TABLE.c.identity_key == identity_key)
+                    .with_for_update()
+                )
+                existing = result.mappings().one_or_none()
+                now = datetime.now(UTC)
+                values = _job_values(
+                    job,
+                    identity_key=identity_key,
+                    content_hash=content_hash,
+                    run_id=run_id,
+                )
+                if existing is None:
+                    job_id = f"job-{identity_key[:24]}"
+                    await session.execute(
+                        sa.insert(JOB_TABLE).values(
+                            id=job_id,
+                            **values,
+                            status="OPEN",
+                            fact_version=content_hash,
+                            first_seen_at=now,
+                            last_confirmed_at=now,
+                            updated_at=now,
+                        )
+                    )
+                    created_count += 1
+                else:
+                    job_id = existing.id
+                    facts_changed = existing.content_hash != content_hash
+                    changed = facts_changed or existing.status != "OPEN"
+                    if changed:
+                        update_values: dict[str, object] = {
+                            **values,
+                            "status": "OPEN",
+                            "fact_version": content_hash,
+                            "last_confirmed_at": now,
+                            "updated_at": now,
+                        }
+                        if facts_changed:
+                            update_values["embedding"] = None
+                        await session.execute(
+                            sa.update(JOB_TABLE)
+                            .where(JOB_TABLE.c.id == job_id)
+                            .values(**update_values)
+                        )
+                        updated_count += 1
+                    else:
+                        await session.execute(
+                            sa.update(JOB_TABLE)
+                            .where(JOB_TABLE.c.id == job_id)
+                            .values(last_confirmed_at=now, last_seen_run_id=run_id)
+                        )
+                        unchanged_count += 1
+                job_ids.append(job_id)
+
+        return IngestionResult(
+            job_ids=job_ids,
+            created_count=created_count,
+            updated_count=updated_count,
+            unchanged_count=unchanged_count,
+            closed_count=0,
+            close_skipped=True,
+            complete_accepted=False,
+            warnings=[*batch.warnings, _CLOSE_WARNING],
         )
 
     async def get_jobs(self, job_ids: Sequence[str]) -> list[JobFact]:

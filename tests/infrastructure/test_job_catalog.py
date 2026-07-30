@@ -10,6 +10,7 @@ import sqlalchemy as sa
 from catalog.factories import make_job, make_spec
 
 from jobpicky.contracts import (
+    CollectedJob,
     CollectionBatch,
     ErrorCode,
     FilterReasonCode,
@@ -191,7 +192,7 @@ def test_semantic_search_uses_pgvector_distance_and_constraints() -> None:
     asyncio.run(check())
 
 
-def test_unimplemented_methods_fail_explicitly() -> None:
+def test_missing_embedding_dependency_fails_explicitly() -> None:
     _seed()
 
     async def check() -> None:
@@ -200,15 +201,201 @@ def test_unimplemented_methods_fail_explicitly() -> None:
             await catalog.semantic_search("后端工程师", ["itest-job-1"])
         assert semantic_error.value.code == str(ErrorCode.DEPENDENCY_UNAVAILABLE)
 
-        batch = CollectionBatch(
-            source_id="source-1",
-            items=[],
-            complete=True,
-            method="test",
-            warnings=[],
+    asyncio.run(check())
+
+
+def _batch(
+    source_id: str,
+    *items: CollectedJob,
+    complete: bool = False,
+) -> CollectionBatch:
+    return CollectionBatch(
+        source_id=source_id,
+        items=list(items),
+        complete=complete,
+        method="integration-test",
+        warnings=[],
+    )
+
+
+def _collected(source_id: str, **overrides: object) -> CollectedJob:
+    values: dict[str, object] = {
+        "source_id": source_id,
+        "source_job_id": "external-1",
+        "company_name": "入库测试公司",
+        "title": "后端工程师",
+        "locations": ["上海"],
+        "description": "初版 JD",
+        "detail_url": "https://jobs.example.com/detail/1",
+        "apply_url": "https://jobs.example.com/apply/1",
+        "graduation_years": [2027],
+    }
+    values.update(overrides)
+    return CollectedJob(**values)  # type: ignore[arg-type]
+
+
+def test_ingest_is_idempotent_updates_and_protects_history() -> None:
+    source_id = "itest-ingest-source"
+    other_source_id = "itest-ingest-other"
+
+    async def check() -> None:
+        engine = create_engine(_TEST_DATABASE_URL)
+        factory = create_session_factory(engine)
+        catalog = PostgresJobCatalog(factory)
+        async with factory() as session:
+            await session.execute(
+                sa.delete(JOB_TABLE).where(JOB_TABLE.c.source_id.in_([source_id, other_source_id]))
+            )
+            await session.commit()
+
+        original = _collected(source_id)
+        first = await catalog.ingest("ingest-run-1", _batch(source_id, original, complete=True))
+        assert (first.created_count, first.updated_count, first.unchanged_count) == (1, 0, 0)
+        assert first.closed_count == 0
+        assert first.close_skipped is True
+        assert first.complete_accepted is False
+        assert "pagination completeness" in first.warnings[-1]
+        job_id = first.job_ids[0]
+
+        async with factory() as session:
+            first_row = (
+                (await session.execute(sa.select(JOB_TABLE).where(JOB_TABLE.c.id == job_id)))
+                .mappings()
+                .one()
+            )
+        assert first_row.status == "OPEN"
+        assert first_row.source_job_id == "external-1"
+        assert first_row.fact_version
+        assert first_row.first_seen_at.tzinfo is not None
+
+        async with factory() as session:
+            await session.execute(
+                sa.update(JOB_TABLE)
+                .where(JOB_TABLE.c.id == job_id)
+                .values(embedding=[1.0] + [0.0] * 511)
+            )
+            await session.commit()
+        await asyncio.sleep(0.001)
+        second = await catalog.ingest("ingest-run-2", _batch(source_id, original))
+        assert second.job_ids == [job_id]
+        assert (second.created_count, second.updated_count, second.unchanged_count) == (0, 0, 1)
+        async with factory() as session:
+            second_row = (
+                (await session.execute(sa.select(JOB_TABLE).where(JOB_TABLE.c.id == job_id)))
+                .mappings()
+                .one()
+            )
+        assert second_row.first_seen_at == first_row.first_seen_at
+        assert second_row.last_confirmed_at > first_row.last_confirmed_at
+        assert second_row.updated_at == first_row.updated_at
+        assert second_row.fact_version == first_row.fact_version
+        assert second_row.embedding is not None
+
+        changed = original.model_copy(update={"description": "修改后的 JD"})
+        third = await catalog.ingest("ingest-run-3", _batch(source_id, changed))
+        assert third.job_ids == [job_id]
+        assert (third.created_count, third.updated_count, third.unchanged_count) == (0, 1, 0)
+        async with factory() as session:
+            changed_row = (
+                (await session.execute(sa.select(JOB_TABLE).where(JOB_TABLE.c.id == job_id)))
+                .mappings()
+                .one()
+            )
+            await session.execute(
+                sa.update(JOB_TABLE)
+                .where(JOB_TABLE.c.id == job_id)
+                .values(status="CLOSED", embedding=[1.0] + [0.0] * 511)
+            )
+            await session.commit()
+        assert changed_row.description == "修改后的 JD"
+        assert changed_row.fact_version != first_row.fact_version
+        assert changed_row.embedding is None
+
+        reopened = await catalog.ingest("ingest-run-4", _batch(source_id, changed))
+        assert reopened.updated_count == 1
+        async with factory() as session:
+            reopened_row = (
+                (await session.execute(sa.select(JOB_TABLE).where(JOB_TABLE.c.id == job_id)))
+                .mappings()
+                .one()
+            )
+        assert reopened_row.status == "OPEN"
+        assert reopened_row.embedding is not None
+
+        same_external_id = _collected(other_source_id)
+        other = await catalog.ingest("ingest-run-5", _batch(other_source_id, same_external_id))
+        assert other.created_count == 1
+        assert other.job_ids[0] != job_id
+
+        historical = _collected(
+            source_id,
+            source_job_id="historical",
+            title="历史岗位",
+            detail_url="https://jobs.example.com/detail/historical",
         )
-        with pytest.raises(ApplicationError) as ingest_error:
-            await catalog.ingest("run-1", batch)
-        assert ingest_error.value.code == str(ErrorCode.DEPENDENCY_UNAVAILABLE)
+        historical_result = await catalog.ingest("ingest-run-6", _batch(source_id, historical))
+        await catalog.ingest("ingest-run-7", _batch(source_id, changed, complete=False))
+        async with factory() as session:
+            historical_status = await session.scalar(
+                sa.select(JOB_TABLE.c.status).where(JOB_TABLE.c.id == historical_result.job_ids[0])
+            )
+        assert historical_status == "OPEN"
+        await engine.dispose()
+
+    asyncio.run(check())
+
+
+def test_ingest_identity_fallbacks_and_batch_deduplication() -> None:
+    source_id = "itest-ingest-fallback"
+
+    async def check() -> None:
+        engine = create_engine(_TEST_DATABASE_URL)
+        factory = create_session_factory(engine)
+        catalog = PostgresJobCatalog(factory)
+        async with factory() as session:
+            await session.execute(sa.delete(JOB_TABLE).where(JOB_TABLE.c.source_id == source_id))
+            await session.commit()
+
+        by_url = _collected(
+            source_id,
+            source_job_id=None,
+            detail_url="https://JOBS.example.com/detail/2/?b=2&a=1#top",
+            apply_url=None,
+        )
+        equivalent_url = by_url.model_copy(
+            update={"detail_url": "https://jobs.example.com/detail/2?a=1&b=2"}
+        )
+        first = await catalog.ingest("fallback-1", _batch(source_id, by_url))
+        second = await catalog.ingest("fallback-2", _batch(source_id, equivalent_url))
+        assert first.job_ids == second.job_ids
+        assert second.updated_count == 1
+
+        by_facts = _collected(
+            source_id,
+            source_job_id=None,
+            detail_url=None,
+            apply_url=None,
+            company_name=" 示例 公司 ",
+            title="数据  工程师",
+            locations=["北京", "上海"],
+        )
+        equivalent_facts = by_facts.model_copy(
+            update={
+                "company_name": "示例 公司",
+                "title": "数据 工程师",
+                "locations": ["上海", "北京"],
+            }
+        )
+        facts_first = await catalog.ingest("fallback-3", _batch(source_id, by_facts, by_facts))
+        facts_second = await catalog.ingest("fallback-4", _batch(source_id, equivalent_facts))
+        assert facts_first.created_count == 1
+        assert len(facts_first.job_ids) == 1
+        assert facts_first.job_ids == facts_second.job_ids
+
+        conflict = by_facts.model_copy(update={"description": "冲突 JD"})
+        with pytest.raises(ApplicationError) as error:
+            await catalog.ingest("fallback-5", _batch(source_id, by_facts, conflict))
+        assert error.value.code == str(ErrorCode.CONFLICT)
+        await engine.dispose()
 
     asyncio.run(check())

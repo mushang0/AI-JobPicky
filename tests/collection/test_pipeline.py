@@ -3,7 +3,12 @@ from datetime import UTC, datetime
 import pytest
 
 from jobpicky.collection import pipeline
-from jobpicky.collection.pipeline import merge_job_fields, run_pipeline
+from jobpicky.collection.pipeline import (
+    merge_job_fields,
+    run_pipeline,
+    run_pipeline_by_source,
+    source_id_for_entry,
+)
 from jobpicky.collection.spreadsheet import SpreadsheetRow
 from jobpicky.contracts import CollectedJob
 
@@ -108,3 +113,29 @@ def test_unsupported_link_is_recorded_with_row_and_reason() -> None:
 def test_invalid_website_job_is_not_replaced_by_table_direction() -> None:
     with pytest.raises(ValueError, match="without title"):
         merge_job_fields("source-1", make_row("https://acme.zhiye.com/campus/jobs"), {})
+
+
+def test_recruitment_entries_get_stable_distinct_source_ids(monkeypatch) -> None:
+    monkeypatch.setitem(
+        pipeline.PARSERS,
+        "BEISEN",
+        lambda _: [{"source_job_id": "1", "title": "后端工程师"}],
+    )
+    first_url = "https://ACME.zhiye.com/campus/jobs/?b=2&a=1#top"
+    equivalent_url = "https://acme.zhiye.com/campus/jobs?a=1&b=2"
+    second_url = "https://other.zhiye.com/campus/jobs"
+
+    assert source_id_for_entry("表格公司", first_url) == source_id_for_entry(
+        "表格公司", equivalent_url
+    )
+    assert source_id_for_entry("表格公司", first_url) != source_id_for_entry("另一公司", first_url)
+
+    results = run_pipeline_by_source([make_row(first_url, second_url)])
+
+    assert len(results) == 2
+    assert len({result.batch.source_id for result in results}) == 2
+    assert all(
+        item.source_id == result.batch.source_id
+        for result in results
+        for item in result.batch.items
+    )
