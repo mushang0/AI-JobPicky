@@ -90,6 +90,9 @@ JOBPICKY_EMBEDDING_MODEL_PATH=/path/to/bge-small-zh-v1.5 \
 推荐运行需要 `JOBPICKY_LLM_MODEL` 和 `JOBPICKY_DASHSCOPE_API_KEY`。API key 不写入仓库、日志或运行快照；
 未配置模型依赖时，推荐运行会以明确的依赖错误失败。
 
+评估 Prompt 与模型输入/输出 JSON Schema 位于 `src/jobpicky/infrastructure/prompts/` 和
+`src/jobpicky/infrastructure/schemas/`，修改模型协议时同步升级 `JOBPICKY_MODEL_CONFIG_VERSION`。
+
 ## 文档
 
 - [需求基线](docs/requirements.md)

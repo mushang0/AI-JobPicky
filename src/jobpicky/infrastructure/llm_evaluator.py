@@ -17,6 +17,7 @@ from ..contracts import (
     validate_assessments,
 )
 from ..errors import ApplicationError
+from .evaluation_resources import load_evaluation_output_schema, load_evaluation_prompt
 
 
 class DashScopeJobEvaluator:
@@ -74,7 +75,7 @@ class DashScopeJobEvaluator:
 
     async def _invoke_with_retries(self, payload: dict[str, Any]) -> Any:
         messages = [
-            ("system", _SYSTEM_PROMPT),
+            ("system", load_evaluation_prompt()),
             ("human", json.dumps(payload, ensure_ascii=False, separators=(",", ":"))),
         ]
         model = self._get_chat_model()
@@ -128,7 +129,7 @@ class DashScopeJobEvaluator:
                 extra_body={"enable_thinking": False},
             )
             self._structured_model = model.with_structured_output(
-                EvaluationResponse,
+                load_evaluation_output_schema(),
                 method="json_mode",
             )
         except Exception as exc:
@@ -255,13 +256,6 @@ def _is_retryable_provider_error(exc: Exception) -> bool:
         return status == 429 or 500 <= status <= 599
     text = str(exc).lower()
     return "timeout" in text or "429" in text or any(f"{code}" in text for code in range(500, 600))
-
-
-_SYSTEM_PROMPT = """你是岗位匹配评估器。只输出 JSON 对象，顶层只能有 assessments 字段。
-每个 assessment 只能有 job_id、matched、match_score、reason、matched_strengths、gaps、evidence。
-job_id 必须逐一对应输入候选且不能重复。不要输出公司、岗位标题、JD、地点、薪资、
-链接或任何其他岗位事实。
-只根据输入的求职者画像和岗位事实判断；没有证据时明确写入 gaps 或 evidence，不要补写经历。"""
 
 
 __all__ = ["DashScopeJobEvaluator"]

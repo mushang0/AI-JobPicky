@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["assessments"],
+  "properties": {
+    "assessments": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "job_id",
+          "matched",
+          "match_score",
+          "reason",
+          "matched_strengths",
+          "gaps"
+        ],
+        "properties": {
+          "job_id": {"type": "string", "minLength": 1},
+          "matched": {"type": "boolean"},
+          "match_score": {"type": "integer", "minimum": 0, "maximum": 100},
+          "reason": {"type": "string", "minLength": 1},
+          "matched_strengths": {
+            "type": "array",
+            "items": {"type": "string", "minLength": 1}
+          },
+          "gaps": {
+            "type": "array",
+            "items": {"type": "string", "minLength": 1}
+          },
+          "evidence": {
+            "type": "array",
+            "items": {"type": "string", "minLength": 1}
+          }
+        }
+      }
+    }
+  }
+}

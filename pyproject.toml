@@ -35,7 +35,7 @@ dev = [
 where = ["src"]
 
 [tool.setuptools.package-data]
-jobpicky = ["py.typed"]
+jobpicky = ["py.typed", "infrastructure/prompts/*.txt", "infrastructure/schemas/*.json"]
 
 [tool.pytest.ini_options]
 addopts = "-q"
