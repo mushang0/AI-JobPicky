@@ -1,7 +1,9 @@
 from jobpicky.app import create_app
 from jobpicky.config import Settings
 from jobpicky.contracts import (
+    AccessTokenResponse,
     AuthUserView,
+    CreditSummary,
     CurrentProfileView,
     ErrorBody,
     FilterOptionsLimits,
@@ -10,6 +12,8 @@ from jobpicky.contracts import (
     JobListItem,
     JobListQuery,
     JobPoolPage,
+    LoginRequest,
+    LoginResponse,
     RecommendationAssessmentView,
     RecommendationCardView,
     RecommendationResultView,
@@ -19,7 +23,9 @@ from jobpicky.contracts import (
 )
 
 PUBLIC_CONTRACT_MODELS = (
+    AccessTokenResponse,
     AuthUserView,
+    CreditSummary,
     CurrentProfileView,
     ErrorBody,
     FilterOptionsView,
@@ -28,6 +34,8 @@ PUBLIC_CONTRACT_MODELS = (
     JobListItem,
     JobListQuery,
     JobPoolPage,
+    LoginRequest,
+    LoginResponse,
     RecommendationAssessmentView,
     RecommendationCardView,
     RecommendationResultView,
@@ -47,7 +55,17 @@ def test_public_contract_models_generate_closed_object_schemas() -> None:
 
 def test_openapi_lists_only_real_routes_until_business_handlers_exist() -> None:
     schema = create_app(Settings(environment="test")).openapi()
-    assert set(schema["paths"]) == {"/api/v1/system/health"}
+    assert set(schema["paths"]) == {
+        "/api/v1/auth/login",
+        "/api/v1/auth/logout",
+        "/api/v1/auth/me",
+        "/api/v1/auth/refresh",
+        "/api/v1/auth/register",
+        "/api/v1/system/health",
+        "/api/v1/user/credits",
+    }
     error_schema = schema["components"]["schemas"]["ErrorBody"]
     assert set(error_schema["required"]) >= {"code", "message", "request_id"}
-    assert "password" not in str(schema)
+    password_schema = schema["components"]["schemas"]["LoginRequest"]["properties"]["password"]
+    assert password_schema["writeOnly"] is True
+    assert "example" not in password_schema

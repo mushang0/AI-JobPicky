@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import unicodedata
 from enum import StrEnum
 from typing import Annotated, Generic, Literal, TypeVar
 from urllib.parse import urlsplit
 
+from email_validator import EmailNotValidError, validate_email
 from pydantic import (
     AfterValidator,
     AwareDatetime,
@@ -38,17 +40,14 @@ NonEmptyStr = Annotated[str, StringConstraints(strip_whitespace=True, min_length
 
 
 def _validate_email(value: str) -> str:
-    local, separator, domain = value.partition("@")
-    if (
-        value.count("@") != 1
-        or not separator
-        or not local
-        or not domain
-        or "." not in domain
-        or any(character.isspace() for character in value)
-    ):
-        raise ValueError("must be a valid email address")
-    return value.casefold()
+    try:
+        normalized = validate_email(value, check_deliverability=False).normalized
+    except EmailNotValidError as exc:
+        raise ValueError("must be a valid email address") from exc
+    canonical = unicodedata.normalize("NFKC", normalized).casefold()
+    if len(canonical) > 254:
+        raise ValueError("email address is too long")
+    return canonical
 
 
 EmailAddress = Annotated[
@@ -219,7 +218,11 @@ class LoginRequest(ContractModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=False)
 
     email: EmailAddress
-    password: str = Field(min_length=15, max_length=128)
+    password: str = Field(
+        min_length=15,
+        max_length=128,
+        json_schema_extra={"writeOnly": True},
+    )
 
 
 class RegisterRequest(LoginRequest):
