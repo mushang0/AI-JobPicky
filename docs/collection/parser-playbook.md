@@ -151,6 +151,21 @@ uv run python scripts/verify_parser_pipeline.py \
 - Fixture：`tests/collection/fixtures/wechat_article.html`；回归：
   `tests/collection/test_wechat_parser.py`。
 
+## 公司招聘网站（COMPANY_RECRUITMENT_SITE）
+
+- 先复用已验证的平台分类：`campus.boe.com`、`zhaopin.xdf.cn`、
+  `sunzhaopin.sinosig.com`、`we.zyt.com`、`career.h3c.com`、`career.mindray.com`、
+  `career.naura.com`、`career.shenzhouintl.com`、`careers.mxbc.com`、
+  `careers.narwal.com`、`hr-campus.vivo.com`、`job.lzlj.com` 和 `zhaopin.xa.com` 的公开页面
+  使用北森页面模板，统一转到北森解析器；站点无岗位时仍保持失败。
+- 其余来源使用通用公开网页解析器：优先读取 `JobPosting` JSON-LD，再读取公开内嵌 JSON，
+  然后读取带岗位语义的服务端链接或直达岗位页。只保存能确认标题的岗位，不执行页面脚本，
+  不把首页导航、登录页或空 SPA 壳当岗位。
+- 没有稳定公开数据的前端 SPA、跳转到登录或访问控制页面、以及只有招聘入口而没有岗位事实的
+  页面保持失败；这类来源需要后续按公开接口调查，不能用表格岗位摘要补写 JD。
+- Fixture：`tests/collection/fixtures/public_job_page.html`；回归：
+  `tests/collection/test_public_web_parser.py`、`tests/collection/test_link_classification.py`。
+
 ## 国聘（GUOPIN）
 
 - 普通详情使用公开 `GET https://gp-api.iguopin.com/api/jobs/v1/info?id=<岗位ID>`；查询键是

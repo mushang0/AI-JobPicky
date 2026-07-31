@@ -12,6 +12,7 @@ from jobpicky.contracts.common import JsonObject
 
 from .link_classification import (
     BEISEN,
+    COMPANY_RECRUITMENT_SITE,
     FEISHU,
     GUOPIN,
     HOTJOB,
@@ -28,6 +29,7 @@ from .parsers.hotjob import parse as parse_hotjob
 from .parsers.job_51 import parse as parse_job_51
 from .parsers.moka import parse as parse_moka
 from .parsers.moka import source_identity as moka_source_identity
+from .parsers.public_web import parse as parse_public_web
 from .parsers.wechat import parse as parse_wechat
 from .parsers.zhaopin import parse as parse_zhaopin
 from .spreadsheet import SpreadsheetRow
@@ -37,6 +39,7 @@ Parser = Callable[[str], Sequence[Mapping[str, object]]]
 # Keep routing visible and boring. Add a parser here only when it is implemented.
 PARSERS: dict[str, Parser] = {
     BEISEN: lambda url: parse_beisen(url),
+    COMPANY_RECRUITMENT_SITE: lambda url: parse_public_web(url),
     FEISHU: lambda url: parse_feishu(url),
     GUOPIN: lambda url: parse_guopin(url),
     HOTJOB: lambda url: parse_hotjob(url),

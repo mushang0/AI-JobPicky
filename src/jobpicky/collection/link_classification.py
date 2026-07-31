@@ -67,6 +67,21 @@ _CUSTOM_RECRUITMENT_ROOTS = {
     "tupu360.com",
     "wscloud.kingdee.com",
 }
+_BEISEN_CUSTOM_ROOTS = {
+    "campus.boe.com",
+    "career.h3c.com",
+    "career.mindray.com",
+    "career.naura.com",
+    "career.shenzhouintl.com",
+    "careers.mxbc.com",
+    "careers.narwal.com",
+    "hr-campus.vivo.com",
+    "job.lzlj.com",
+    "sunzhaopin.sinosig.com",
+    "we.zyt.com",
+    "zhaopin.xa.com",
+    "zhaopin.xdf.cn",
+}
 _PUBLIC_RECRUITMENT_ROOTS = {
     "cqrc.net",
     "czrsj.cn",
@@ -162,6 +177,8 @@ def _classify_http(parts, *, inspect_nested: bool) -> str:
         return GUOPIN
     if _is_root_or_subdomain(host, "weixin.qq.com"):
         return WECHAT
+    if any(_is_root_or_subdomain(host, root) for root in _BEISEN_CUSTOM_ROOTS):
+        return BEISEN
     if any(_is_root_or_subdomain(host, root) for root in _CUSTOM_RECRUITMENT_ROOTS):
         return CUSTOM_RECRUITMENT_SYSTEM
     if _is_government_notice(host, parts.path):
