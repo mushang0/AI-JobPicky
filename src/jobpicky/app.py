@@ -11,7 +11,7 @@ from fastapi.responses import JSONResponse
 
 from . import __version__
 from .config import Settings
-from .contracts import ErrorBody, ErrorCode, HealthView
+from .contracts import ErrorBody, ErrorCode, HealthView, error_message
 from .errors import ApplicationError
 
 logger = logging.getLogger(__name__)
@@ -61,7 +61,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return _error_response(
             ErrorBody(
                 code=exc.code,
-                message=exc.message,
+                message=error_message(exc.code),
                 details=exc.details,
                 request_id=_request_id(request),
                 run_id=exc.run_id,
@@ -77,7 +77,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return _error_response(
             ErrorBody(
                 code=ErrorCode.VALIDATION_ERROR,
-                message="Request validation failed.",
+                message="请求内容不符合要求。",
                 details={"errors": jsonable_encoder(exc.errors())},
                 request_id=_request_id(request),
             ),
@@ -97,7 +97,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return _error_response(
             ErrorBody(
                 code=ErrorCode.INTERNAL_ERROR,
-                message="An unexpected error occurred.",
+                message="系统暂时无法处理请求，请稍后重试。",
                 request_id=request_id,
             ),
             500,

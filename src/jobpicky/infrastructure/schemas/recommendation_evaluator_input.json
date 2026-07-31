@@ -10,6 +10,7 @@
       "required": [
         "target_locations",
         "target_roles",
+        "recruitment_types",
         "skills",
         "excluded_roles",
         "education",
@@ -22,6 +23,7 @@
       "properties": {
         "target_locations": {"type": "array", "items": {"type": "string"}},
         "target_roles": {"type": "array", "items": {"type": "string"}},
+        "recruitment_types": {"type": "array", "items": {"type": "string"}},
         "skills": {"type": "array", "items": {"type": "string"}},
         "excluded_roles": {"type": "array", "items": {"type": "string"}},
         "education": {"type": ["string", "null"]},

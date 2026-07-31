@@ -5,7 +5,7 @@ from collections.abc import Sequence
 from pydantic import Field, model_validator
 
 from .catalog import JobFact, RetrievalChannel
-from .common import ContractModel, MatchScore, NonEmptyStr, NormalizedScore
+from .common import AwareDatetime, ContractModel, Feedback, MatchScore, NonEmptyStr, NormalizedScore
 
 
 class Candidate(ContractModel):
@@ -51,6 +51,8 @@ class RecommendationCandidate(ContractModel):
 
 
 class RecommendationItem(ContractModel):
+    """Internal persisted result; retrieval is intentionally not a frontend field."""
+
     job: JobFact
     retrieval: Candidate
     assessment: MatchAssessment
@@ -62,6 +64,60 @@ class RecommendationItem(ContractModel):
         if not self.assessment.matched:
             raise ValueError("recommendation items must contain matched assessments")
         return self
+
+
+class RecommendationJobView(ContractModel):
+    id: NonEmptyStr
+    title: NonEmptyStr
+    company_name: NonEmptyStr
+    company_nature: NonEmptyStr | None = None
+    locations: list[NonEmptyStr] = Field(default_factory=list)
+    first_seen_at: AwareDatetime
+
+
+class RecommendationAssessmentView(ContractModel):
+    """Frontend assessment projection; matched/job identity stay internal."""
+
+    match_score: MatchScore
+    reason: NonEmptyStr
+    matched_strengths: list[NonEmptyStr]
+    gaps: list[NonEmptyStr]
+    evidence: list[NonEmptyStr] = Field(default_factory=list)
+
+
+class RecommendationCardView(ContractModel):
+    """Frontend recommendation card, deliberately separate from RecommendationItem."""
+
+    recommendation_id: NonEmptyStr
+    run_id: NonEmptyStr
+    recommended_at: AwareDatetime
+    job: RecommendationJobView
+    assessment: RecommendationAssessmentView
+    is_saved: bool
+    feedback: Feedback | None = None
+
+
+class RecommendationResultView(RecommendationCardView):
+    is_deleted: bool = False
+    deleted_at: AwareDatetime | None = None
+
+
+class RecommendationRunRequest(ContractModel):
+    extra_request: str | None = Field(default=None, max_length=1000)
+
+    @model_validator(mode="after")
+    def normalize_extra_request(self) -> RecommendationRunRequest:
+        self.extra_request = self.extra_request or None
+        return self
+
+
+class RecommendationFeedbackRequest(ContractModel):
+    feedback: Feedback | None
+
+
+class RecommendationFeedbackView(ContractModel):
+    recommendation_id: NonEmptyStr
+    feedback: Feedback | None
 
 
 def validate_assessments(

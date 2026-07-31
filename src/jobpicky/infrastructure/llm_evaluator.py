@@ -174,6 +174,7 @@ class DashScopeJobEvaluator:
             "profile": {
                 "target_locations": profile.target_locations,
                 "target_roles": profile.target_roles,
+                "recruitment_types": profile.recruitment_types,
                 "skills": profile.skills,
                 "excluded_roles": profile.excluded_roles,
                 "education": profile.education,

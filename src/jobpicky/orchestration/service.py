@@ -21,6 +21,7 @@ from ..contracts import (
     RunError,
     RunStatus,
     RunView,
+    error_message,
     merge_extra_request,
     validate_assessments,
 )
@@ -337,11 +338,12 @@ class RecommendationRunService:
     async def _fail(self, record: RunRecord, exc: Exception) -> None:
         details: JsonObject = {"error_type": type(exc).__name__}
         if isinstance(exc, ApplicationError):
-            code, message = exc.code, exc.message
+            code, message = exc.code, error_message(exc.code)
             details = dict(exc.details)
             details["error_type"] = type(exc).__name__
         else:
-            code, message = str(ErrorCode.RECOMMENDATION_FAILED), "recommendation run failed"
+            code = str(ErrorCode.RECOMMENDATION_FAILED)
+            message = error_message(code)
         await self._store.save(
             replace(
                 record,

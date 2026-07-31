@@ -35,6 +35,7 @@ def row_to_profile_snapshot(row: sa.RowMapping) -> ProfileSnapshot:
         version=row.version,
         target_locations=list(row.target_locations),
         target_roles=list(row.target_roles),
+        recruitment_types=list(row.get("recruitment_types") or []),
         skills=list(row.skills),
         excluded_roles=list(row.excluded_roles),
         education=row.education,
@@ -74,6 +75,23 @@ class PostgresProfileStore:
             raise ApplicationError(
                 ErrorCode.NOT_FOUND,
                 f"profile {profile_id} not found for user {user_id}",
+                status_code=404,
+            )
+        return row_to_profile_snapshot(row)
+
+    async def get_current(self, user_id: str) -> ProfileSnapshot:
+        async with self._session_factory() as session:
+            result = await session.execute(
+                sa.select(PROFILE_TABLE)
+                .where(PROFILE_TABLE.c.user_id == user_id)
+                .order_by(PROFILE_TABLE.c.version.desc())
+                .limit(1)
+            )
+            row = result.mappings().first()
+        if row is None:
+            raise ApplicationError(
+                ErrorCode.PROFILE_NOT_FOUND,
+                "profile not found",
                 status_code=404,
             )
         return row_to_profile_snapshot(row)

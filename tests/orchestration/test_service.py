@@ -92,6 +92,14 @@ class FakeProfileReader:
             raise ApplicationError(ErrorCode.NOT_FOUND, "profile not found", status_code=404)
         return profile
 
+    async def get_current(self, user_id: str) -> ProfileSnapshot:
+        profiles = [profile for (owner, _), profile in self._profiles.items() if owner == user_id]
+        if not profiles:
+            raise ApplicationError(
+                ErrorCode.PROFILE_NOT_FOUND, "profile not found", status_code=404
+            )
+        return max(profiles, key=lambda profile: profile.version)
+
 
 class FakeCatalog:
     def __init__(

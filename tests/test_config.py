@@ -20,3 +20,25 @@ def test_settings_read_and_normalize_environment() -> None:
 def test_settings_reject_unknown_log_level() -> None:
     with pytest.raises(ValueError, match="JOBPICKY_LOG_LEVEL"):
         Settings.from_env({"JOBPICKY_LOG_LEVEL": "verbose"})
+
+
+def test_frontend_limits_and_credit_defaults_are_configured() -> None:
+    settings = Settings.from_env({})
+
+    assert settings.visible_pool_limit == 5000
+    assert settings.job_pool_default_page_size == 30
+    assert settings.job_pool_public_page_size_max == 30
+    assert settings.job_pool_authenticated_page_size_max == 100
+    assert settings.recommendation_candidate_limit == 50
+    assert settings.signup_bonus_credits == 10_000
+    assert settings.recommendation_cost == 100
+    assert settings.access_token_ttl_seconds == 900
+    assert settings.refresh_session_ttl_seconds == 2_592_000
+
+
+def test_settings_reject_insecure_production_jwt_and_wildcard_cors() -> None:
+    with pytest.raises(ValueError, match="JWT_SIGNING_KEY"):
+        Settings.from_env({"JOBPICKY_ENVIRONMENT": "production"})
+
+    with pytest.raises(ValueError, match="must not contain"):
+        Settings.from_env({"JOBPICKY_CORS_ALLOWED_ORIGINS": "*"})

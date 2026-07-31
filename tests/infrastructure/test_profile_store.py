@@ -7,7 +7,7 @@ from datetime import UTC, datetime
 import pytest
 import sqlalchemy as sa
 
-from jobpicky.contracts import ErrorCode, ProfileSnapshot
+from jobpicky.contracts import EducationLevel, ErrorCode, ProfileSnapshot
 from jobpicky.errors import ApplicationError
 from jobpicky.infrastructure.database import create_engine, create_session_factory
 from jobpicky.infrastructure.profile_store import PROFILE_TABLE, PostgresProfileStore
@@ -32,7 +32,7 @@ def _snapshot(version: int) -> ProfileSnapshot:
         target_roles=["后端工程师"],
         skills=["Python"],
         excluded_roles=[],
-        education="本科",
+        education=EducationLevel.BACHELOR,
         graduation_year=2027,
         expected_salary_min=None,
         experience_summary=None,

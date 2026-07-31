@@ -33,8 +33,6 @@ class BaselineMatchingService:
         profile: ProfileSnapshot,
         effective_extra_request: str | None,
     ) -> HardFilterSpec:
-        # recruitment_types stays empty: ProfileSnapshot carries no recruitment
-        # type, and insufficient information must not become an exclusion.
         # effective_extra_request is natural language; the baseline cannot
         # deterministically derive hard conditions from it.
         # graduation_year / min_salary pass through as-is: None means the
@@ -44,7 +42,7 @@ class BaselineMatchingService:
             target_locations=list(profile.target_locations),
             excluded_roles=list(profile.excluded_roles),
             education=profile.education,
-            recruitment_types=[],
+            recruitment_types=list(profile.recruitment_types),
             graduation_year=profile.graduation_year,
             min_salary=profile.expected_salary_min,
             only_open=True,

@@ -4,20 +4,40 @@ from collections.abc import Mapping, Sequence
 from typing import Protocol
 
 from .contracts import (
+    AccessTokenResponse,
+    AuthUserView,
     Candidate,
     CollectionBatch,
+    CreditSummary,
+    CreditUsage,
+    Feedback,
     FilterResult,
     HardFilterSpec,
     IngestionResult,
+    JobDetailView,
     JobFact,
+    JobFilterOptions,
+    JobListQuery,
+    JobPoolPage,
     JobQuery,
+    LoginRequest,
+    LoginResponse,
     MatchAssessment,
     Page,
     ProfileDraft,
+    ProfileSaveRequest,
     ProfileSnapshot,
-    RecommendationItem,
+    RecommendationCardView,
+    RecommendationFeedbackView,
+    RecommendationResultView,
+    RecommendationRunAccepted,
+    RecommendationSort,
+    RecommendationTaskView,
+    RegisterRequest,
     RunAccepted,
     RunView,
+    SavedJobState,
+    SavedJobView,
     SearchHit,
     SourceInput,
     SourcePatch,
@@ -84,23 +104,17 @@ class ProfileParserPort(Protocol):
 class ProfileSnapshotReaderPort(Protocol):
     async def get_snapshot(self, user_id: str, profile_id: str) -> ProfileSnapshot: ...
 
-
-class ProfileApplicationPort(Protocol):
-    async def create_profile(
-        self,
-        user_id: str,
-        *,
-        resume_text: str,
-        extra_request: str | None = None,
-    ) -> ProfileSnapshot: ...
-
     async def get_current(self, user_id: str) -> ProfileSnapshot: ...
 
-    async def update_profile(
+
+class ProfileApplicationPort(Protocol):
+    async def get_current(self, user_id: str) -> ProfileSnapshot: ...
+
+    async def save_current(
         self,
         user_id: str,
-        profile_id: str,
-        draft: ProfileDraft,
+        draft: ProfileSaveRequest,
+        idempotency_key: str,
     ) -> ProfileSnapshot: ...
 
 
@@ -125,7 +139,65 @@ class SourceApplicationPort(Protocol):
 
 
 class UserJobQueryPort(Protocol):
-    async def get_job(self, user_id: str, job_id: str) -> JobFact: ...
+    async def get_job(self, user_id: str, job_id: str) -> JobDetailView: ...
+
+
+class JobPoolQueryPort(Protocol):
+    async def list_jobs(self, user_id: str | None, query: JobListQuery) -> JobPoolPage: ...
+
+    async def get_job(self, user_id: str | None, job_id: str) -> JobDetailView: ...
+
+    async def get_filter_options(self) -> JobFilterOptions: ...
+
+
+class AuthenticationPort(Protocol):
+    async def register(self, request: RegisterRequest) -> LoginResponse: ...
+
+    async def login(self, request: LoginRequest) -> LoginResponse: ...
+
+    async def refresh(self, refresh_token: str) -> AccessTokenResponse: ...
+
+    async def logout(self, refresh_token: str | None) -> None: ...
+
+    async def get_current_user(self, user_id: str) -> AuthUserView: ...
+
+
+AuthPort = AuthenticationPort
+
+
+class CreditsPort(Protocol):
+    async def get_summary(self, user_id: str) -> CreditSummary: ...
+
+    async def charge_recommendation(
+        self,
+        user_id: str,
+        run_id: str,
+        amount: int,
+    ) -> CreditUsage: ...
+
+    async def refund_recommendation(
+        self,
+        user_id: str,
+        run_id: str,
+        amount: int,
+    ) -> CreditUsage: ...
+
+
+CreditPort = CreditsPort
+
+
+class SavedJobPort(Protocol):
+    async def set_saved(self, user_id: str, job_id: str, is_saved: bool) -> SavedJobState: ...
+
+    async def list_saved(
+        self,
+        user_id: str,
+        page: int,
+        page_size: int,
+    ) -> Page[SavedJobView]: ...
+
+
+SavedJobsPort = SavedJobPort
 
 
 class AdminJobQueryPort(Protocol):
@@ -192,19 +264,18 @@ class RecommendationOrchestratorPort(Protocol):
     async def start(
         self,
         user_id: str,
-        profile_id: str,
         extra_request: str | None = None,
         idempotency_key: str | None = None,
-    ) -> RunAccepted: ...
+    ) -> RecommendationRunAccepted: ...
 
     async def list_runs(
         self,
         user_id: str,
         page: int,
         page_size: int,
-    ) -> Page[RunView]: ...
+    ) -> Page[RecommendationTaskView]: ...
 
-    async def get_run(self, user_id: str, run_id: str) -> RunView: ...
+    async def get_run(self, user_id: str, run_id: str) -> RecommendationTaskView: ...
 
     async def get_results(
         self,
@@ -212,7 +283,26 @@ class RecommendationOrchestratorPort(Protocol):
         run_id: str,
         page: int,
         page_size: int,
-    ) -> Page[RecommendationItem]: ...
+    ) -> Page[RecommendationResultView]: ...
+
+
+class RecommendationQueryPort(Protocol):
+    async def list_recommendations(
+        self,
+        user_id: str,
+        page: int,
+        page_size: int,
+        sort: RecommendationSort,
+    ) -> Page[RecommendationCardView]: ...
+
+    async def update_feedback(
+        self,
+        user_id: str,
+        recommendation_id: str,
+        feedback: Feedback | None,
+    ) -> RecommendationFeedbackView: ...
+
+    async def delete_recommendation(self, user_id: str, recommendation_id: str) -> None: ...
 
 
 class AdminRecommendationRunQueryPort(Protocol):
@@ -227,19 +317,27 @@ class AdminRecommendationRunQueryPort(Protocol):
 
 
 __all__ = [
+    "AuthPort",
     "AdminJobQueryPort",
     "AdminRecommendationRunQueryPort",
+    "AuthenticationPort",
+    "CreditPort",
+    "CreditsPort",
     "CrawlOrchestratorPort",
     "EmbeddingPort",
     "JobCatalogPort",
     "JobEmbeddingStorePort",
     "JobEvaluatorPort",
+    "JobPoolQueryPort",
     "MatchingPort",
     "ProfileApplicationPort",
     "ProfileParserPort",
     "ProfileSnapshotReaderPort",
     "RecommendationOrchestratorPort",
+    "RecommendationQueryPort",
     "SourceApplicationPort",
     "SourceCollectorPort",
+    "SavedJobPort",
+    "SavedJobsPort",
     "UserJobQueryPort",
 ]

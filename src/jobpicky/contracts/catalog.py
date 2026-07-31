@@ -10,6 +10,7 @@ from .common import (
     JobStatus,
     JsonObject,
     NonEmptyStr,
+    NonNegativeInt,
     NormalizedScore,
 )
 
@@ -27,6 +28,25 @@ class FilterReasonCode(StrEnum):
 class RetrievalChannel(StrEnum):
     KEYWORD = "keyword"
     SEMANTIC = "semantic"
+
+
+class RecruitmentType(StrEnum):
+    CAMPUS = "校招"
+    SOCIAL = "社招"
+    INTERNSHIP = "实习"
+
+
+class EducationLevel(StrEnum):
+    HIGH_SCHOOL_OR_BELOW = "高中及以下"
+    COLLEGE = "专科"
+    BACHELOR = "本科"
+    MASTER = "硕士"
+    DOCTORATE = "博士"
+
+
+class JobSourceView(ContractModel):
+    id: NonEmptyStr
+    name: NonEmptyStr
 
 
 class JobFact(ContractModel):
@@ -72,6 +92,44 @@ class JobQuery(ContractModel):
     keyword: NonEmptyStr | None = None
 
 
+class JobListQuery(ContractModel):
+    page: int = Field(default=1, ge=1)
+    page_size: int = Field(default=30, ge=1, le=100)
+    q: str | None = Field(default=None, max_length=200)
+    city: list[NonEmptyStr] = Field(default_factory=list, max_length=50)
+    company_nature: list[NonEmptyStr] = Field(default_factory=list, max_length=50)
+    source_id: list[NonEmptyStr] = Field(default_factory=list, max_length=50)
+    recruitment_type: list[RecruitmentType] = Field(default_factory=list, max_length=50)
+    education: list[EducationLevel] = Field(default_factory=list, max_length=50)
+    graduation_year: list[int] = Field(default_factory=list, max_length=50)
+    salary_min: NonNegativeInt | None = None
+    salary_max: NonNegativeInt | None = None
+
+    @model_validator(mode="after")
+    def validate_salary_range(self) -> JobListQuery:
+        if (
+            self.salary_min is not None
+            and self.salary_max is not None
+            and self.salary_min > self.salary_max
+        ):
+            raise ValueError("salary_min must not exceed salary_max")
+        self.q = self.q.strip() if self.q and self.q.strip() else None
+        for field_name in (
+            "city",
+            "company_nature",
+            "source_id",
+            "recruitment_type",
+            "education",
+            "graduation_year",
+        ):
+            values = getattr(self, field_name)
+            setattr(self, field_name, _deduplicate(values))
+        return self
+
+
+JobPoolQuery = JobListQuery
+
+
 class HardFilterSpec(ContractModel):
     target_locations: list[NonEmptyStr] = Field(default_factory=list)
     excluded_roles: list[NonEmptyStr] = Field(default_factory=list)
@@ -107,3 +165,121 @@ class SearchHit(ContractModel):
     job_id: NonEmptyStr
     score: NormalizedScore
     channel: RetrievalChannel
+
+
+class JobListItem(ContractModel):
+    """Public job-pool card; it intentionally is not a JobFact."""
+
+    id: NonEmptyStr
+    title: NonEmptyStr
+    company_name: NonEmptyStr
+    company_nature: NonEmptyStr | None = None
+    locations: list[NonEmptyStr] = Field(default_factory=list)
+    source: JobSourceView
+    recruitment_type: RecruitmentType | None = None
+    education_requirement: NonEmptyStr | None = None
+    graduation_years: list[int] = Field(default_factory=list)
+    salary_min: NonNegativeInt | None = None
+    salary_max: NonNegativeInt | None = None
+    salary_months: int | None = Field(default=None, ge=1)
+    description_preview: str | None = Field(default=None, max_length=240)
+    published_at: AwareDatetime | None = None
+    last_confirmed_at: AwareDatetime
+    is_saved: bool | None = None
+
+    @model_validator(mode="after")
+    def keep_salary_range_ordered(self) -> JobListItem:
+        if (
+            self.salary_min is not None
+            and self.salary_max is not None
+            and self.salary_min > self.salary_max
+        ):
+            raise ValueError("salary_min must not exceed salary_max")
+        return self
+
+
+class JobDetailView(ContractModel):
+    """Public job detail; internal fact version and source secrets stay hidden."""
+
+    id: NonEmptyStr
+    title: NonEmptyStr
+    company_name: NonEmptyStr
+    company_nature: NonEmptyStr | None = None
+    locations: list[NonEmptyStr] = Field(default_factory=list)
+    source: JobSourceView
+    recruitment_type: RecruitmentType | None = None
+    education_requirement: NonEmptyStr | None = None
+    graduation_years: list[int] = Field(default_factory=list)
+    salary_min: NonNegativeInt | None = None
+    salary_max: NonNegativeInt | None = None
+    salary_months: int | None = Field(default=None, ge=1)
+    description: str | None = None
+    detail_url: HttpUrlString | None = None
+    apply_url: HttpUrlString | None = None
+    status: JobStatus
+    published_at: AwareDatetime | None = None
+    deadline_at: AwareDatetime | None = None
+    first_seen_at: AwareDatetime
+    last_confirmed_at: AwareDatetime
+    updated_at: AwareDatetime
+    is_saved: bool | None = None
+
+    @model_validator(mode="after")
+    def keep_salary_range_ordered(self) -> JobDetailView:
+        if (
+            self.salary_min is not None
+            and self.salary_max is not None
+            and self.salary_min > self.salary_max
+        ):
+            raise ValueError("salary_min must not exceed salary_max")
+        return self
+
+
+class SavedJobItem(JobListItem):
+    status: JobStatus
+    is_saved: bool = True
+
+
+class SavedJobView(ContractModel):
+    saved_at: AwareDatetime
+    job: SavedJobItem
+
+
+class JobPoolPage(ContractModel):
+    items: list[JobListItem]
+    total: NonNegativeInt
+    page: int = Field(ge=1)
+    page_size: int = Field(ge=1, le=100)
+    pool_total: NonNegativeInt
+
+
+class FilterOptionsLimits(ContractModel):
+    visible_pool_limit: int = Field(ge=1)
+    default_page_size: int = Field(ge=1, le=100)
+    public_page_size_max: int = Field(ge=1, le=100)
+    authenticated_page_size_max: int = Field(ge=1, le=100)
+
+
+class JobFilterOptions(ContractModel):
+    cities: list[NonEmptyStr] = Field(default_factory=list)
+    company_natures: list[NonEmptyStr] = Field(default_factory=list)
+    sources: list[JobSourceView] = Field(default_factory=list)
+    recruitment_types: list[RecruitmentType] = Field(default_factory=list)
+    educations: list[EducationLevel] = Field(default_factory=list)
+    graduation_years: list[int] = Field(default_factory=list)
+    limits: FilterOptionsLimits
+
+
+FilterOptionsView = JobFilterOptions
+JobListResponse = JobPoolPage
+
+
+def _deduplicate(values: list[object]) -> list[object]:
+    seen: set[str] = set()
+    result: list[object] = []
+    for value in values:
+        key = str(value).strip().casefold()
+        if key not in seen:
+            seen.add(key)
+            result.append(value)
+    return result

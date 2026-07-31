@@ -45,6 +45,15 @@ def test_recruitment_type_is_never_inferred_and_only_open_is_default() -> None:
     assert spec.only_open is True
 
 
+def test_profile_recruitment_types_become_deterministic_hard_filters() -> None:
+    spec = BaselineMatchingService().build_filter_spec(
+        make_profile(recruitment_types=["社招"]),
+        None,
+    )
+
+    assert spec.recruitment_types == ["社招"]
+
+
 def test_extra_request_does_not_affect_filter_spec() -> None:
     service = BaselineMatchingService()
     profile = make_profile()

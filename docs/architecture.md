@@ -24,7 +24,7 @@
 |---|---|---|
 | 招聘源与采集 `collection` | 来源识别、平台采集、未知来源探索、原始字段标准化 | 决定系统岗位 ID、关闭岗位、执行推荐 |
 | 岗位目录 `catalog` | 岗位事实、身份去重、生命周期，并执行结构化、全文与向量查询 | 调用招聘网站、决定召回策略、生成模型推荐理由 |
-| 用户画像 `profiles` | 简历文本提取、画像解析、校验、版本 | 搜索岗位、改变岗位事实 |
+| 用户画像 `profiles` | 当前画像表单、草稿/快照校验与版本；未来可接入简历解析 | 搜索岗位、改变岗位事实 |
 | 匹配 `matching` | 生成硬筛选与检索条件、融合候选、模型评估 | 保存或编造岗位事实、控制采集 |
 | 编排 `orchestration` | 创建运行、按顺序调用能力、记录进度、失败与恢复 | 承载采集、SQL、检索或模型算法 |
 | 接口 `api` | 鉴权上下文、输入校验、DTO 转换、HTTP 语义 | 业务算法和直接数据库访问 |
@@ -220,7 +220,8 @@ PENDING | PROFILE | FILTER | RETRIEVE | EVALUATE | SAVE | COMPLETE
 
 ### 4.5 `JobFact`
 
-岗位目录对其他模块和客户端提供的事实视图。
+岗位目录对其他模块提供的内部事实视图。前端不直接复用它，岗位列表、详情、收藏和推荐卡片使用下方专用
+API View，避免把 `fact_version`、召回分或其他内部字段泄露到页面契约。
 
 | 字段 | 类型 | 必须 |
 |---|---|---:|
@@ -250,33 +251,44 @@ PENDING | PROFILE | FILTER | RETRIEVE | EVALUATE | SAVE | COMPLETE
 
 普通用户接口不得返回内部去重键、内容哈希、Embedding、原始响应和秘密采集参数。
 
-### 4.6 `ProfileDraft` 与 `ProfileSnapshot`
+### 4.6 `ProfileDraft`、`ProfileSaveRequest` 与 `ProfileSnapshot`
 
-模型或规则解析得到 `ProfileDraft`，校验并保存后成为不可变的 `ProfileSnapshot`。
+首版画像由用户表单直接填写。`ProfileDraft` 只包含用户可编辑字段，`ProfileSaveRequest` 在其上增加可空的
+`base_version`；`warnings`、用户 ID、画像 ID、版本和创建时间均为服务端字段，不能由用户提交。
 
-| 字段 | 类型 | 必须 | 语义 |
-|---|---|---:|---|
-| `target_locations` | `list[str]` | 是 | 目标地点 |
-| `target_roles` | `list[str]` | 是 | 目标岗位方向 |
-| `skills` | `list[str]` | 是 | 有输入依据的技能 |
-| `excluded_roles` | `list[str]` | 是 | 明确不考虑的岗位 |
-| `education` | `str \| null` | 否 | 无法确认时为空 |
-| `graduation_year` | `int \| null` | 否 | 求职者届次（如 2027）；非校招场景可为空 |
-| `expected_salary_min` | `int \| null` | 否 | 期望月薪下限（元）；无法确认时为空 |
-| `experience_summary` | `str \| null` | 否 | 与匹配有关的经历摘要 |
-| `extra_request` | `str \| null` | 否 | 用户补充要求 |
-| `warnings` | `list[str]` | 是 | 冲突、缺失和低置信信息 |
+| 字段 | 类型 | 约束 |
+|---|---|---|
+| `target_roles` | `list[str]` | 1～10 项，每项 1～100 字符 |
+| `target_locations` | `list[str]` | 最多 10 项，空列表表示不限 |
+| `recruitment_types` | `list[str]` | 仅 `校招`、`社招`、`实习`，最多 3 项 |
+| `skills` | `list[str]` | 最多 50 项，每项 1～100 字符 |
+| `excluded_roles` | `list[str]` | 最多 20 项，每项 1～100 字符 |
+| `education` | `str \| null` | `高中及以下`、`专科`、`本科`、`硕士`、`博士`或空 |
+| `graduation_year` | `int \| null` | 当前年份前 80 年至后 10 年 |
+| `expected_salary_min` | `int \| null` | 0～1000000 元/月 |
+| `experience_summary` | `str \| null` | 最多 5000 字符 |
+| `extra_request` | `str \| null` | 最多 1000 字符 |
 
-`ProfileSnapshot` 在此基础上增加：
+`skills` 与 `experience_summary` 至少填写一项。标签先去除首尾空白、按规范化值去重，再保存展示文本。
+`ProfileSnapshot` 增加 `id`、`user_id`、从 1 递增的 `version`、服务端 `warnings` 和带时区的 `created_at`，
+并且不可变。一个用户只有一个逻辑当前画像；内容无变化不生成新版本，版本冲突返回稳定错误。
 
-| 字段 | 类型 |
-|---|---|
-| `id` | `str` |
-| `user_id` | `str` |
-| `version` | `int`，从 1 递增 |
-| `created_at` | `datetime` |
+`CurrentProfileView` 是用户接口专用的只读投影，保留画像字段、版本、警告和创建时间，但不返回 `user_id`。
 
-原始简历引用属于受保护字段，不默认进入普通画像响应。
+原始简历引用属于受保护字段，不默认进入普通画像响应。PDF 解析和 AI 对话若未来实现，只能产出草稿，不能绕过
+`ProfileSaveRequest` 直接修改正式画像。
+
+### 4.6.1 前端岗位 View
+
+`JobListItem`、`JobDetailView`、`SavedJobView` 和 `JobFilterOptions` 是前端专用 DTO：
+
+- `JobListItem` 只含岗位卡片字段、来源 `{id, name}`、描述预览和可空的 `is_saved`；不含完整 JD、状态、事实版本或内部检索字段。
+- `JobDetailView` 含完整 JD、详情/投递链接、生命周期状态以及 `published_at`、`deadline_at`、`first_seen_at`、
+  `last_confirmed_at`、`updated_at` 等时间字段；不含 `fact_version`、去重键、Embedding 或秘密来源配置。
+- `SavedJobView` 包含 `saved_at` 与岗位列表视图，岗位状态保留以便展示已关闭或待确认岗位。
+- `JobFilterOptions` 提供当前可见岗位池的规范化城市、公司性质、来源、招聘类型、学历、届次和分页限制。
+
+这些 View 不继承或替换 `JobFact`；目录内部仍以 `JobFact` 作为岗位事实唯一来源。
 
 ### 4.7 `HardFilterSpec` 与 `FilterResult`
 
@@ -351,7 +363,7 @@ SALARY_MISMATCH
 
 ### 4.10 `RecommendationItem`
 
-最终结果使用组合结构，显式区分事实、召回和判断。以下是省略部分字段的结构示例：
+内部最终结果使用组合结构，显式区分事实、召回和判断。以下是省略部分字段的结构示例：
 
 ```json
 {
@@ -364,7 +376,34 @@ SALARY_MISMATCH
 完整字段分别遵循 `JobFact`、`Candidate` 和 `MatchAssessment`。三个 `job_id` 必须一致；普通结果列表只包含 `matched=true` 的项。`job` 是保存推荐结果前从岗位目录读取并与结果一同保存的事实快照，其 `fact_version` 用于追溯；当前岗位状态可另通过岗位详情接口查询。
 
 `RecommendationCandidate` 只作为召回到评估之间的内部中间契约；推荐运行持久化和用户结果接口使用
-`RecommendationItem`，并要求 `assessment.matched=true`。
+`RecommendationItem`，并要求 `assessment.matched=true`。该内部 DTO 保留 `retrieval` 和完整 `JobFact`，
+不直接作为前端响应。
+
+前端使用独立的 `RecommendationCardView`：
+
+```json
+{
+  "recommendation_id": "rec-123",
+  "run_id": "run-123",
+  "recommended_at": "2026-07-31T08:00:00Z",
+  "job": {
+    "id": "job-123",
+    "title": "Python 后端工程师",
+    "company_name": "示例科技",
+    "company_nature": "民营企业",
+    "locations": ["上海"],
+    "first_seen_at": "2026-07-20T08:00:00Z"
+  },
+  "assessment": {"match_score": 89, "reason": "…", "matched_strengths": [], "gaps": [], "evidence": []},
+  "is_saved": true,
+  "feedback": "LIKE"
+}
+```
+
+推荐卡片不返回 `retrieval_score`、薪资、学历、届次、完整 JD、来源标识或 `fact_version`。卡片中的
+`RecommendationAssessmentView` 是 `MatchAssessment` 的前端投影，只保留匹配分、中文理由、优势、缺口和依据，
+不返回内部 `job_id` 或 `matched`。单次任务结果使用扩展的 `RecommendationResultView` 增加 `is_deleted` 和
+`deleted_at`，软删除只隐藏“全部推荐”而保留历史任务。
 
 ### 4.11 运行与通用响应
 
@@ -374,6 +413,10 @@ SALARY_MISMATCH
 |---|---|
 | `run_id` | `str` |
 | `status` | `RunStatus`，创建时通常为 `PENDING` |
+
+推荐任务创建使用 `RecommendationRunAccepted`，其 `status` 只允许用户可见的
+`PENDING`、`RUNNING`、`SUCCEEDED`、`FAILED`，并增加 `credits_charged` 与 `balance_after`；采集运行继续使用
+上述通用 `RunAccepted`。
 
 `RunView`：
 
@@ -419,6 +462,16 @@ SALARY_MISMATCH
 首版保留以下稳定错误语义：
 
 ```text
+AUTHENTICATION_REQUIRED
+SESSION_EXPIRED
+ACCOUNT_DISABLED
+INVALID_CREDENTIALS
+EMAIL_ALREADY_REGISTERED
+TOO_MANY_ATTEMPTS
+INSUFFICIENT_CREDITS
+PROFILE_NOT_FOUND
+PROFILE_VERSION_CONFLICT
+IDEMPOTENCY_CONFLICT
 VALIDATION_ERROR
 NOT_FOUND
 FORBIDDEN
@@ -431,8 +484,15 @@ RECOMMENDATION_FAILED
 INTERNAL_ERROR
 ```
 
-`ErrorBody` 仅用于 HTTP 响应，必须带当前请求的 `request_id`，可选关联 `run_id`。
+所有用户可见 `message` 使用中文；机器码保持英文大写且一个错误码只表达一个语义。认证、积分、画像版本
+和幂等错误必须使用上表中的稳定码。`ErrorBody` 仅用于 HTTP 响应，必须带当前请求的 `request_id`，可选
+关联 `run_id`。
 后台运行持久化使用不含 `request_id` 的 `RunError`；运行历史不能因为查询请求不同而改变其错误内容。
+
+用户侧推荐任务使用独立的 `RecommendationTaskView`，包含 `PENDING/RUNNING/SUCCEEDED/FAILED`、
+`current_step`、`progress_percent`、计数、`CreditUsage` 和脱敏中文错误；它不把管理端或内部采集运行字段
+直接暴露给用户。推荐创建使用独立的 `RecommendationRunAccepted`，包含推荐任务状态、`credits_charged` 和
+`balance_after`；采集创建继续使用 `RunAccepted`。
 
 ### 4.12 推荐请求输入合并
 
@@ -511,34 +571,29 @@ class ProfileParserPort(Protocol):
     ) -> ProfileDraft: ...
 ```
 
-保存、读取和创建新版本由画像模块的应用服务负责。文件解析器只输出文本，不与模型画像契约耦合。
+`ProfileParserPort` 仅为未来导入能力保留；首版用户直接提交画像表单。保存、读取和创建新版本由画像模块的
+应用服务负责。文件解析器只输出文本，不与正式画像契约耦合。
 
 ```python
 class ProfileSnapshotReaderPort(Protocol):
     async def get_snapshot(self, user_id: str, profile_id: str) -> ProfileSnapshot: ...
+    async def get_current(self, user_id: str) -> ProfileSnapshot: ...
 ```
 
 推荐编排器只能通过该只读端口读取画像快照；画像私有 Repository 或 ORM 不得出现在编排模块。
 
-画像 P0 应用服务最小契约为：按用户创建版本、读取当前版本、基于用户和画像 ID 修正并创建新版本。
+画像 P0 应用服务最小契约为：按用户读取当前版本，以及用 `base_version` 和幂等键保存完整表单。推荐编排器
+只能通过 `get_current` 读取当前快照，不接受前端传入的 `profile_id`。
 
 ```python
 class ProfileApplicationPort(Protocol):
-    async def create_profile(
-        self,
-        user_id: str,
-        *,
-        resume_text: str,
-        extra_request: str | None = None,
-    ) -> ProfileSnapshot: ...
-
     async def get_current(self, user_id: str) -> ProfileSnapshot: ...
 
-    async def update_profile(
+    async def save_current(
         self,
         user_id: str,
-        profile_id: str,
-        draft: ProfileDraft,
+        draft: ProfileSaveRequest,
+        idempotency_key: str,
     ) -> ProfileSnapshot: ...
 ```
 
@@ -627,23 +682,22 @@ class RecommendationOrchestratorPort(Protocol):
     async def start(
         self,
         user_id: str,
-        profile_id: str,
         extra_request: str | None = None,
         idempotency_key: str | None = None,
-    ) -> RunAccepted: ...
+    ) -> RecommendationRunAccepted: ...
 
     async def list_runs(
         self,
         user_id: str,
         page: int,
         page_size: int,
-    ) -> Page[RunView]: ...
+    ) -> Page[RecommendationTaskView]: ...
 
     async def get_run(
         self,
         user_id: str,
         run_id: str,
-    ) -> RunView: ...
+    ) -> RecommendationTaskView: ...
 
     async def get_results(
         self,
@@ -651,11 +705,11 @@ class RecommendationOrchestratorPort(Protocol):
         run_id: str,
         page: int,
         page_size: int,
-    ) -> Page[RecommendationItem]: ...
+    ) -> Page[RecommendationResultView]: ...
 ```
 
-`get_results` 返回评估后的最终推荐 `RecommendationItem`（见 §4.10）。其中岗位事实是保存前重新读取的
-`JobFact` 快照，结果列表不包含 `matched=false` 的评估项目。
+`get_results` 返回前端 `RecommendationResultView`（见 §4.10）。它由保存前重新读取的 `JobFact` 快照组装，
+结果列表不包含 `matched=false` 的评估项目；`RecommendationItem` 只属于内部匹配和持久化边界。
 
 具体图节点和执行器不是端口的一部分。模型工具只包装上述业务端口，不应形成另一套平行业务接口。
 
@@ -667,13 +721,57 @@ class AdminRecommendationRunQueryPort(Protocol):
     async def get_run(self, admin_id: str, run_id: str) -> RunView: ...
 ```
 
+用户认证、积分、收藏和推荐交互使用带用户上下文的最小端口：
+
+```python
+class AuthenticationPort(Protocol):
+    async def register(self, request: RegisterRequest) -> LoginResponse: ...
+    async def login(self, request: LoginRequest) -> LoginResponse: ...
+    async def refresh(self, refresh_token: str) -> AccessTokenResponse: ...
+    async def logout(self, refresh_token: str | None) -> None: ...
+    async def get_current_user(self, user_id: str) -> AuthUserView: ...
+
+
+class CreditsPort(Protocol):
+    async def get_summary(self, user_id: str) -> CreditSummary: ...
+    async def charge_recommendation(
+        self, user_id: str, run_id: str, amount: int
+    ) -> CreditUsage: ...
+    async def refund_recommendation(
+        self, user_id: str, run_id: str, amount: int
+    ) -> CreditUsage: ...
+
+
+class SavedJobPort(Protocol):
+    async def set_saved(self, user_id: str, job_id: str, is_saved: bool) -> SavedJobState: ...
+    async def list_saved(self, user_id: str, page: int, page_size: int) -> Page[SavedJobView]: ...
+
+
+class JobPoolQueryPort(Protocol):
+    async def list_jobs(self, user_id: str | None, query: JobListQuery) -> JobPoolPage: ...
+    async def get_job(self, user_id: str | None, job_id: str) -> JobDetailView: ...
+    async def get_filter_options(self) -> JobFilterOptions: ...
+
+
+class RecommendationQueryPort(Protocol):
+    async def list_recommendations(
+        self, user_id: str, page: int, page_size: int, sort: RecommendationSort
+    ) -> Page[RecommendationCardView]: ...
+    async def update_feedback(
+        self, user_id: str, recommendation_id: str, feedback: Feedback | None
+    ) -> RecommendationFeedbackView: ...
+    async def delete_recommendation(self, user_id: str, recommendation_id: str) -> None: ...
+```
+
+这些端口只定义跨模块输入输出和权限上下文，不代表本阶段已经有实现；未实现能力不得创建假数据路由。
+
 来源管理、用户岗位详情和管理端岗位查询也由应用服务端口承接：`SourceApplicationPort`、
 `UserJobQueryPort` 和 `AdminJobQueryPort`。它们分别携带 `admin_id` 或 `user_id`，禁止通过调用者自带的
 资源 ID 推断权限。
 
 ```python
 class UserJobQueryPort(Protocol):
-    async def get_job(self, user_id: str, job_id: str) -> JobFact: ...
+    async def get_job(self, user_id: str, job_id: str) -> JobDetailView: ...
 
 
 class AdminJobQueryPort(Protocol):
@@ -693,9 +791,10 @@ class AdminJobQueryPort(Protocol):
 ### 6.1 通用规则
 
 - 版本前缀固定为 `/api/v1`。
-- 用户接口位于 `/api/v1/user`，管理接口位于 `/api/v1/admin`，系统接口位于 `/api/v1/system`。
+- 用户接口位于 `/api/v1/user`，公开岗位和认证接口分别位于 `/api/v1/jobs`、`/api/v1/auth`，管理接口位于
+  `/api/v1/admin`，系统接口位于 `/api/v1/system`。
 - JSON 为默认格式；文件上传使用 `multipart/form-data`。
-- 长任务创建成功返回 `202 Accepted` 和 `RunAccepted`。
+- 长任务创建成功返回 `202 Accepted` 和 `RecommendationRunAccepted`；采集运行继续使用 `RunAccepted`。
 - 列表使用统一分页，页大小上限由服务配置并写入 OpenAPI。
 - 错误使用统一错误响应；内部堆栈不得对外返回。
 - OpenAPI 是可执行接口清单，必须通过契约测试与本文语义保持一致。
@@ -707,14 +806,26 @@ class AdminJobQueryPort(Protocol):
 
 | HTTP API | 应用服务/端口 | 输入/输出 DTO | 权限上下文 |
 |---|---|---|---|
-| `POST /api/v1/user/profiles` | `ProfileApplicationPort.create_profile` | `resume_text`/文件转文本 → `ProfileSnapshot` | `user_id` |
-| `GET /api/v1/user/profiles/current` | `ProfileApplicationPort.get_current` | `ProfileSnapshot` | `user_id` |
-| `PATCH /api/v1/user/profiles/{profile_id}` | `ProfileApplicationPort.update_profile` | `ProfileDraft` → `ProfileSnapshot` | `user_id` + `profile_id` |
-| `POST /api/v1/user/recommendation-runs` | `RecommendationOrchestratorPort.start` | `profile_id` + `extra_request` → `RunAccepted` | `user_id` |
-| `GET /api/v1/user/recommendation-runs` | `RecommendationOrchestratorPort.list_runs` | `Page[RunView]` | `user_id` |
-| `GET /api/v1/user/recommendation-runs/{run_id}` | `RecommendationOrchestratorPort.get_run` | `RunView` | `user_id` |
-| `GET /api/v1/user/recommendation-runs/{run_id}/results` | `RecommendationOrchestratorPort.get_results` | `Page[RecommendationItem]` | `user_id` |
-| `GET /api/v1/user/jobs/{job_id}` | `UserJobQueryPort.get_job` | `JobFact` | `user_id` |
+| `GET /api/v1/jobs` | `JobPoolQueryPort.list_jobs` | `JobListQuery` → `JobPoolPage` | 可选 `user_id` |
+| `GET /api/v1/jobs/filter-options` | `JobPoolQueryPort.get_filter_options` | `JobFilterOptions` | 无 |
+| `GET /api/v1/jobs/{job_id}` | `JobPoolQueryPort.get_job` | `JobDetailView` | 可选 `user_id` |
+| `GET /api/v1/user/recommendations` | `RecommendationQueryPort.list_recommendations` | `Page[RecommendationCardView]` | `user_id` |
+| `GET /api/v1/user/recommendation-runs` | `RecommendationOrchestratorPort.list_runs` | `Page[RecommendationTaskView]` | `user_id` |
+| `POST /api/v1/user/recommendation-runs` | `RecommendationOrchestratorPort.start` | `RecommendationRunRequest` → `RecommendationRunAccepted` | `user_id` |
+| `GET /api/v1/user/recommendation-runs/{run_id}` | `RecommendationOrchestratorPort.get_run` | `RecommendationTaskView` | `user_id` |
+| `GET /api/v1/user/recommendation-runs/{run_id}/results` | `RecommendationOrchestratorPort.get_results` | `Page[RecommendationResultView]` | `user_id` |
+| `PUT /api/v1/user/recommendations/{recommendation_id}/feedback` | `RecommendationQueryPort.update_feedback` | `RecommendationFeedbackRequest` → `RecommendationFeedbackView` | `user_id` |
+| `DELETE /api/v1/user/recommendations/{recommendation_id}` | `RecommendationQueryPort.delete_recommendation` | `204 No Content` | `user_id` |
+| `PUT/DELETE /api/v1/user/saved-jobs/{job_id}` | `SavedJobPort.set_saved` | `SavedJobState` | `user_id` |
+| `GET /api/v1/user/credits` | `CreditsPort.get_summary` | `CreditSummary` | `user_id` |
+| `GET /api/v1/user/profiles/current` | `ProfileApplicationPort.get_current` | `ProfileSnapshot` → `CurrentProfileView` | `user_id` |
+| `PUT /api/v1/user/profiles/current` | `ProfileApplicationPort.save_current` | `ProfileSaveRequest` → `CurrentProfileView` | `user_id` |
+| `POST /api/v1/auth/register` | `AuthenticationPort.register` | `RegisterRequest` → `LoginResponse` | 无 |
+| `POST /api/v1/auth/login` | `AuthenticationPort.login` | `LoginRequest` → `LoginResponse` | 无 |
+| `POST /api/v1/auth/refresh` | `AuthenticationPort.refresh` | Cookie → `AccessTokenResponse` | Refresh Cookie |
+| `POST /api/v1/auth/logout` | `AuthenticationPort.logout` | Cookie → `204 No Content` | Refresh Cookie |
+| `GET /api/v1/auth/me` | `AuthenticationPort.get_current_user` | `AuthUserView` | `user_id` |
+| `GET /api/v1/user/saved-jobs` | `SavedJobPort.list_saved` | `Page[SavedJobView]` | `user_id` |
 | `POST /api/v1/admin/sources` | `SourceApplicationPort.create_source` | `SourceInput` → `SourceView` | `admin_id` |
 | `GET /api/v1/admin/sources` | `SourceApplicationPort.list_sources` | `Page[SourceView]` | `admin_id` |
 | `GET /api/v1/admin/sources/{source_id}` | `SourceApplicationPort.get_source` | `SourceView` | `admin_id` |
@@ -732,20 +843,29 @@ class AdminJobQueryPort(Protocol):
 
 | 方法 | 路径 | 语义 |
 |---|---|---|
-| `POST` | `/api/v1/user/profiles` | 从简历文本或文件创建画像版本 |
+| `GET` | `/api/v1/jobs` | 岗位池匿名第一页预览或登录后的搜索筛选分页 |
+| `GET` | `/api/v1/jobs/filter-options` | 查询岗位筛选规范化选项 |
+| `GET` | `/api/v1/jobs/{job_id}` | 查询统一岗位详情 |
+| `GET` | `/api/v1/user/recommendations` | 查询全部推荐卡片 |
+| `GET` | `/api/v1/user/recommendation-runs` | 查询推荐任务 |
+| `POST` | `/api/v1/user/recommendation-runs` | 使用当前画像发起推荐并扣除积分 |
+| `GET` | `/api/v1/user/recommendation-runs/{run_id}` | 查询推荐状态与真实进度 |
+| `GET` | `/api/v1/user/recommendation-runs/{run_id}/results` | 查询单次推荐结果 |
+| `PUT` | `/api/v1/user/recommendations/{recommendation_id}/feedback` | 幂等保存或清除推荐反馈 |
+| `DELETE` | `/api/v1/user/recommendations/{recommendation_id}` | 软删除推荐记录 |
+| `PUT/DELETE` | `/api/v1/user/saved-jobs/{job_id}` | 幂等收藏或取消收藏岗位 |
+| `GET` | `/api/v1/user/credits` | 查询积分余额和推荐价格 |
 | `GET` | `/api/v1/user/profiles/current` | 查询当前画像 |
-| `PATCH` | `/api/v1/user/profiles/{profile_id}` | 修正画像并创建新版本 |
-| `POST` | `/api/v1/user/recommendation-runs` | 发起推荐 |
-| `GET` | `/api/v1/user/recommendation-runs` | 查询自己的推荐历史 |
-| `GET` | `/api/v1/user/recommendation-runs/{run_id}` | 查询运行状态 |
-| `GET` | `/api/v1/user/recommendation-runs/{run_id}/results` | 查询推荐结果 |
-| `GET` | `/api/v1/user/jobs/{job_id}` | 查询可公开的岗位事实 |
+| `PUT` | `/api/v1/user/profiles/current` | 以版本控制保存当前画像 |
+| `GET` | `/api/v1/user/saved-jobs` | 查询收藏岗位 |
+| `POST` | `/api/v1/auth/register` | 注册普通用户并初始化积分 |
+| `POST` | `/api/v1/auth/login` | 邮箱密码登录 |
+| `POST` | `/api/v1/auth/refresh` | 轮换 Refresh Cookie 并返回新 Access Token |
+| `POST` | `/api/v1/auth/logout` | 退出当前设备 |
+| `GET` | `/api/v1/auth/me` | 查询当前登录用户 |
 
-创建画像时必须提供 `resume_text` 或 `resume_file` 中至少一个。允许实现为同一路径的不同 Content-Type，或由 API 层汇入同一应用服务；对外支持方式必须在 OpenAPI 中明确。
-
-画像修改只接受 `ProfileDraft` 中允许用户修正的字段，并创建新版本，不原地改变历史推荐引用的快照。
-
-发起推荐的最小输入是 `profile_id`，可附带本次 `extra_request`。客户端可通过 `Idempotency-Key` 请求头安全重试创建请求；服务端是否同时接受请求体中的幂等键由 OpenAPI 明确。
+画像保存只接受 `ProfileSaveRequest` 的用户字段和 `base_version`，创建或修改当前画像，不原地改变历史推荐引用的快照。
+发起推荐的最小输入是可选的 `extra_request`，服务端自动读取当前画像；客户端通过 `Idempotency-Key` 安全重试。
 
 ### 6.3 P0 管理接口
 
@@ -775,9 +895,11 @@ GET /api/v1/system/health
 
 健康检查至少区分应用进程可用和关键依赖不可用，不应返回秘密配置。
 
-### 6.5 P1 接口
+### 6.5 尚未实现的接口
 
-收藏、忽略、已投递、重新探索、采集配置编辑、质量面板和审计查询在实现相应 P1 能力时再确定契约。未实现前不创建返回假数据的占位接口。
+忽略、已投递、重新探索、采集配置编辑、质量面板和审计查询在实现相应能力时再确定契约。虽然收藏、认证、
+推荐交互和用户画像的契约已经确认，但本阶段只同步 Schema、端口、配置和 OpenAPI 验证，不创建返回假数据的
+业务路由。所有未实现能力都必须显式失败或保持无路由状态。
 
 ## 7. 数据所有权与持久化
 
@@ -790,7 +912,7 @@ GET /api/v1/system/health
 | 岗位事实 | `catalog` | 首次发现、更新、确认、关闭、待确认 |
 | 画像快照 | `profiles` | 创建新版本，不覆盖历史版本 |
 | 推荐运行与评估结果 | `orchestration` / `matching` | 绑定用户、画像版本、岗位事实版本和模型配置 |
-| 用户岗位动作 | 用户侧应用服务，P1 | 按 `user_id + job_id` 幂等更新 |
+| 用户岗位动作 | 用户侧应用服务 | 按 `user_id + job_id` 幂等更新，包含收藏状态 |
 
 ### 7.1 岗位身份
 

@@ -52,7 +52,7 @@ def test_public_errors_have_stable_shape_and_request_id() -> None:
     assert missing.status_code == 404
     assert missing.json() == {
         "code": "NOT_FOUND",
-        "message": "The requested resource was not found.",
+        "message": "请求的资源不存在。",
         "details": {},
         "request_id": missing.headers["X-Request-ID"],
         "run_id": None,
