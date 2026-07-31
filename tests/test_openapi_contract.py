@@ -81,3 +81,34 @@ def test_openapi_lists_only_real_routes_until_business_handlers_exist() -> None:
     password_schema = schema["components"]["schemas"]["LoginRequest"]["properties"]["password"]
     assert password_schema["writeOnly"] is True
     assert "example" not in password_schema
+
+
+def test_jobs_query_is_expressed_as_repeated_query_parameters() -> None:
+    schema = create_app(Settings(environment="test")).openapi()
+    operation = schema["paths"]["/api/v1/jobs"]["get"]
+    assert "requestBody" not in operation
+
+    parameters = {parameter["name"]: parameter for parameter in operation["parameters"]}
+    for name in (
+        "city",
+        "company_nature",
+        "source_id",
+        "recruitment_type",
+        "education",
+        "graduation_year",
+    ):
+        assert parameters[name]["in"] == "query"
+        variants = parameters[name]["schema"].get("anyOf", [parameters[name]["schema"]])
+        array_schema = next(variant for variant in variants if variant.get("type") == "array")
+        assert array_schema["maxItems"] == 50
+
+    q_schema = parameters["q"]["schema"]
+    assert any(variant.get("maxLength") == 200 for variant in q_schema["anyOf"])
+    assert parameters["page"]["schema"]["minimum"] == 1
+    assert parameters["page_size"]["schema"] == {
+        "type": "integer",
+        "maximum": 100,
+        "minimum": 1,
+        "default": 30,
+        "title": "Page Size",
+    }

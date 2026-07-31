@@ -264,7 +264,18 @@ export const handlers = [
     if (scenario() === "server-error") return errorResponse("INTERNAL_ERROR", "服务暂时不可用，请稍后重试。", 500);
     if (!isAuthenticated(request)) return errorResponse("AUTHENTICATION_REQUIRED", "请登录后继续。", 401);
     if (scenario() === "recommendation-failure") {
-      return HttpResponse.json({ ...recommendationRun, status: "FAILED", current_step: "EVALUATE", progress_percent: 60, error: "推荐运行失败，积分已退回。", credits: { cost: 100, refunded: true, net_spent: 0 } });
+      return HttpResponse.json({
+        ...recommendationRun,
+        status: "FAILED",
+        current_step: "EVALUATE",
+        progress_percent: 60,
+        error: {
+          code: "RECOMMENDATION_FAILED",
+          message: "推荐运行失败，积分已退回。",
+          details: {},
+        },
+        credits: { cost: 100, refunded: true, net_spent: 0 },
+      });
     }
     const steps = ["PENDING", "PROFILE", "FILTER", "RETRIEVE", "EVALUATE", "SAVE", "COMPLETE"] as const;
     const progress = [0, 10, 25, 45, 60, 95, 100];

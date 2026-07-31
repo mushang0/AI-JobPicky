@@ -2,12 +2,48 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Response
+from fastapi import APIRouter, Depends, Query, Response
 
-from ...contracts import JobDetailView, JobFilterOptions, JobListQuery, JobPoolPage
+from ...contracts import (
+    EducationLevel,
+    JobDetailView,
+    JobFilterOptions,
+    JobListQuery,
+    JobPoolPage,
+    RecruitmentType,
+)
+from ...contracts.common import NonEmptyStr, NonNegativeInt
 from ..dependencies import JobPoolServiceDependency, OptionalUser
 
 router = APIRouter(prefix="/api/v1/jobs", tags=["jobs"])
+
+
+def job_list_query(
+    page: Annotated[int, Query(ge=1)] = 1,
+    page_size: Annotated[int, Query(ge=1, le=100)] = 30,
+    q: Annotated[str | None, Query(max_length=200)] = None,
+    city: Annotated[list[NonEmptyStr] | None, Query(max_length=50)] = None,
+    company_nature: Annotated[list[NonEmptyStr] | None, Query(max_length=50)] = None,
+    source_id: Annotated[list[NonEmptyStr] | None, Query(max_length=50)] = None,
+    recruitment_type: Annotated[list[RecruitmentType] | None, Query(max_length=50)] = None,
+    education: Annotated[list[EducationLevel] | None, Query(max_length=50)] = None,
+    graduation_year: Annotated[list[int] | None, Query(max_length=50)] = None,
+    salary_min: Annotated[NonNegativeInt | None, Query()] = None,
+    salary_max: Annotated[NonNegativeInt | None, Query()] = None,
+) -> JobListQuery:
+    return JobListQuery(
+        page=page,
+        page_size=page_size,
+        q=q,
+        city=city or [],
+        company_nature=company_nature or [],
+        source_id=source_id or [],
+        recruitment_type=recruitment_type or [],
+        education=education or [],
+        graduation_year=graduation_year or [],
+        salary_min=salary_min,
+        salary_max=salary_max,
+    )
 
 
 @router.get("/filter-options", response_model=JobFilterOptions)
@@ -21,7 +57,7 @@ async def filter_options(
 
 @router.get("", response_model=JobPoolPage)
 async def list_jobs(
-    query: Annotated[JobListQuery, Depends()],
+    query: Annotated[JobListQuery, Depends(job_list_query)],
     user: OptionalUser,
     service: JobPoolServiceDependency,
 ) -> JobPoolPage:

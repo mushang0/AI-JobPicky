@@ -874,6 +874,7 @@ class AdminJobQueryPort(Protocol):
 - JSON 为默认格式；文件上传使用 `multipart/form-data`。
 - 长任务创建成功返回 `202 Accepted` 和 `RecommendationRunAccepted`；采集运行继续使用 `RunAccepted`。
 - 列表使用统一分页，页大小上限由服务配置并写入 OpenAPI。
+- `GET /api/v1/jobs` 的多选筛选使用重复 query 参数传递；未提供时按空列表处理，不使用 GET 请求体。
 - 错误使用统一错误响应；内部堆栈不得对外返回。
 - OpenAPI 是可执行接口清单，必须通过契约测试与本文语义保持一致。
 

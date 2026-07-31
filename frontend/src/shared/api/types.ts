@@ -204,6 +204,12 @@ export type RecommendationRunStatus =
   | "SUCCEEDED"
   | "FAILED";
 
+export interface RecommendationRunError {
+  code: string;
+  message: string;
+  details: Record<string, unknown>;
+}
+
 export interface RecommendationTaskView {
   run_id: string;
   status: RecommendationRunStatus;
@@ -214,7 +220,7 @@ export interface RecommendationTaskView {
   finished_at: IsoDate | null;
   counts: { evaluated: number; recommended: number };
   credits: CreditUsage;
-  error: string | null;
+  error: RecommendationRunError | null;
 }
 
 export interface RecommendationRunAccepted {
