@@ -21,6 +21,7 @@ from .link_classification import (
     HOTJOB,
     JOB_51,
     MOKA,
+    PUBLIC_RECRUITMENT_PORTAL,
     WECHAT,
     ZHAOPIN,
     classify_link,
@@ -51,6 +52,7 @@ PARSERS: dict[str, Parser] = {
     HOTJOB: lambda url: parse_hotjob(url),
     JOB_51: lambda url: parse_job_51(url),
     MOKA: lambda url: parse_moka(url),
+    PUBLIC_RECRUITMENT_PORTAL: lambda url: parse_public_web(url, allow_announcement=True),
     WECHAT: lambda url: parse_wechat(url),
     ZHAOPIN: lambda url: parse_zhaopin(url),
 }

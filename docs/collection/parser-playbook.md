@@ -192,6 +192,14 @@ uv run python scripts/verify_parser_pipeline.py \
   内容的页面保持失败。
 - 回归复用：`tests/collection/test_public_web_parser.py` 的公告级成功路径和登录页失败边界。
 
+## 公共招聘门户（PUBLIC_RECRUITMENT_PORTAL）
+
+- 复用通用公开网页解析器，读取公开岗位数据、JSON-LD、服务端岗位链接或招聘公告；公告级记录
+  保留来源正文和详情链接，不把公告标题拆成岗位。
+- 门户当前无岗位、跳转登录、返回网关错误或只有报名入口时保持失败；不使用表格岗位方向补齐
+  缺失事实，也不绕过访问控制。
+- 回归复用：`tests/collection/test_public_web_parser.py` 的公开 JSON、静态页、公告和登录页边界。
+
 ## 国聘（GUOPIN）
 
 - 普通详情使用公开 `GET https://gp-api.iguopin.com/api/jobs/v1/info?id=<岗位ID>`；查询键是
