@@ -219,9 +219,19 @@ class SlidingWindowLimiter:
                 )
 
     def consume(self, key: str, limit: int, window_seconds: int) -> None:
-        self.ensure_available(key, limit, window_seconds)
+        now = time.monotonic()
         with self._lock:
-            self._events[key].append(time.monotonic())
+            events = self._events[key]
+            self._purge(events, now, window_seconds)
+            if len(events) >= limit:
+                retry_after = max(1, math.ceil(events[0] + window_seconds - now))
+                raise ApplicationError(
+                    ErrorCode.TOO_MANY_ATTEMPTS,
+                    "rate limit exceeded",
+                    status_code=429,
+                    headers={"Retry-After": str(retry_after)},
+                )
+            events.append(now)
 
     def record(self, key: str, window_seconds: int) -> None:
         now = time.monotonic()

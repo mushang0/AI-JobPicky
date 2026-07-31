@@ -36,6 +36,8 @@ async def optional_user(
     credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(_bearer)],
 ) -> AuthUserView | None:
     if credentials is None:
+        if request.headers.get("authorization") is not None:
+            raise _authentication_required()
         return None
     if credentials.scheme.casefold() != "bearer":
         raise _authentication_required()
