@@ -5,7 +5,12 @@ from datetime import UTC, datetime
 
 import pytest
 
-from jobpicky.contracts import ErrorCode, ProfileSaveRequest, ProfileSnapshot
+from jobpicky.contracts import (
+    ErrorCode,
+    ProfileSaveRequest,
+    ProfileSnapshot,
+    RecruitmentType,
+)
 from jobpicky.errors import ApplicationError
 from jobpicky.profiles import (
     ProfileIdempotencyConflictError,
@@ -52,7 +57,7 @@ def request(
         base_version=base_version,
         target_roles=[target_role],
         target_locations=["上海"],
-        recruitment_types=["社招"],
+        recruitment_types=[RecruitmentType.SOCIAL],
         skills=["Python"],
         excluded_roles=[],
     )
@@ -64,6 +69,26 @@ def service(store: MemoryProfileStore) -> ProfileService:
         now=lambda: NOW,
         id_factory=lambda: "profile-1",
     )
+
+
+def test_profile_input_is_normalized_before_versioning_and_hashing() -> None:
+    draft = ProfileSaveRequest.model_validate(
+        {
+            "target_roles": [" Python   Backend ", "python backend"],
+            "target_locations": [" 上海市、杭州 ", "上海"],
+            "recruitment_types": ["社会招聘", "社招"],
+            "skills": [" FastAPI ", "fastapi"],
+            "experience_summary": "  有后端项目经验。  ",
+            "extra_request": "   ",
+        }
+    )
+
+    assert draft.target_roles == ["Python Backend"]
+    assert draft.target_locations == ["上海", "杭州"]
+    assert draft.recruitment_types == [RecruitmentType.SOCIAL]
+    assert draft.skills == ["FastAPI"]
+    assert draft.experience_summary == "有后端项目经验。"
+    assert draft.extra_request is None
 
 
 def test_create_update_and_unchanged_save_keep_immutable_versions() -> None:
