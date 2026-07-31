@@ -606,6 +606,7 @@ def _list_page(
     page: int,
     recruit_type: str,
     *,
+    page_size: int,
     is_pb: bool,
     modern: bool,
     fetch: Callable[[str, Mapping[str, object]], object],
@@ -616,7 +617,7 @@ def _list_page(
     query = dict(parse_qsl(parts.query, keep_blank_values=True))
     data: dict[str, object] = {
         "recruitType": recruit_type,
-        "pageSize": _PAGE_SIZE,
+        "pageSize": page_size,
         "currentPage": page,
     }
     if is_pb:
@@ -657,12 +658,14 @@ def _collect_rows(
     rows: list[Mapping[str, object]] = []
     seen_ids: set[str] = set()
     total_pages: int | None = None
+    page_size = _PAGE_SIZE
     for page in range(1, _MAX_PAGES + 1):
         data = _list_page(
             page_url,
             suite,
             page,
             recruit_type,
+            page_size=page_size,
             is_pb=is_pb,
             modern=modern,
             fetch=fetch,
@@ -675,6 +678,9 @@ def _collect_rows(
         page_rows = page_form.get("pageData")
         if not isinstance(page_rows, list):
             raise ValueError("Hotjob list API returned no page data")
+        server_page_size = _number(page_form.get("pageSize"))
+        if server_page_size and server_page_size > 0:
+            page_size = server_page_size
         if not page_rows:
             if page == 1:
                 raise ValueError("Hotjob list API returned no jobs")

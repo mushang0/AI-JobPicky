@@ -27,6 +27,7 @@ from .parsers.guopin import parse as parse_guopin
 from .parsers.hotjob import parse as parse_hotjob
 from .parsers.job_51 import parse as parse_job_51
 from .parsers.moka import parse as parse_moka
+from .parsers.moka import source_identity as moka_source_identity
 from .parsers.wechat import parse as parse_wechat
 from .parsers.zhaopin import parse as parse_zhaopin
 from .spreadsheet import SpreadsheetRow
@@ -74,7 +75,12 @@ def source_id_for_entry(company_name: str, url: str) -> str:
     ):
         netloc = f"{hostname}:{port}"
     normalized_url = urlunsplit((parts.scheme.lower(), netloc, path, query, ""))
-    evidence = f"{company_name.strip().casefold()}\n{normalized_url}"
+    moka_identity = moka_source_identity(url) if classify_link(url) == MOKA else None
+    evidence = (
+        f"moka\n{moka_identity}"
+        if moka_identity is not None
+        else f"{company_name.strip().casefold()}\n{normalized_url}"
+    )
     return f"entry-{hashlib.sha256(evidence.encode()).hexdigest()[:20]}"
 
 
@@ -86,6 +92,14 @@ def _value(fields: Mapping[str, object], name: str) -> object | None:
 def _string(fields: Mapping[str, object], name: str) -> str | None:
     value = _value(fields, name)
     return value.strip() if isinstance(value, str) and value.strip() else None
+
+
+def _website_job_key(fields: Mapping[str, object]) -> str | None:
+    source_job_id = _string(fields, "source_job_id")
+    if source_job_id:
+        return f"source_job_id:{source_job_id}"
+    detail_url = _string(fields, "detail_url")
+    return f"detail_url:{detail_url}" if detail_url else None
 
 
 def _metadata(row: SpreadsheetRow, website: Mapping[str, object]) -> JsonObject:
@@ -142,6 +156,13 @@ def merge_job_fields(
     salary_months = website.get("salary_months")
     published_at = website.get("published_at")
     deadline_at = website.get("deadline_at")
+    website_metadata = website.get("metadata")
+    record_kind = (
+        website_metadata.get("record_kind") if isinstance(website_metadata, Mapping) else None
+    )
+    apply_url = _string(website, "apply_url")
+    if apply_url is None and record_kind != "wechat_announcement":
+        apply_url = _string(website, "detail_url")
     return CollectedJob(
         source_id=source_id,
         source_job_id=_string(website, "source_job_id"),
@@ -151,7 +172,7 @@ def merge_job_fields(
         locations=locations,
         description=_string(website, "description"),
         detail_url=_string(website, "detail_url"),
-        apply_url=_string(website, "apply_url") or _string(website, "detail_url"),
+        apply_url=apply_url,
         recruitment_type=_string(website, "recruitment_type") or row.recruitment_type,
         education_requirement=_string(website, "education_requirement")
         or row.education_requirement,
@@ -170,6 +191,7 @@ def run_pipeline(source_id: str, rows: Sequence[SpreadsheetRow]) -> PipelineResu
     items: list[CollectedJob] = []
     unsupported: list[UnsupportedLink] = []
     warnings: list[str] = []
+    seen_job_keys: set[str] = set()
 
     for row in rows:
         if not row.apply_links:
@@ -214,8 +236,13 @@ def run_pipeline(source_id: str, rows: Sequence[SpreadsheetRow]) -> PipelineResu
                 )
                 continue
             for website_job in website_jobs:
+                job_key = _website_job_key(website_job)
+                if job_key is not None and job_key in seen_job_keys:
+                    continue
                 try:
                     items.append(merge_job_fields(source_id, row, website_job))
+                    if job_key is not None:
+                        seen_job_keys.add(job_key)
                 except Exception as exc:  # noqa: BLE001 - retain the row/link failure
                     unsupported.append(
                         UnsupportedLink(

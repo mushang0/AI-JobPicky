@@ -126,10 +126,23 @@ def _route(url: str) -> tuple[str, str, str] | None:
     return match.group("mode").casefold(), match.group("org"), match.group("site")
 
 
+def source_identity(url: str) -> str | None:
+    route = _route(url)
+    return "/".join(route) if route else None
+
+
 def _target_job_id(url: str) -> str | None:
     fragment = urlsplit(url).fragment
     match = _JOB_FRAGMENT_RE.search(fragment)
     return match.group("job_id") if match else None
+
+
+def entry_identity(url: str) -> str | None:
+    identity = source_identity(url)
+    if identity is None:
+        return None
+    target_id = _target_job_id(url)
+    return f"{identity}/job/{target_id}" if target_id else f"{identity}/list"
 
 
 def _detail_url(url: str, job_id: str) -> str:
@@ -142,7 +155,13 @@ def _is_open(job: Mapping[str, object]) -> bool:
     status = _text(job.get("status"))
     if status and status.casefold() in _CLOSED_STATUSES:
         return False
-    return job.get("closedAt") in (None, "", 0)
+    if status and status.casefold() == "open":
+        return True
+    closed_at = _date(job.get("closedAt"))
+    if closed_at is None:
+        return True
+    opened_at = _date(job.get("openedAt"))
+    return opened_at is not None and opened_at > closed_at
 
 
 def _recruitment_type(mode: str) -> str:
@@ -249,4 +268,4 @@ def parse(url: str, fetch_html: Callable[[str], str] | None = None) -> list[dict
     return jobs
 
 
-__all__ = ["MokaSession", "parse"]
+__all__ = ["MokaSession", "entry_identity", "parse", "source_identity"]

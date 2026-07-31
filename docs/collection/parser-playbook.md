@@ -115,7 +115,10 @@ uv run python scripts/verify_parser_pipeline.py \
   `/campus_apply/`、`/apply/`，以及会公开重定向到这些入口的 `/su/` 和推荐投递链接。
 - 页面服务端内嵌 `<input id="init-data">` JSON，包含站点信息和岗位列表；解析器优先使用
   该公开数据，直达链接按 URL fragment 的 `job/<id>` 精确筛选，列表链接返回所有公开开放
-  岗位。`status` 为关闭类状态或存在 `closedAt` 的岗位不作为开放岗位返回。
+  岗位。关闭状态不返回；部分岗位重新开放后仍保留旧的 `closedAt`，以当前 `status=open`
+  或 `openedAt > closedAt` 识别为重新开放。
+- 同一 `(mode, org, site)` 的列表入口按一个招聘源处理，`sourceToken` 和 `#/jobs` 等前端列表
+  状态不制造新的来源；`#/job/<id>` 直达岗位仍保留为独立验证入口。
 - Moka 详情接口的公开响应为加密数据；当前只写入内嵌清单已经确认的标题、地点、状态、
   部门和时间，不把密钥、IV、密文或浏览器登录流程带入批处理。因而 `description` 可能为
   空，这是已知字段边界，不用表格摘要冒充 JD。
@@ -131,14 +134,20 @@ uv run python scripts/verify_parser_pipeline.py \
 
 - 主要入口是 `mp.weixin.qq.com/s/<article-id>`；解析器读取公开 HTML 中的
   `#activity-name`、`#js_content` 和公开发布时间，不执行文章脚本，也不调用登录态接口。
-- 一篇文章对应一条“公告级岗位信息”记录，`source_job_id` 使用文章 ID；由于正文通常把
-  多个职位、条件和报名方式混在一起，当前不把段落臆拆成多个岗位。标题中可明确识别
-  `校招`、`社招`、`实习` 时才写 recruitment type，地点留给表格事实回退。
+- 正文保留段落边界，并提取公开锚点链接、明文 URL、邮箱和二维码图片候选；链接只保留
+  `http(s)`，不执行 `javascript:`、电话链接或表单提交。候选入口写入 metadata 的
+  `application_methods`，并标注 `application_status`、`content_shape`、`review_reasons`。
+- 一篇文章默认对应一条“公告级岗位信息”记录，`source_job_id` 使用文章 ID；多个职位只
+  标记为 `multi_job_candidate`，证据不足时不臆拆成多个岗位。标题中可明确识别 `校招`、
+  `社招`、`实习` 时才写 recruitment type，地点留给表格事实回退。
+- 只有正文明确发现一个高置信度投递 URL 时才写 `apply_url`；邮箱、二维码、微信联系和
+  未解析入口不伪造 URL，文章地址只保留在 `detail_url`/`source_ref`。
 - 正文最多保留 80,000 字，超出时 metadata 标记 `description_truncated`；HTML 响应最多
   8 MiB。`weixin.qq.com/r/...`、企业微信个人页和在线表单不是公众文章，保持明确失败，
   不把入口页当成岗位事实。
-- 当前样本全量回放：422 个来源中 407 个成功，407 条公告记录通过 schema 校验。剩余
-  15 个为文章已不可公开访问或链接本身不是公众文章。
+- 2026-07-31 全量回放：422 个去重来源中 405 个成功、17 个失败；成功记录中 227 个为
+  普通公告、156 个为结构化公告、22 个为多岗位候选。记录覆盖的投递方式包括邮箱 130
+  个、二维码候选 65 个、微信联系 8 个和 URL 22 个；分类结果见回放目录的 `summary.json`。
 - Fixture：`tests/collection/fixtures/wechat_article.html`；回归：
   `tests/collection/test_wechat_parser.py`。
 

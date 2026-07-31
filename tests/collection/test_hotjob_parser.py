@@ -1,4 +1,5 @@
 import json
+from copy import deepcopy
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
@@ -41,6 +42,31 @@ def test_hotjob_parser_reads_listing_and_public_detail() -> None:
     assert metadata["detail_status"] == "ok"
     assert isinstance(detail_url, str)
     assert "postId=post-001" in detail_url
+
+
+def test_hotjob_parser_uses_server_page_size_for_following_pages() -> None:
+    list_calls: list[object] = []
+    first_row = _fixture("hotjob_list.json")["data"]["pageForm"]["pageData"][0]  # type: ignore[index]
+    second_row = deepcopy(first_row)
+    second_row["postId"] = "post-002"
+    second_row["postName"] = "另一个岗位"
+
+    def fetch(url: str, data: object) -> object:
+        if "listPositionDetail" in url:
+            raise ValueError("temporary detail failure")
+        list_calls.append(data)
+        response = deepcopy(_fixture("hotjob_list.json"))
+        page_form = response["data"]["pageForm"]  # type: ignore[index]
+        page_form["pageSize"] = 12
+        page_form["totalPage"] = 2
+        page_form["pageData"] = [first_row if len(list_calls) == 1 else second_row]
+        return response
+
+    jobs = parse(LIST_URL, fetch)
+
+    assert len(jobs) == 2
+    assert [job["source_job_id"] for job in jobs] == ["post-001", "post-002"]
+    assert [call["pageSize"] for call in list_calls] == [100, 12]  # type: ignore[index]
 
 
 def test_hotjob_parser_reads_direct_detail() -> None:

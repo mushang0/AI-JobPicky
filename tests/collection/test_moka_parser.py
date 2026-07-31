@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from jobpicky.collection.parsers.moka import parse
+from jobpicky.collection.parsers.moka import _is_open, entry_identity, parse
 
 FIXTURE = Path(__file__).parent / "fixtures" / "moka_init_data.html"
 LIST_URL = "https://app.mokahr.com/campus-recruitment/demo/12345#/jobs"
@@ -42,6 +42,25 @@ def test_moka_parser_rejects_closed_or_missing_direct_job() -> None:
     closed_url = LIST_URL.replace("#/jobs", "#/job/job-closed")
     with pytest.raises(ValueError, match="closed or absent"):
         parse(closed_url, lambda _url: fixture_html())
+
+
+def test_moka_parser_accepts_a_reopened_open_job() -> None:
+    assert _is_open(
+        {
+            "status": "open",
+            "closedAt": "2026-05-09T21:30:12.000Z",
+            "openedAt": "2026-05-10T16:00:00.000Z",
+        }
+    )
+
+
+def test_moka_entry_identity_ignores_list_tracking_state() -> None:
+    first = "https://app.mokahr.com/campus-recruitment/ti/143986?sourceToken=one#/"
+    second = "https://app.mokahr.com/campus-recruitment/ti/143986?sourceToken=two#/jobs"
+    direct = "https://app.mokahr.com/campus-recruitment/ti/143986#/job/job-1"
+
+    assert entry_identity(first) == entry_identity(second)
+    assert entry_identity(direct) != entry_identity(first)
 
 
 def test_moka_parser_requires_init_data() -> None:
