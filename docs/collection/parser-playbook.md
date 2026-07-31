@@ -166,6 +166,16 @@ uv run python scripts/verify_parser_pipeline.py \
 - Fixture：`tests/collection/fixtures/public_job_page.html`；回归：
   `tests/collection/test_public_web_parser.py`、`tests/collection/test_link_classification.py`。
 
+## 公司官网公告（COMPANY_WEBSITE）
+
+- 复用通用公开网页解析器。若页面存在可验证的 `JobPosting`、内嵌岗位数据或岗位详情链接，
+  按岗位事实解析；否则仅在标题或正文明确包含招聘语义时保留一条 `public_announcement` 公告级
+  记录，岗位名称、薪资和 JD 不从表格摘要推断。
+- 公告级记录的 `detail_url` 只表示公开来源，`apply_url` 保持为空；登录、WAF、普通公司介绍和
+  无招聘语义的文章保持失败。
+- 回归复用：`tests/collection/test_public_web_parser.py` 和
+  `tests/collection/test_pipeline.py` 的公告链接语义测试。
+
 ## 国聘（GUOPIN）
 
 - 普通详情使用公开 `GET https://gp-api.iguopin.com/api/jobs/v1/info?id=<岗位ID>`；查询键是

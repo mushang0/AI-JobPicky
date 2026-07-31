@@ -48,3 +48,22 @@ def test_public_web_parser_reads_aircas_server_rendered_cards() -> None:
 
 def test_public_web_parser_does_not_turn_a_login_page_into_a_job() -> None:
     assert parse("https://careers.example.test/login", lambda _url: "<title>登录</title>") == []
+
+
+def test_public_web_parser_can_keep_a_recruitment_announcement_as_a_record() -> None:
+    html = """
+    <html><head><title>示例公司2027年校园招聘公告</title></head>
+    <body><article>现公开招聘软件工程师，欢迎报名。</article></body></html>
+    """
+
+    jobs = parse(
+        "https://www.example.test/notices/2027-campus-recruitment.html",
+        lambda _url: html,
+        allow_announcement=True,
+    )
+
+    assert jobs[0]["metadata"] == {
+        "parser": "public_web",
+        "record_kind": "public_announcement",
+    }
+    assert jobs[0]["apply_url"] is None

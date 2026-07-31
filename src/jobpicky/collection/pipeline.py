@@ -13,6 +13,7 @@ from jobpicky.contracts.common import JsonObject
 from .link_classification import (
     BEISEN,
     COMPANY_RECRUITMENT_SITE,
+    COMPANY_WEBSITE,
     FEISHU,
     GUOPIN,
     HOTJOB,
@@ -40,6 +41,7 @@ Parser = Callable[[str], Sequence[Mapping[str, object]]]
 PARSERS: dict[str, Parser] = {
     BEISEN: lambda url: parse_beisen(url),
     COMPANY_RECRUITMENT_SITE: lambda url: parse_public_web(url),
+    COMPANY_WEBSITE: lambda url: parse_public_web(url, allow_announcement=True),
     FEISHU: lambda url: parse_feishu(url),
     GUOPIN: lambda url: parse_guopin(url),
     HOTJOB: lambda url: parse_hotjob(url),
@@ -164,7 +166,9 @@ def merge_job_fields(
         website_metadata.get("record_kind") if isinstance(website_metadata, Mapping) else None
     )
     apply_url = _string(website, "apply_url")
-    if apply_url is None and record_kind != "wechat_announcement":
+    if apply_url is None and not (
+        isinstance(record_kind, str) and record_kind.endswith("_announcement")
+    ):
         apply_url = _string(website, "detail_url")
     return CollectedJob(
         source_id=source_id,
