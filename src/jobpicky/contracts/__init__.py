@@ -78,6 +78,19 @@ from .matching import (
     RecommendationRunRequest,
     validate_assessments,
 )
+from .normalization import (
+    COMPANY_NATURE_VALUES,
+    EDUCATION_VALUES,
+    RECRUITMENT_TYPE_VALUES,
+    normalize_city,
+    normalize_company_nature,
+    normalize_education,
+    normalize_locations,
+    normalize_recruitment_type,
+    normalize_search_text,
+    normalize_tags,
+    normalize_text,
+)
 from .profiles import (
     CurrentProfileView,
     ProfileDraft,
@@ -90,6 +103,7 @@ from .profiles import (
 
 __all__ = [
     "Candidate",
+    "COMPANY_NATURE_VALUES",
     "CollectedJob",
     "CollectionBatch",
     "AccessTokenResponse",
@@ -101,6 +115,7 @@ __all__ = [
     "ErrorBody",
     "ErrorCode",
     "EducationLevel",
+    "EDUCATION_VALUES",
     "EvaluationResponse",
     "Feedback",
     "FilterExclusion",
@@ -148,6 +163,7 @@ __all__ = [
     "RecommendationStep",
     "RecommendationTaskStatus",
     "RecommendationTaskView",
+    "RECRUITMENT_TYPE_VALUES",
     "RegisterRequest",
     "RecruitmentType",
     "RetrievalChannel",
@@ -167,5 +183,13 @@ __all__ = [
     "UserView",
     "error_message",
     "merge_extra_request",
+    "normalize_city",
+    "normalize_company_nature",
+    "normalize_education",
+    "normalize_locations",
+    "normalize_recruitment_type",
+    "normalize_search_text",
+    "normalize_tags",
+    "normalize_text",
     "validate_assessments",
 ]

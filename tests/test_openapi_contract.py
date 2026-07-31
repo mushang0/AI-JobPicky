@@ -61,8 +61,13 @@ def test_openapi_lists_only_real_routes_until_business_handlers_exist() -> None:
         "/api/v1/auth/me",
         "/api/v1/auth/refresh",
         "/api/v1/auth/register",
+        "/api/v1/jobs",
+        "/api/v1/jobs/filter-options",
+        "/api/v1/jobs/{job_id}",
         "/api/v1/system/health",
         "/api/v1/user/credits",
+        "/api/v1/user/saved-jobs",
+        "/api/v1/user/saved-jobs/{job_id}",
     }
     error_schema = schema["components"]["schemas"]["ErrorBody"]
     assert set(error_schema["required"]) >= {"code", "message", "request_id"}

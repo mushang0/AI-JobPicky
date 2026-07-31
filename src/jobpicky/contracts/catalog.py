@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+from collections.abc import Callable, Mapping
 from enum import StrEnum
+from typing import Any
 
 from pydantic import AwareDatetime, Field, model_validator
 
@@ -12,6 +14,15 @@ from .common import (
     NonEmptyStr,
     NonNegativeInt,
     NormalizedScore,
+)
+from .normalization import (
+    EDUCATION_VALUES,
+    RECRUITMENT_TYPE_VALUES,
+    normalize_city,
+    normalize_company_nature,
+    normalize_education,
+    normalize_recruitment_type,
+    normalize_search_text,
 )
 
 
@@ -31,17 +42,17 @@ class RetrievalChannel(StrEnum):
 
 
 class RecruitmentType(StrEnum):
-    CAMPUS = "校招"
-    SOCIAL = "社招"
-    INTERNSHIP = "实习"
+    CAMPUS = RECRUITMENT_TYPE_VALUES[0]
+    SOCIAL = RECRUITMENT_TYPE_VALUES[1]
+    INTERNSHIP = RECRUITMENT_TYPE_VALUES[2]
 
 
 class EducationLevel(StrEnum):
-    HIGH_SCHOOL_OR_BELOW = "高中及以下"
-    COLLEGE = "专科"
-    BACHELOR = "本科"
-    MASTER = "硕士"
-    DOCTORATE = "博士"
+    HIGH_SCHOOL_OR_BELOW = EDUCATION_VALUES[0]
+    COLLEGE = EDUCATION_VALUES[1]
+    BACHELOR = EDUCATION_VALUES[2]
+    MASTER = EDUCATION_VALUES[3]
+    DOCTORATE = EDUCATION_VALUES[4]
 
 
 class JobSourceView(ContractModel):
@@ -104,6 +115,20 @@ class JobListQuery(ContractModel):
     graduation_year: list[int] = Field(default_factory=list, max_length=50)
     salary_min: NonNegativeInt | None = None
     salary_max: NonNegativeInt | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def normalize_filter_values(cls, value: Any) -> Any:
+        if not isinstance(value, Mapping):
+            return value
+        normalized = dict(value)
+        if isinstance(normalized.get("q"), str):
+            normalized["q"] = normalize_search_text(normalized["q"])
+        _normalize_list(normalized, "city", normalize_city)
+        _normalize_list(normalized, "company_nature", normalize_company_nature)
+        _normalize_list(normalized, "recruitment_type", normalize_recruitment_type)
+        _normalize_list(normalized, "education", normalize_education)
+        return normalized
 
     @model_validator(mode="after")
     def validate_salary_range(self) -> JobListQuery:
@@ -283,3 +308,16 @@ def _deduplicate(values: list[object]) -> list[object]:
             seen.add(key)
             result.append(value)
     return result
+
+
+def _normalize_list(
+    values: dict[str, object],
+    field_name: str,
+    normalize: Callable[[str | None], str | None],
+) -> None:
+    items = values.get(field_name)
+    if not isinstance(items, list):
+        return
+    values[field_name] = [
+        normalize(item) or item if isinstance(item, str) else item for item in items
+    ]

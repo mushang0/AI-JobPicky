@@ -15,8 +15,9 @@ from fastapi.responses import JSONResponse
 from pydantic import JsonValue
 
 from . import __version__
-from .api.routers import auth_router, credits_router
+from .api.routers import auth_router, credits_router, jobs_router, saved_jobs_router
 from .auth import AccessTokenCodec, AuthService
+from .catalog.service import JobPoolService
 from .config import Settings
 from .contracts import ErrorBody, ErrorCode, HealthView, error_message
 from .credits import CreditService
@@ -24,6 +25,8 @@ from .errors import ApplicationError
 from .infrastructure.auth_store import PostgresAuthStore
 from .infrastructure.credit_store import PostgresCreditStore
 from .infrastructure.database import create_engine, create_session_factory
+from .infrastructure.job_pool_store import PostgresJobPoolStore
+from .infrastructure.saved_job_store import PostgresSavedJobStore
 
 logger = logging.getLogger(__name__)
 
@@ -59,6 +62,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     session_factory = create_session_factory(engine)
     auth_store = PostgresAuthStore(session_factory)
     credit_store = PostgresCreditStore(session_factory)
+    job_pool_store = PostgresJobPoolStore(session_factory)
+    saved_job_store = PostgresSavedJobStore(session_factory)
     signing_key = settings.jwt_signing_key or secrets.token_urlsafe(48)
 
     @asynccontextmanager
@@ -94,6 +99,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
     app.state.credit_service = CreditService(credit_store, settings.recommendation_cost)
     app.state.credit_store = credit_store
+    app.state.job_pool_service = JobPoolService(job_pool_store, saved_job_store, settings)
 
     @app.middleware("http")
     async def add_request_id(
@@ -167,6 +173,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     app.include_router(auth_router)
     app.include_router(credits_router)
+    app.include_router(jobs_router)
+    app.include_router(saved_jobs_router)
 
     return app
 

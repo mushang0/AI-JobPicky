@@ -6,6 +6,7 @@ from fastapi import Depends, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from ..auth import AuthService
+from ..catalog.service import JobPoolService
 from ..contracts import AuthUserView, ErrorCode
 from ..credits import CreditService
 from ..errors import ApplicationError
@@ -19,6 +20,10 @@ def get_auth_service(request: Request) -> AuthService:
 
 def get_credit_service(request: Request) -> CreditService:
     return cast(CreditService, request.app.state.credit_service)
+
+
+def get_job_pool_service(request: Request) -> JobPoolService:
+    return cast(JobPoolService, request.app.state.job_pool_service)
 
 
 async def optional_user(
@@ -66,17 +71,20 @@ def _authentication_required() -> ApplicationError:
 
 AuthServiceDependency = Annotated[AuthService, Depends(get_auth_service)]
 CreditServiceDependency = Annotated[CreditService, Depends(get_credit_service)]
+JobPoolServiceDependency = Annotated[JobPoolService, Depends(get_job_pool_service)]
 OptionalUser = Annotated[AuthUserView | None, Depends(optional_user)]
 RequiredUser = Annotated[AuthUserView, Depends(require_user)]
 
 __all__ = [
     "AuthServiceDependency",
     "CreditServiceDependency",
+    "JobPoolServiceDependency",
     "OptionalUser",
     "RequiredUser",
     "client_ip",
     "get_auth_service",
     "get_credit_service",
+    "get_job_pool_service",
     "optional_user",
     "require_user",
     "validate_browser_origin",

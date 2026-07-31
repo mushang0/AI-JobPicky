@@ -30,10 +30,12 @@ def extract_terms(query_text: str) -> list[str]:
 
 
 def term_hit_score(terms: list[str], job: JobFact) -> float:
-    """Fraction of terms found in the job's title, company or description."""
+    """Fraction of terms found in the job's title, company, location or description."""
     if not terms:
         return 0.0
-    haystack = " ".join([job.title, job.company_name, job.description or ""]).lower()
+    haystack = " ".join(
+        [job.title, job.company_name, *job.locations, job.description or ""]
+    ).lower()
     hits = sum(1 for term in terms if term in haystack)
     return hits / len(terms)
 
