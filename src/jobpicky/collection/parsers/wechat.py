@@ -123,7 +123,7 @@ class _ArticleParser(HTMLParser):
                 self.links.append(
                     {
                         "href": href.strip(),
-                        "text": _text(text) if isinstance(text, list) else "",
+                        "text": (_text(text) or "") if isinstance(text, list) else "",
                     }
                 )
         if self._content_depth and tag in _BLOCK_TAGS:
@@ -326,9 +326,12 @@ def _application_methods(
     url_methods = [method for method in methods if method.get("type") == "url"]
     apply_url = None
     if len(url_methods) == 1:
-        candidate = url_methods[0]
-        if candidate.get("confidence") == "high" or candidate.get("link_type") != "COMPANY_WEBSITE":
-            value = candidate.get("value")
+        candidate_method = url_methods[0]
+        if (
+            candidate_method.get("confidence") == "high"
+            or candidate_method.get("link_type") != "COMPANY_WEBSITE"
+        ):
+            value = candidate_method.get("value")
             apply_url = value if isinstance(value, str) else None
     return methods, apply_url
 
