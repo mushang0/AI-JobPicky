@@ -7,6 +7,7 @@ from pydantic import AwareDatetime, ConfigDict, Field, StringConstraints, model_
 
 from .catalog import EducationLevel, RecruitmentType
 from .common import ContractModel, NonEmptyStr
+from .normalization import normalize_locations, normalize_recruitment_type, normalize_tags
 
 ProfileTag = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=100)]
 
@@ -116,15 +117,20 @@ def _normalize_profile_value(value: Any) -> Any:
     if not isinstance(value, dict):
         return value
     normalized = dict(value)
-    for field_name in (
-        "target_locations",
-        "target_roles",
-        "recruitment_types",
-        "skills",
-        "excluded_roles",
+    locations = normalized.get("target_locations")
+    if isinstance(locations, list) and all(isinstance(item, str) for item in locations):
+        normalized["target_locations"] = normalize_locations(locations)
+    for field_name in ("target_roles", "skills", "excluded_roles"):
+        tags = normalized.get(field_name)
+        if isinstance(tags, list) and all(isinstance(item, str) for item in tags):
+            normalized[field_name] = normalize_tags(tags)
+    recruitment_types = normalized.get("recruitment_types")
+    if isinstance(recruitment_types, list) and all(
+        isinstance(item, str) for item in recruitment_types
     ):
-        if field_name in normalized and isinstance(normalized[field_name], list):
-            normalized[field_name] = _deduplicate(normalized[field_name])
+        normalized["recruitment_types"] = _deduplicate(
+            [normalize_recruitment_type(item) or item for item in recruitment_types]
+        )
     for field_name in ("experience_summary", "extra_request"):
         if isinstance(normalized.get(field_name), str):
             normalized[field_name] = normalized[field_name].strip() or None

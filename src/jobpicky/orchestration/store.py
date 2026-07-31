@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Protocol
@@ -7,82 +8,68 @@ from typing import Protocol
 import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from ..contracts import (
-    RecommendationItem,
+    CreditUsage,
+    Feedback,
+    JobFact,
+    MatchAssessment,
+    RecommendationAssessmentView,
+    RecommendationCardView,
+    RecommendationJobView,
+    RecommendationResultView,
     RecommendationRunInput,
+    RecommendationSort,
+    RecommendationStep,
+    RecommendationTaskStatus,
+    RecommendationTaskView,
     RunError,
-    RunKind,
-    RunStatus,
-    RunView,
 )
 
 
 class IdempotencyConflictError(Exception):
-    """A run with the same (user_id, idempotency_key) already exists."""
+    """Compatibility marker for adapters that surface a unique-key replay."""
 
 
 _IDEMPOTENCY_INDEX_NAME = "uq_recommendation_run_user_idempotency"
+_CONSTRAINT_PATTERN = re.compile(r'constraint "([^"]+)"')
 
 
 def _integrity_error_constraint_name(exc: IntegrityError) -> str | None:
-    original = exc.orig
-    direct_name = getattr(original, "constraint_name", None)
-    if direct_name is not None:
-        return str(direct_name)
-    diagnostic = getattr(original, "diag", None)
-    diagnostic_name = getattr(diagnostic, "constraint_name", None)
-    return str(diagnostic_name) if diagnostic_name is not None else None
+    candidates = [exc.orig]
+    for candidate in tuple(candidates):
+        nested = getattr(candidate, "orig", None)
+        if nested is not None:
+            candidates.append(nested)
+        cause = getattr(candidate, "__cause__", None)
+        if cause is not None:
+            candidates.append(cause)
+    for candidate in candidates:
+        direct_name = getattr(candidate, "constraint_name", None)
+        if direct_name is not None:
+            return str(direct_name)
+        diagnostic = getattr(getattr(candidate, "diag", None), "constraint_name", None)
+        if diagnostic is not None:
+            return str(diagnostic)
+        match = _CONSTRAINT_PATTERN.search(str(candidate))
+        if match:
+            return match.group(1)
+    return None
 
 
 def _is_idempotency_conflict(exc: IntegrityError) -> bool:
     return _integrity_error_constraint_name(exc) == _IDEMPOTENCY_INDEX_NAME
 
 
-@dataclass(frozen=True)
-class RunRecord:
-    """Full persisted state of one recommendation run."""
-
-    run_id: str
-    user_id: str
-    status: RunStatus
-    created_at: datetime
-    recommendation_input: RecommendationRunInput
-    model_config_version: str
-    current_step: str | None = None
-    started_at: datetime | None = None
-    finished_at: datetime | None = None
-    counts: dict[str, int] = field(default_factory=dict)
-    warnings: list[str] = field(default_factory=list)
-    error: RunError | None = None
-    results: list[RecommendationItem] = field(default_factory=list)
-    idempotency_key: str | None = None
-
-
-def record_to_run_view(record: RunRecord) -> RunView:
-    return RunView(
-        run_id=record.run_id,
-        kind=RunKind.RECOMMENDATION,
-        status=record.status,
-        current_step=record.current_step,
-        created_at=record.created_at,
-        started_at=record.started_at,
-        finished_at=record.finished_at,
-        counts=record.counts,
-        warnings=record.warnings,
-        recommendation_input=record.recommendation_input,
-        model_config_version=record.model_config_version,
-        error=record.error,
-    )
-
-
+# Compatibility mapping for older seed/integration callers. The actual
+# PostgreSQL adapter lives in infrastructure/recommendation_store.py.
 RUN_TABLE = sa.table(
     "recommendation_run",
     sa.column("run_id", sa.String),
     sa.column("user_id", sa.String),
     sa.column("status", sa.String),
     sa.column("current_step", sa.String),
+    sa.column("progress_percent", sa.Integer),
     sa.column("created_at", sa.DateTime(timezone=True)),
     sa.column("started_at", sa.DateTime(timezone=True)),
     sa.column("finished_at", sa.DateTime(timezone=True)),
@@ -92,58 +79,145 @@ RUN_TABLE = sa.table(
     sa.column("model_config_version", sa.String),
     sa.column("error", postgresql.JSONB),
     sa.column("idempotency_key", sa.String),
-    sa.column("results", postgresql.JSONB),
+    sa.column("request_fingerprint", sa.String),
+    sa.column("credit_cost", sa.BigInteger),
+    sa.column("credit_refunded", sa.Boolean),
+    sa.column("balance_after_charge", sa.BigInteger),
 )
 
 
-def _record_to_row(record: RunRecord) -> dict[str, object]:
-    return {
-        "run_id": record.run_id,
-        "user_id": record.user_id,
-        "status": str(record.status),
-        "current_step": record.current_step,
-        "created_at": record.created_at,
-        "started_at": record.started_at,
-        "finished_at": record.finished_at,
-        "counts": record.counts,
-        "warnings": record.warnings,
-        "recommendation_input": record.recommendation_input.model_dump(mode="json"),
-        "model_config_version": record.model_config_version,
-        "error": record.error.model_dump(mode="json") if record.error else None,
-        "idempotency_key": record.idempotency_key,
-        "results": [item.model_dump(mode="json") for item in record.results],
-    }
+@dataclass(frozen=True, slots=True)
+class RunRecord:
+    """Persisted state for one user recommendation task."""
+
+    run_id: str
+    user_id: str
+    status: RecommendationTaskStatus
+    created_at: datetime
+    recommendation_input: RecommendationRunInput
+    model_config_version: str
+    current_step: RecommendationStep = RecommendationStep.PENDING
+    progress_percent: int = 0
+    started_at: datetime | None = None
+    finished_at: datetime | None = None
+    counts: dict[str, int] = field(default_factory=dict)
+    warnings: list[str] = field(default_factory=list)
+    error: RunError | None = None
+    idempotency_key: str | None = None
+    request_fingerprint: str | None = None
+    credit_cost: int = 0
+    credit_refunded: bool = False
+    balance_after_charge: int = 0
 
 
-def _row_to_record(row: sa.RowMapping) -> RunRecord:
-    return RunRecord(
-        run_id=row.run_id,
-        user_id=row.user_id,
-        status=RunStatus(row.status),
-        current_step=row.current_step,
-        created_at=row.created_at,
-        started_at=row.started_at,
-        finished_at=row.finished_at,
-        counts=dict(row.counts),
-        warnings=list(row.warnings),
-        recommendation_input=RecommendationRunInput.model_validate(row.recommendation_input),
-        model_config_version=row.model_config_version,
-        error=RunError.model_validate(row.error) if row.error else None,
-        results=[RecommendationItem.model_validate(item) for item in row.results],
-        idempotency_key=row.idempotency_key,
+@dataclass(frozen=True, slots=True)
+class RecommendationRecord:
+    """Formal recommendation result, independent of mutable catalog facts."""
+
+    recommendation_id: str
+    user_id: str
+    run_id: str
+    job_id: str
+    position: int
+    job_snapshot: JobFact
+    assessment: MatchAssessment
+    recommended_at: datetime
+    feedback: Feedback | None = None
+    deleted_at: datetime | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class RecommendationProjection:
+    record: RecommendationRecord
+    is_saved: bool
+
+
+@dataclass(frozen=True, slots=True)
+class CreateRunResult:
+    record: RunRecord
+    created: bool
+
+
+def record_to_task_view(record: RunRecord) -> RecommendationTaskView:
+    return RecommendationTaskView(
+        run_id=record.run_id,
+        status=record.status,
+        current_step=record.current_step,
+        progress_percent=record.progress_percent,
+        created_at=record.created_at,
+        started_at=record.started_at,
+        finished_at=record.finished_at,
+        counts=record.counts,
+        credits=CreditUsage(
+            cost=record.credit_cost,
+            refunded=record.credit_refunded,
+            net_spent=0 if record.credit_refunded else record.credit_cost,
+        ),
+        error=record.error,
+    )
+
+
+def projection_to_card(projection: RecommendationProjection) -> RecommendationCardView:
+    record = projection.record
+    job = record.job_snapshot
+    assessment = record.assessment
+    return RecommendationCardView(
+        recommendation_id=record.recommendation_id,
+        run_id=record.run_id,
+        recommended_at=record.recommended_at,
+        job=RecommendationJobView(
+            id=job.id,
+            title=job.title,
+            company_name=job.company_name,
+            company_nature=job.company_nature,
+            locations=job.locations,
+            first_seen_at=job.first_seen_at,
+        ),
+        assessment=RecommendationAssessmentView(
+            match_score=assessment.match_score,
+            reason=assessment.reason,
+            matched_strengths=assessment.matched_strengths,
+            gaps=assessment.gaps,
+            evidence=assessment.evidence,
+        ),
+        is_saved=projection.is_saved,
+        feedback=record.feedback,
+    )
+
+
+def projection_to_result(projection: RecommendationProjection) -> RecommendationResultView:
+    card = projection_to_card(projection)
+    return RecommendationResultView(
+        **card.model_dump(),
+        is_deleted=projection.record.deleted_at is not None,
+        deleted_at=projection.record.deleted_at,
     )
 
 
 class RecommendationRunStore(Protocol):
-    """Persistence boundary of the orchestration module (not a cross-module port)."""
-
-    async def insert(self, record: RunRecord) -> None: ...
-
-    async def save(self, record: RunRecord) -> None: ...
-
-    async def get(self, run_id: str) -> RunRecord | None: ...
+    """Private persistence boundary used by recommendation orchestration."""
 
     async def find_by_idempotency(self, user_id: str, key: str) -> RunRecord | None: ...
+
+    async def create_charged_run(self, record: RunRecord) -> CreateRunResult: ...
+
+    async def save_progress(self, record: RunRecord) -> None: ...
+
+    async def complete_run(
+        self,
+        record: RunRecord,
+        recommendations: list[RecommendationRecord],
+    ) -> None: ...
+
+    async def fail_and_refund(
+        self,
+        user_id: str,
+        run_id: str,
+        error: RunError,
+        finished_at: datetime,
+    ) -> None: ...
+
+    async def get(self, run_id: str) -> RunRecord | None: ...
 
     async def list_by_user(
         self,
@@ -152,78 +226,50 @@ class RecommendationRunStore(Protocol):
         page_size: int,
     ) -> tuple[list[RunRecord], int]: ...
 
+    async def successful_job_ids(self, user_id: str) -> set[str]: ...
 
-class PostgresRecommendationRunStore:
-    """Read/write adapter for recommendation_run. No orchestration logic here."""
-
-    def __init__(self, session_factory: async_sessionmaker[AsyncSession]) -> None:
-        self._session_factory = session_factory
-
-    async def insert(self, record: RunRecord) -> None:
-        idempotency_key = record.idempotency_key
-        async with self._session_factory() as session:
-            try:
-                await session.execute(sa.insert(RUN_TABLE), [_record_to_row(record)])
-                await session.commit()
-            except IntegrityError as exc:
-                await session.rollback()
-                if idempotency_key is not None and _is_idempotency_conflict(exc):
-                    raise IdempotencyConflictError(idempotency_key) from exc
-                raise
-
-    async def save(self, record: RunRecord) -> None:
-        row = _record_to_row(record)
-        async with self._session_factory() as session:
-            await session.execute(
-                sa.update(RUN_TABLE).where(RUN_TABLE.c.run_id == record.run_id).values(row)
-            )
-            await session.commit()
-
-    async def get(self, run_id: str) -> RunRecord | None:
-        async with self._session_factory() as session:
-            result = await session.execute(sa.select(RUN_TABLE).where(RUN_TABLE.c.run_id == run_id))
-            row = result.mappings().first()
-        return _row_to_record(row) if row is not None else None
-
-    async def find_by_idempotency(self, user_id: str, key: str) -> RunRecord | None:
-        async with self._session_factory() as session:
-            result = await session.execute(
-                sa.select(RUN_TABLE).where(
-                    RUN_TABLE.c.user_id == user_id,
-                    RUN_TABLE.c.idempotency_key == key,
-                )
-            )
-            row = result.mappings().first()
-        return _row_to_record(row) if row is not None else None
-
-    async def list_by_user(
+    async def list_recommendations(
         self,
         user_id: str,
         page: int,
         page_size: int,
-    ) -> tuple[list[RunRecord], int]:
-        async with self._session_factory() as session:
-            total = await session.scalar(
-                sa.select(sa.func.count())
-                .select_from(RUN_TABLE)
-                .where(RUN_TABLE.c.user_id == user_id)
-            )
-            result = await session.execute(
-                sa.select(RUN_TABLE)
-                .where(RUN_TABLE.c.user_id == user_id)
-                .order_by(RUN_TABLE.c.created_at.desc(), RUN_TABLE.c.run_id)
-                .offset((page - 1) * page_size)
-                .limit(page_size)
-            )
-            records = [_row_to_record(row) for row in result.mappings()]
-        return records, total or 0
+        sort: RecommendationSort,
+    ) -> tuple[list[RecommendationProjection], int]: ...
+
+    async def list_run_results(
+        self,
+        user_id: str,
+        run_id: str,
+        page: int,
+        page_size: int,
+    ) -> tuple[list[RecommendationProjection], int]: ...
+
+    async def set_feedback(
+        self,
+        user_id: str,
+        recommendation_id: str,
+        feedback: Feedback | None,
+    ) -> bool: ...
+
+    async def soft_delete(
+        self,
+        user_id: str,
+        recommendation_id: str,
+        deleted_at: datetime,
+    ) -> bool: ...
 
 
 __all__ = [
+    "CreateRunResult",
     "IdempotencyConflictError",
-    "PostgresRecommendationRunStore",
-    "RUN_TABLE",
+    "RecommendationProjection",
+    "RecommendationRecord",
     "RecommendationRunStore",
     "RunRecord",
-    "record_to_run_view",
+    "RUN_TABLE",
+    "projection_to_card",
+    "projection_to_result",
+    "record_to_task_view",
+    "_IDEMPOTENCY_INDEX_NAME",
+    "_is_idempotency_conflict",
 ]

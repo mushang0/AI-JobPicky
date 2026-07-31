@@ -11,4 +11,5 @@
 - 每个候选 job_id 必须恰好输出一个 assessment，不能新增、重复或遗漏。
 - 不要输出公司、岗位标题、JD、地点、薪资、链接或任何其他岗位事实字段。
 - 没有证据时明确写入 gaps 或 evidence，不要补写求职者经历或岗位要求。
-- reason、matched_strengths、gaps 和 evidence 应简洁、具体，并能对应输入事实。
+- reason、matched_strengths、gaps 和 evidence 必须直接使用简体中文输出，不要翻译或改写输入事实。
+- 上述内容应简洁、具体，并能对应输入事实。

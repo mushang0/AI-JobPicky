@@ -9,11 +9,20 @@ import pytest
 import sqlalchemy as sa
 from catalog.factories import make_job
 from matching.factories import make_profile
+from sqlalchemy.dialects import postgresql
 
-from jobpicky.contracts import MatchAssessment, RunStatus
+from jobpicky.contracts import (
+    MatchAssessment,
+    RecommendationStep,
+    RecommendationTaskStatus,
+)
+from jobpicky.infrastructure.auth_store import USER_ACCOUNT_TABLE
+from jobpicky.infrastructure.credit_store import CREDIT_ACCOUNT_TABLE
 from jobpicky.infrastructure.database import create_engine, create_session_factory
 from jobpicky.infrastructure.job_catalog import JOB_TABLE, PostgresJobCatalog
 from jobpicky.infrastructure.profile_store import PROFILE_TABLE, PostgresProfileStore
+from jobpicky.infrastructure.recommendation_store import RECOMMENDATION_TABLE
+from jobpicky.infrastructure.source_store import JOB_SOURCE_TABLE
 from jobpicky.matching import BaselineMatchingService
 from jobpicky.orchestration import (
     PostgresRecommendationRunStore,
@@ -57,9 +66,47 @@ def _seed() -> None:
         engine = create_engine(_TEST_DATABASE_URL)
         factory = create_session_factory(engine)
         async with factory() as session:
-            await session.execute(sa.delete(JOB_TABLE).where(JOB_TABLE.c.id.in_(_JOB_IDS)))
+            await session.execute(
+                postgresql.insert(JOB_SOURCE_TABLE)
+                .values(
+                    id="source-1",
+                    display_name="示例招聘来源",
+                    created_at=now,
+                    updated_at=now,
+                )
+                .on_conflict_do_nothing(index_elements=["id"])
+            )
+            await session.execute(
+                sa.delete(RECOMMENDATION_TABLE).where(RECOMMENDATION_TABLE.c.user_id == _USER_ID)
+            )
             await session.execute(sa.delete(PROFILE_TABLE).where(PROFILE_TABLE.c.id == _PROFILE_ID))
             await session.execute(sa.delete(RUN_TABLE).where(RUN_TABLE.c.user_id == _USER_ID))
+            await session.execute(sa.delete(JOB_TABLE).where(JOB_TABLE.c.id.in_(_JOB_IDS)))
+            await session.execute(
+                sa.delete(CREDIT_ACCOUNT_TABLE).where(CREDIT_ACCOUNT_TABLE.c.user_id == _USER_ID)
+            )
+            await session.execute(
+                sa.delete(USER_ACCOUNT_TABLE).where(USER_ACCOUNT_TABLE.c.id == _USER_ID)
+            )
+            await session.execute(
+                sa.insert(USER_ACCOUNT_TABLE).values(
+                    id=_USER_ID,
+                    email="itest-recommendation-user@example.com",
+                    password_hash="test-only-hash",
+                    role="USER",
+                    status="ACTIVE",
+                    created_at=now,
+                    updated_at=now,
+                )
+            )
+            await session.execute(
+                sa.insert(CREDIT_ACCOUNT_TABLE).values(
+                    user_id=_USER_ID,
+                    balance=10_000,
+                    created_at=now,
+                    updated_at=now,
+                )
+            )
             await session.execute(
                 sa.insert(JOB_TABLE),
                 [
@@ -122,35 +169,36 @@ def test_end_to_end_run_persists_results_snapshot() -> None:
 
     async def check() -> None:
         service = _service()
-        accepted = await service.start(_USER_ID, _PROFILE_ID, None, "itest-key-1")
-        assert accepted.status == RunStatus.PENDING
+        accepted = await service.start(_USER_ID, None, "itest-key-1")
+        assert accepted.status == RecommendationTaskStatus.PENDING
 
         view = await service.get_run(_USER_ID, accepted.run_id)
         for _ in range(100):
-            if view.status not in {RunStatus.PENDING, RunStatus.RUNNING}:
+            if view.status not in {
+                RecommendationTaskStatus.PENDING,
+                RecommendationTaskStatus.RUNNING,
+            }:
                 break
             await asyncio.sleep(0.01)
             view = await service.get_run(_USER_ID, accepted.run_id)
-        assert view.status == RunStatus.SUCCEEDED
-        assert view.current_step == "COMPLETE"
-        assert view.model_config_version == "recommendation-v1"
-        assert view.recommendation_input is not None
-        assert view.recommendation_input.profile_id == _PROFILE_ID
-        assert view.counts["results"] >= 1
+        assert view.status == RecommendationTaskStatus.SUCCEEDED
+        assert view.current_step == RecommendationStep.COMPLETE
+        assert view.progress_percent == 100
+        assert view.credits.refunded is False
+        assert view.counts["recommended"] >= 1
         assert view.finished_at is not None
 
         page = await service.get_results(_USER_ID, accepted.run_id, 1, 10)
         # The database may hold other sample rows; assert on the seeded jobs.
         assert page.total >= 1
-        assert all(item.job.id == item.retrieval.job_id for item in page.items)
         by_id = {item.job.id: item for item in page.items}
         assert "itest-run-job-1" in by_id
         assert "itest-run-job-2" not in by_id
         assert by_id["itest-run-job-1"].job.company_name == "示例科技"
-        assert by_id["itest-run-job-1"].retrieval.retrieval_score > 0
-        assert by_id["itest-run-job-1"].assessment.matched
+        assert by_id["itest-run-job-1"].assessment.match_score == 90
+        assert by_id["itest-run-job-1"].is_deleted is False
 
-        replay = await service.start(_USER_ID, _PROFILE_ID, None, "itest-key-1")
+        replay = await service.start(_USER_ID, None, "itest-key-1")
         assert replay.run_id == accepted.run_id
 
     asyncio.run(check())

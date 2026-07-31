@@ -348,6 +348,8 @@ class Settings:
             raise ValueError(
                 "JOBPICKY_JWT_SIGNING_KEY must contain at least 32 bytes in production"
             )
+        if environment in {"production", "prod"} and not refresh_cookie_secure:
+            raise ValueError("JOBPICKY_REFRESH_COOKIE_SECURE must be true in production")
 
         return cls(
             app_name=app_name,

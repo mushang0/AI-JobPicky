@@ -6,9 +6,11 @@ import re
 import unicodedata
 from collections.abc import Sequence
 from datetime import UTC, datetime
+from typing import cast
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 import sqlalchemy as sa
+from pydantic import JsonValue
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -38,8 +40,15 @@ from ..contracts import (
     RetrievalChannel,
     SearchHit,
 )
+from ..contracts.normalization import (
+    normalize_company_nature,
+    normalize_education,
+    normalize_locations,
+    normalize_recruitment_type,
+)
 from ..errors import ApplicationError
 from ..ports import EmbeddingPort
+from .source_store import JOB_SOURCE_TABLE
 
 # Lightweight Core mapping of the job table for read queries. The Alembic
 # migrations remain the single source of truth for the schema (plan 003).
@@ -80,6 +89,18 @@ _CLOSE_WARNING = (
     "are not yet sufficient for safe closing"
 )
 _SPACE_RE = re.compile(r"\s+")
+_SOURCE_DISPLAY_NAMES = {
+    "MOKA": "Moka",
+    "FEISHU": "飞书招聘",
+    "FEISHU_RECRUITMENT": "飞书招聘",
+    "BEISEN": "北森",
+    "JOB_51": "前程无忧",
+    "ZHAOPIN": "智联招聘",
+    "GUOPIN": "国聘",
+    "WECHAT": "微信公众号",
+    "HOTJOB": "HotJob",
+    "PUBLIC_WEB": "公开网页",
+}
 
 
 def _normalized_text(value: str) -> str:
@@ -128,25 +149,26 @@ def _identity_key(job: CollectedJob) -> str:
             "facts",
             _normalized_text(job.company_name),
             _normalized_text(job.title),
-            sorted(_normalized_text(location) for location in job.locations),
+            sorted(_normalized_text(location) for location in normalize_locations(job.locations)),
         ]
     return _digest([job.source_id, evidence])
 
 
 def _content_hash(job: CollectedJob) -> str:
+    values = _normalized_filter_values(job)
     return _digest(
         {
             "source_id": job.source_id,
             "company_name": job.company_name,
-            "company_nature": job.company_nature,
+            "company_nature": values["company_nature"],
             "title": job.title,
-            "locations": job.locations,
+            "locations": values["locations"],
             "description": job.description,
             "metadata": job.metadata,
             "detail_url": job.detail_url,
             "apply_url": job.apply_url,
-            "recruitment_type": job.recruitment_type,
-            "education_requirement": job.education_requirement,
+            "recruitment_type": values["recruitment_type"],
+            "education_requirement": values["education_requirement"],
             "salary_min": job.salary_min,
             "salary_max": job.salary_max,
             "salary_months": job.salary_months,
@@ -157,6 +179,23 @@ def _content_hash(job: CollectedJob) -> str:
     )
 
 
+def _source_display_name(source_id: str, items: Sequence[CollectedJob]) -> str:
+    platforms = {
+        str(item.metadata.get("platform", "")).strip().upper()
+        for item in items
+        if item.metadata.get("platform")
+    }
+    known = {
+        _SOURCE_DISPLAY_NAMES[platform]
+        for platform in platforms
+        if platform in _SOURCE_DISPLAY_NAMES
+    }
+    if len(known) == 1:
+        return next(iter(known))
+    companies = {item.company_name.strip() for item in items if item.company_name.strip()}
+    return next(iter(companies)) if len(companies) == 1 else source_id
+
+
 def _job_values(
     job: CollectedJob,
     *,
@@ -164,18 +203,19 @@ def _job_values(
     content_hash: str,
     run_id: str,
 ) -> dict[str, object]:
+    normalized = _normalized_filter_values(job)
     return {
         "source_id": job.source_id,
         "company_name": job.company_name,
-        "company_nature": job.company_nature,
+        "company_nature": normalized["company_nature"],
         "title": job.title,
-        "locations": job.locations,
+        "locations": normalized["locations"],
         "description": job.description,
-        "metadata": job.metadata,
+        "metadata": normalized["metadata"],
         "detail_url": job.detail_url,
         "apply_url": job.apply_url,
-        "recruitment_type": job.recruitment_type,
-        "education_requirement": job.education_requirement,
+        "recruitment_type": normalized["recruitment_type"],
+        "education_requirement": normalized["education_requirement"],
         "salary_min": job.salary_min,
         "salary_max": job.salary_max,
         "salary_months": job.salary_months,
@@ -186,6 +226,35 @@ def _job_values(
         "source_job_id": job.source_job_id,
         "content_hash": content_hash,
         "last_seen_run_id": run_id,
+    }
+
+
+def _normalized_filter_values(job: CollectedJob) -> dict[str, object]:
+    locations = normalize_locations(job.locations)
+    company_nature = normalize_company_nature(job.company_nature)
+    recruitment_type = normalize_recruitment_type(job.recruitment_type)
+    education = normalize_education(job.education_requirement)
+    metadata = dict(job.metadata)
+    original: dict[str, JsonValue] = {}
+    for field, raw, normalized in (
+        ("company_nature", job.company_nature, company_nature),
+        ("recruitment_type", job.recruitment_type, recruitment_type),
+        ("education_requirement", job.education_requirement, education),
+        ("locations", job.locations, locations),
+    ):
+        if raw != normalized and raw is not None:
+            original[field] = cast(JsonValue, raw)
+    if original:
+        existing = metadata.get("_normalization_v1_original")
+        merged = dict(existing) if isinstance(existing, dict) else {}
+        merged.update(original)
+        metadata["_normalization_v1_original"] = merged
+    return {
+        "company_nature": company_nature,
+        "recruitment_type": recruitment_type,
+        "education_requirement": education,
+        "locations": locations,
+        "metadata": metadata,
     }
 
 
@@ -263,6 +332,25 @@ class PostgresJobCatalog:
         job_ids: list[str] = []
 
         async with self._session_factory() as session, session.begin():
+            display_name = _source_display_name(
+                batch.source_id, list(unique_job[0] for unique_job in unique.values())
+            )
+            source_insert = postgresql.insert(JOB_SOURCE_TABLE).values(
+                id=batch.source_id,
+                display_name=display_name,
+                created_at=datetime.now(UTC),
+                updated_at=datetime.now(UTC),
+            )
+            await session.execute(
+                source_insert.on_conflict_do_update(
+                    index_elements=["id"],
+                    set_={
+                        "display_name": source_insert.excluded.display_name,
+                        "updated_at": source_insert.excluded.updated_at,
+                    },
+                    where=JOB_SOURCE_TABLE.c.display_name == JOB_SOURCE_TABLE.c.id,
+                )
+            )
             for identity_key, (job, content_hash) in sorted(unique.items()):
                 await session.execute(
                     sa.text("SELECT pg_advisory_xact_lock(hashtextextended(:key, 0))"),

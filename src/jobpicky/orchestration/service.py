@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import json
 import uuid
 from collections.abc import Callable, Sequence
 from dataclasses import replace
@@ -9,18 +11,23 @@ from datetime import UTC, datetime
 from ..contracts import (
     Candidate,
     ErrorCode,
+    Feedback,
     JobFact,
     MatchAssessment,
     Page,
     ProfileSnapshot,
     RecommendationCandidate,
+    RecommendationCardView,
+    RecommendationFeedbackView,
     RecommendationItem,
+    RecommendationResultView,
+    RecommendationRunAccepted,
     RecommendationRunInput,
+    RecommendationSort,
     RecommendationStep,
-    RunAccepted,
+    RecommendationTaskStatus,
+    RecommendationTaskView,
     RunError,
-    RunStatus,
-    RunView,
     error_message,
     merge_extra_request,
     validate_assessments,
@@ -29,10 +36,12 @@ from ..contracts.common import JsonObject
 from ..errors import ApplicationError
 from ..ports import JobCatalogPort, JobEvaluatorPort, MatchingPort, ProfileSnapshotReaderPort
 from .store import (
-    IdempotencyConflictError,
+    RecommendationRecord,
     RecommendationRunStore,
     RunRecord,
-    record_to_run_view,
+    projection_to_card,
+    projection_to_result,
+    record_to_task_view,
 )
 
 
@@ -40,7 +49,7 @@ def plan_run_input(
     profile: ProfileSnapshot,
     extra_request: str | None,
 ) -> RecommendationRunInput:
-    """Freeze the run input at creation time (architecture §4.12)."""
+    """Freeze the exact immutable profile version and merged guidance."""
     return RecommendationRunInput(
         profile_id=profile.id,
         profile_version=profile.version,
@@ -52,7 +61,6 @@ def assemble_candidates(
     candidates: Sequence[Candidate],
     jobs: Sequence[JobFact],
 ) -> list[RecommendationCandidate]:
-    """Pair candidates with their job snapshots, keeping candidate order."""
     jobs_by_id = {job.id: job for job in jobs}
     return [
         RecommendationCandidate(job=jobs_by_id[candidate.job_id], retrieval=candidate)
@@ -66,9 +74,8 @@ def assemble_recommendations(
     assessments: Sequence[MatchAssessment],
     jobs: Sequence[JobFact],
 ) -> list[RecommendationItem]:
-    """Rebuild final items from catalog facts after evaluation."""
+    """Build formal matched results in stable candidate order, with no score threshold."""
     validate_assessments([candidate.job_id for candidate in candidates], assessments)
-    candidates_by_id = {candidate.job_id: candidate for candidate in candidates}
     jobs_by_id = {job.id: job for job in jobs}
     assessments_by_id = {assessment.job_id: assessment for assessment in assessments}
     items: list[RecommendationItem] = []
@@ -77,28 +84,12 @@ def assemble_recommendations(
         assessment = assessments_by_id[candidate.job_id]
         if job is None or not assessment.matched:
             continue
-        items.append(
-            RecommendationItem(
-                job=job,
-                retrieval=candidates_by_id[candidate.job_id],
-                assessment=assessment,
-            )
-        )
+        items.append(RecommendationItem(job=job, retrieval=candidate, assessment=assessment))
     return items
 
 
 class RecommendationRunService:
-    """RecommendationOrchestratorPort implementation over the deterministic chain.
-
-    Runs execute as in-process asyncio tasks: start returns immediately and a
-    restart drops in-flight tasks, leaving their records in RUNNING (plan 004,
-    decision 5 — recovery and retry hardening belong to phase 3, this slice
-    does not fake reliability). run_in_background=False executes inline so
-    tests and seeds get a deterministic, awaitable run.
-
-    Results are stored as snapshots at completion time (R7): later changes to
-    job facts never rewrite what a historical run returned.
-    """
+    """Complete user recommendation workflow and query service."""
 
     def __init__(
         self,
@@ -109,18 +100,26 @@ class RecommendationRunService:
         evaluator: JobEvaluatorPort,
         model_config_version: str,
         *,
+        recommendation_cost: int = 100,
+        candidate_limit: int = 50,
         evaluation_batch_size: int = 10,
         run_in_background: bool = True,
         now: Callable[[], datetime] | None = None,
     ) -> None:
+        if recommendation_cost < 1:
+            raise ValueError("recommendation_cost must be positive")
+        if not 1 <= candidate_limit <= 50:
+            raise ValueError("candidate_limit must be between 1 and 50")
+        if evaluation_batch_size < 1:
+            raise ValueError("evaluation_batch_size must be at least 1")
         self._store = store
         self._profile_reader = profile_reader
         self._catalog = catalog
         self._matching = matching
         self._evaluator = evaluator
         self._model_config_version = model_config_version
-        if evaluation_batch_size < 1:
-            raise ValueError("evaluation_batch_size must be at least 1")
+        self._recommendation_cost = recommendation_cost
+        self._candidate_limit = candidate_limit
         self._evaluation_batch_size = evaluation_batch_size
         self._run_in_background = run_in_background
         self._now = now or (lambda: datetime.now(UTC))
@@ -129,59 +128,72 @@ class RecommendationRunService:
     async def start(
         self,
         user_id: str,
-        profile_id: str,
         extra_request: str | None = None,
         idempotency_key: str | None = None,
-    ) -> RunAccepted:
-        profile = await self._profile_reader.get_snapshot(user_id, profile_id)
-        run_input = plan_run_input(profile, extra_request)
+    ) -> RecommendationRunAccepted:
+        key = _validate_idempotency_key(idempotency_key)
+        normalized_request = _normalize_extra_request(extra_request)
+        fingerprint = _request_fingerprint(normalized_request)
 
-        if idempotency_key is not None:
-            existing = await self._store.find_by_idempotency(user_id, idempotency_key)
-            if existing is not None:
-                return self._reuse_or_conflict(existing, run_input)
+        # Replays must not bind to a newer profile version or charge again.
+        existing = await self._store.find_by_idempotency(user_id, key)
+        if existing is not None:
+            return self._reuse_or_conflict(existing, fingerprint)
 
+        profile = await self._profile_reader.get_current(user_id)
+        if profile is None:  # defensive for older adapters that returned None
+            raise ApplicationError(
+                ErrorCode.PROFILE_NOT_FOUND,
+                "profile not found",
+                status_code=404,
+            )
         record = RunRecord(
             run_id=uuid.uuid4().hex,
             user_id=user_id,
-            status=RunStatus.PENDING,
-            current_step=str(RecommendationStep.PENDING),
+            status=RecommendationTaskStatus.PENDING,
             created_at=self._now(),
-            recommendation_input=run_input,
+            recommendation_input=plan_run_input(profile, normalized_request),
             model_config_version=self._model_config_version,
-            idempotency_key=idempotency_key,
+            idempotency_key=key,
+            request_fingerprint=fingerprint,
+            credit_cost=self._recommendation_cost,
         )
-        try:
-            await self._store.insert(record)
-        except IdempotencyConflictError:
-            # Lost a race with a concurrent identical submission: replay the
-            # winner instead of creating a duplicate run (R5).
-            existing = await self._store.find_by_idempotency(user_id, idempotency_key or "")
-            if existing is None:  # pragma: no cover - unique index fired without a row
-                raise
-            return self._reuse_or_conflict(existing, run_input)
+        created = await self._store.create_charged_run(record)
+        if not created.created:
+            return self._reuse_or_conflict(created.record, fingerprint)
+        record = created.record
 
         if self._run_in_background:
             task = asyncio.create_task(self._execute(record, profile))
             self._tasks.add(task)
             task.add_done_callback(self._tasks.discard)
-            return RunAccepted(run_id=record.run_id, status=record.status)
-        await self._execute(record, profile)
-        finished = await self._require_user_record(user_id, record.run_id)
-        return RunAccepted(run_id=record.run_id, status=finished.status)
+        else:
+            await self._execute(record, profile)
+            record = await self._require_user_record(user_id, record.run_id)
+        return RecommendationRunAccepted(
+            run_id=record.run_id,
+            status=record.status,
+            credits_charged=record.credit_cost,
+            balance_after=record.balance_after_charge,
+        )
 
-    async def list_runs(self, user_id: str, page: int, page_size: int) -> Page[RunView]:
-        _validate_pagination(page, page_size)
+    async def list_runs(
+        self,
+        user_id: str,
+        page: int,
+        page_size: int,
+    ) -> Page[RecommendationTaskView]:
+        _validate_pagination(page, page_size, max_page_size=100)
         records, total = await self._store.list_by_user(user_id, page, page_size)
         return Page(
-            items=[record_to_run_view(record) for record in records],
+            items=[record_to_task_view(record) for record in records],
             total=total,
             page=page,
             page_size=page_size,
         )
 
-    async def get_run(self, user_id: str, run_id: str) -> RunView:
-        return record_to_run_view(await self._require_user_record(user_id, run_id))
+    async def get_run(self, user_id: str, run_id: str) -> RecommendationTaskView:
+        return record_to_task_view(await self._require_user_record(user_id, run_id))
 
     async def get_results(
         self,
@@ -189,37 +201,99 @@ class RecommendationRunService:
         run_id: str,
         page: int,
         page_size: int,
-    ) -> Page[RecommendationItem]:
-        _validate_pagination(page, page_size)
-        record = await self._require_user_record(user_id, run_id)
-        # An unfinished run has no results yet; that is a normal empty page,
-        # not an error — RunView.status says whether results are due.
-        results = record.results if record.status not in _UNFINISHED else []
-        start = (page - 1) * page_size
+    ) -> Page[RecommendationResultView]:
+        _validate_pagination(page, page_size, max_page_size=50)
+        run = await self._require_user_record(user_id, run_id)
+        if run.status in _UNFINISHED:
+            return Page(items=[], total=0, page=page, page_size=page_size)
+        records, total = await self._store.list_run_results(
+            user_id,
+            run_id,
+            page,
+            page_size,
+        )
         return Page(
-            items=results[start : start + page_size],
-            total=len(results),
+            items=[projection_to_result(record) for record in records],
+            total=total,
             page=page,
             page_size=page_size,
         )
 
+    async def list_recommendations(
+        self,
+        user_id: str,
+        page: int,
+        page_size: int,
+        sort: RecommendationSort,
+    ) -> Page[RecommendationCardView]:
+        _validate_pagination(page, page_size, max_page_size=50)
+        records, total = await self._store.list_recommendations(
+            user_id,
+            page,
+            page_size,
+            sort,
+        )
+        return Page(
+            items=[projection_to_card(record) for record in records],
+            total=total,
+            page=page,
+            page_size=page_size,
+        )
+
+    async def update_feedback(
+        self,
+        user_id: str,
+        recommendation_id: str,
+        feedback: Feedback | None,
+    ) -> RecommendationFeedbackView:
+        found = await self._store.set_feedback(user_id, recommendation_id, feedback)
+        if not found:
+            _raise_recommendation_not_found()
+        return RecommendationFeedbackView(
+            recommendation_id=recommendation_id,
+            feedback=feedback,
+        )
+
+    async def delete_recommendation(self, user_id: str, recommendation_id: str) -> None:
+        found = await self._store.soft_delete(
+            user_id,
+            recommendation_id,
+            self._now(),
+        )
+        if not found:
+            _raise_recommendation_not_found()
+
     async def _execute(self, record: RunRecord, profile: ProfileSnapshot) -> None:
         try:
-            run_input = record.recommendation_input
             record = replace(
                 record,
-                status=RunStatus.RUNNING,
+                status=RecommendationTaskStatus.RUNNING,
+                current_step=RecommendationStep.PROFILE,
+                progress_percent=10,
                 started_at=self._now(),
-                current_step=str(RecommendationStep.FILTER),
             )
-            await self._store.save(record)
+            await self._store.save_progress(record)
 
+            record = replace(
+                record,
+                current_step=RecommendationStep.FILTER,
+                progress_percent=25,
+            )
+            await self._store.save_progress(record)
+            run_input = record.recommendation_input
             spec = self._matching.build_filter_spec(profile, run_input.effective_extra_request)
             filter_result = await self._catalog.hard_filter(spec)
-            eligible_job_ids = filter_result.eligible_job_ids
+            historical_ids = await self._store.successful_job_ids(record.user_id)
+            eligible_job_ids = [
+                job_id for job_id in filter_result.eligible_job_ids if job_id not in historical_ids
+            ]
 
-            record = replace(record, current_step=str(RecommendationStep.RETRIEVE))
-            await self._store.save(record)
+            record = replace(
+                record,
+                current_step=RecommendationStep.RETRIEVE,
+                progress_percent=45,
+            )
+            await self._store.save_progress(record)
             query_text = self._matching.build_query_text(profile, run_input.effective_extra_request)
             if eligible_job_ids:
                 keyword_hits, semantic_hits = await asyncio.gather(
@@ -228,150 +302,185 @@ class RecommendationRunService:
                 )
             else:
                 keyword_hits, semantic_hits = [], []
-            candidates = self._matching.merge_candidates(keyword_hits, semantic_hits)
-            jobs = await self._catalog.get_jobs([c.job_id for c in candidates])
+            candidates = self._matching.merge_candidates(keyword_hits, semantic_hits)[
+                : self._candidate_limit
+            ]
+            jobs = await self._catalog.get_jobs([candidate.job_id for candidate in candidates])
             jobs_by_id = {job.id: job for job in jobs}
-            missing_job_count = sum(candidate.job_id not in jobs_by_id for candidate in candidates)
+            evaluable_candidates = [
+                candidate for candidate in candidates if candidate.job_id in jobs_by_id
+            ]
+            missing_job_count = len(candidates) - len(evaluable_candidates)
             warnings = list(record.warnings)
             if missing_job_count:
                 warnings.append(f"{missing_job_count} candidate job facts could not be loaded")
 
-            results: list[RecommendationItem] = []
-            evaluated_count = 0
-            if candidates and jobs:
-                evaluable_candidates = [
-                    candidate for candidate in candidates if candidate.job_id in jobs_by_id
-                ]
-                record = replace(record, current_step=str(RecommendationStep.EVALUATE))
-                await self._store.save(record)
-                assessments: list[MatchAssessment] = []
-                for batch_index, start in enumerate(
-                    range(0, len(evaluable_candidates), self._evaluation_batch_size)
-                ):
+            assessments: list[MatchAssessment] = []
+            if evaluable_candidates:
+                record = replace(
+                    record,
+                    current_step=RecommendationStep.EVALUATE,
+                    progress_percent=50,
+                    warnings=warnings,
+                    counts={"evaluated": 0, "recommended": 0},
+                )
+                await self._store.save_progress(record)
+                total = len(evaluable_candidates)
+                for batch_index, start in enumerate(range(0, total, self._evaluation_batch_size)):
                     candidate_batch = evaluable_candidates[
                         start : start + self._evaluation_batch_size
                     ]
                     batch_jobs = [jobs_by_id[candidate.job_id] for candidate in candidate_batch]
-                    try:
-                        batch_assessments = await self._evaluator.evaluate(
-                            profile,
-                            batch_jobs,
-                            candidate_batch,
-                            run_input.effective_extra_request,
-                        )
-                    except ApplicationError as exc:
-                        details: JsonObject = {
-                            "stage": "EVALUATE",
-                            "batch_index": batch_index,
-                        }
-                        if exc.code == str(ErrorCode.DEPENDENCY_UNAVAILABLE):
-                            details["dependency"] = "llm"
-                        raise ApplicationError(
-                            exc.code,
-                            "evaluator dependency unavailable"
-                            if exc.code == str(ErrorCode.DEPENDENCY_UNAVAILABLE)
-                            else "evaluator batch failed",
-                            status_code=exc.status_code,
-                            details=details,
-                        ) from exc
-                    except Exception as exc:
-                        raise ApplicationError(
-                            ErrorCode.RECOMMENDATION_FAILED,
-                            "evaluator batch failed",
-                            status_code=502,
-                            details={"stage": "EVALUATE", "batch_index": batch_index},
-                        ) from exc
-                    try:
-                        validate_assessments(
-                            [candidate.job_id for candidate in candidate_batch],
-                            batch_assessments,
-                        )
-                    except ValueError as exc:
-                        raise ApplicationError(
-                            ErrorCode.RECOMMENDATION_FAILED,
-                            "evaluator returned an incomplete assessment batch",
-                            status_code=502,
-                            details={"stage": "EVALUATE", "batch_index": batch_index},
-                        ) from exc
-                    assessments.extend(batch_assessments)
-                evaluated_count = len(assessments)
-                # The evaluator saw the pre-evaluation facts.  Re-read before
-                # saving so the persisted item is the completion-time catalog
-                # snapshot, not a stale copy held across the model call.
-                final_jobs = await self._catalog.get_jobs(
-                    [candidate.job_id for candidate in evaluable_candidates]
-                )
-                final_job_ids = {job.id for job in final_jobs}
-                missing_after_evaluation = sum(
-                    candidate.job_id not in final_job_ids for candidate in evaluable_candidates
-                )
-                if missing_after_evaluation:
-                    warnings.append(
-                        f"{missing_after_evaluation} candidate job facts could not be loaded "
-                        "after evaluation"
+                    batch_assessments = await self._evaluate_batch(
+                        profile,
+                        batch_jobs,
+                        candidate_batch,
+                        run_input.effective_extra_request,
+                        batch_index,
                     )
-                results = assemble_recommendations(evaluable_candidates, assessments, final_jobs)
+                    assessments.extend(batch_assessments)
+                    completed = len(assessments)
+                    record = replace(
+                        record,
+                        progress_percent=50 + (40 * completed // total),
+                        counts={
+                            "evaluated": completed,
+                            "recommended": sum(item.matched for item in assessments),
+                        },
+                    )
+                    await self._store.save_progress(record)
 
-            record = replace(record, current_step=str(RecommendationStep.SAVE))
-            await self._store.save(record)
-
+            # Re-read facts after the model call so history contains completion-time snapshots.
+            final_jobs = await self._catalog.get_jobs(
+                [candidate.job_id for candidate in evaluable_candidates]
+            )
+            final_job_ids = {job.id for job in final_jobs}
+            missing_after_evaluation = len(evaluable_candidates) - len(final_job_ids)
+            if missing_after_evaluation:
+                warnings.append(
+                    f"{missing_after_evaluation} candidate job facts could not be loaded "
+                    "after evaluation"
+                )
+            items = assemble_recommendations(
+                evaluable_candidates,
+                assessments,
+                final_jobs,
+            )
+            recommended_at = self._now()
+            recommendations = [
+                RecommendationRecord(
+                    recommendation_id=uuid.uuid4().hex,
+                    user_id=record.user_id,
+                    run_id=record.run_id,
+                    job_id=item.job.id,
+                    position=position,
+                    job_snapshot=item.job,
+                    assessment=item.assessment,
+                    recommended_at=recommended_at,
+                )
+                for position, item in enumerate(items, start=1)
+            ]
+            counts = {"evaluated": len(assessments), "recommended": len(recommendations)}
             record = replace(
                 record,
-                status=RunStatus.SUCCEEDED,
-                current_step=str(RecommendationStep.COMPLETE),
-                finished_at=self._now(),
-                counts={
-                    "eligible_jobs": len(eligible_job_ids),
-                    "keyword_hits": len(keyword_hits),
-                    "semantic_hits": len(semantic_hits),
-                    "candidates": len(candidates),
-                    "evaluated": evaluated_count,
-                    "results": len(results),
-                },
+                current_step=RecommendationStep.SAVE,
+                progress_percent=95,
+                counts=counts,
                 warnings=warnings,
-                results=results,
             )
-            await self._store.save(record)
+            await self._store.save_progress(record)
+            record = replace(
+                record,
+                status=RecommendationTaskStatus.SUCCEEDED,
+                current_step=RecommendationStep.COMPLETE,
+                progress_percent=100,
+                finished_at=self._now(),
+            )
+            await self._store.complete_run(record, recommendations)
         except Exception as exc:
             await self._fail(record, exc)
 
+    async def _evaluate_batch(
+        self,
+        profile: ProfileSnapshot,
+        jobs: Sequence[JobFact],
+        candidates: Sequence[Candidate],
+        extra_request: str | None,
+        batch_index: int,
+    ) -> list[MatchAssessment]:
+        try:
+            assessments = await self._evaluator.evaluate(
+                profile,
+                jobs,
+                candidates,
+                extra_request,
+            )
+        except ApplicationError as exc:
+            details: JsonObject = {"stage": "EVALUATE", "batch_index": batch_index}
+            if exc.code == str(ErrorCode.DEPENDENCY_UNAVAILABLE):
+                details["dependency"] = "llm"
+            raise ApplicationError(
+                exc.code,
+                "evaluator dependency unavailable"
+                if exc.code == str(ErrorCode.DEPENDENCY_UNAVAILABLE)
+                else "evaluator batch failed",
+                status_code=exc.status_code,
+                details=details,
+            ) from exc
+        except Exception as exc:
+            raise ApplicationError(
+                ErrorCode.RECOMMENDATION_FAILED,
+                "evaluator batch failed",
+                status_code=502,
+                details={"stage": "EVALUATE", "batch_index": batch_index},
+            ) from exc
+        try:
+            return validate_assessments([candidate.job_id for candidate in candidates], assessments)
+        except ValueError as exc:
+            raise ApplicationError(
+                ErrorCode.RECOMMENDATION_FAILED,
+                "evaluator returned an incomplete assessment batch",
+                status_code=502,
+                details={"stage": "EVALUATE", "batch_index": batch_index},
+            ) from exc
+
     async def _fail(self, record: RunRecord, exc: Exception) -> None:
-        details: JsonObject = {"error_type": type(exc).__name__}
         if isinstance(exc, ApplicationError):
-            code, message = exc.code, error_message(exc.code)
+            code = exc.code
             details = dict(exc.details)
-            details["error_type"] = type(exc).__name__
         else:
             code = str(ErrorCode.RECOMMENDATION_FAILED)
-            message = error_message(code)
-        await self._store.save(
-            replace(
-                record,
-                status=RunStatus.FAILED,
-                finished_at=self._now(),
-                error=RunError(
-                    code=code,
-                    message=message,
-                    details=details,
-                ),
+            details = {"stage": str(record.current_step)}
+        error = RunError(code=code, message=error_message(code), details=details)
+        try:
+            await self._store.fail_and_refund(
+                record.user_id,
+                record.run_id,
+                error,
+                self._now(),
             )
-        )
+        except Exception:
+            # The exception is contained because background tasks have no caller.
+            # A later retry of fail_and_refund is safe through the credit ledger.
+            return
 
     def _reuse_or_conflict(
         self,
         existing: RunRecord,
-        run_input: RecommendationRunInput,
-    ) -> RunAccepted:
-        # Same key + same frozen input = the same request replayed: return the
-        # existing run (R5). Same key + different input must fail loudly —
-        # reusing the old run would silently pretend the new input took effect.
-        if existing.recommendation_input == run_input:
-            return RunAccepted(run_id=existing.run_id, status=existing.status)
-        raise ApplicationError(
-            ErrorCode.CONFLICT,
-            "idempotency key was already used with different recommendation input",
-            status_code=409,
-            details={"run_id": existing.run_id},
+        request_fingerprint: str,
+    ) -> RecommendationRunAccepted:
+        if existing.request_fingerprint != request_fingerprint:
+            raise ApplicationError(
+                ErrorCode.IDEMPOTENCY_CONFLICT,
+                "idempotency key was already used with a different request",
+                status_code=409,
+                details={"run_id": existing.run_id},
+            )
+        return RecommendationRunAccepted(
+            run_id=existing.run_id,
+            status=existing.status,
+            credits_charged=existing.credit_cost,
+            balance_after=existing.balance_after_charge,
         )
 
     async def _require_user_record(self, user_id: str, run_id: str) -> RunRecord:
@@ -379,22 +488,61 @@ class RecommendationRunService:
         if record is None or record.user_id != user_id:
             raise ApplicationError(
                 ErrorCode.NOT_FOUND,
-                f"recommendation run {run_id} not found",
+                "recommendation run not found",
                 status_code=404,
             )
         return record
 
 
-_UNFINISHED = (RunStatus.PENDING, RunStatus.RUNNING)
+_UNFINISHED = (
+    RecommendationTaskStatus.PENDING,
+    RecommendationTaskStatus.RUNNING,
+)
 
 
-def _validate_pagination(page: int, page_size: int) -> None:
-    if page < 1 or page_size < 1:
+def _normalize_extra_request(value: str | None) -> str | None:
+    return value.strip() or None if value is not None else None
+
+
+def _request_fingerprint(extra_request: str | None) -> str:
+    payload = json.dumps(
+        {"extra_request": extra_request},
+        ensure_ascii=False,
+        separators=(",", ":"),
+        sort_keys=True,
+    )
+    return hashlib.sha256(payload.encode()).hexdigest()
+
+
+def _validate_idempotency_key(value: str | None) -> str:
+    if (
+        value is None
+        or not 1 <= len(value) <= 128
+        or any(ord(character) < 32 or ord(character) > 126 for character in value)
+    ):
         raise ApplicationError(
             ErrorCode.VALIDATION_ERROR,
-            "page and page_size must be positive integers",
+            "invalid Idempotency-Key",
             status_code=422,
         )
+    return value
+
+
+def _validate_pagination(page: int, page_size: int, *, max_page_size: int) -> None:
+    if page < 1 or not 1 <= page_size <= max_page_size:
+        raise ApplicationError(
+            ErrorCode.VALIDATION_ERROR,
+            "invalid pagination",
+            status_code=422,
+        )
+
+
+def _raise_recommendation_not_found() -> None:
+    raise ApplicationError(
+        ErrorCode.NOT_FOUND,
+        "recommendation not found",
+        status_code=404,
+    )
 
 
 __all__ = [
