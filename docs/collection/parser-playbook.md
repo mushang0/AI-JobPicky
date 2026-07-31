@@ -176,6 +176,14 @@ uv run python scripts/verify_parser_pipeline.py \
 - 回归复用：`tests/collection/test_public_web_parser.py` 和
   `tests/collection/test_pipeline.py` 的公告链接语义测试。
 
+## 定制招聘系统（CUSTOM_RECRUITMENT_SYSTEM）
+
+- 复用通用公开网页解析器读取公开 JSON、JSON-LD、岗位详情和招聘公告；不会根据系统域名或
+  表格岗位方向猜测岗位事实。
+- `exam-sp.com`、二维码中转页、需要登录的报名页和没有公开岗位数据的系统入口保持失败；不绕过
+  登录、验证码、加密投递或访问控制。
+- 回归复用：`tests/collection/test_public_web_parser.py` 的 JSON、静态页和登录页边界测试。
+
 ## 国聘（GUOPIN）
 
 - 普通详情使用公开 `GET https://gp-api.iguopin.com/api/jobs/v1/info?id=<岗位ID>`；查询键是
