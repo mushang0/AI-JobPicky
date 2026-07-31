@@ -12,7 +12,8 @@
 - **架构不变量**：无论采用何种框架和存储方案都必须成立的安全与一致性规则。
 - **参考实现**：帮助首版快速落地的默认选择，可以在保持契约和需求不变的前提下替换。
 
-没有标为公共契约或架构不变量的目录、类、函数、表、索引、算法和第三方库都不是硬性要求。示例代码用于说明接口语义，不要求照抄文件组织。
+除 §1.4 的当前仓库分层落地约束外，没有标为公共契约或架构不变量的私有文件、类、函数、表、索引、
+算法和第三方库都不是硬性要求。示例代码用于说明接口语义，不要求照抄私有实现。
 
 ## 1. 总体架构
 
@@ -30,7 +31,8 @@
 | 接口 `api` | 鉴权上下文、输入校验、DTO 转换、HTTP 语义 | 业务算法和直接数据库访问 |
 | 基础设施 `infrastructure` | 数据库、HTTP、浏览器、模型、任务执行器的具体接入 | 定义产品规则 |
 
-模块名称是语义边界，不强制对应同名目录。小型实现可以合并相邻模块的文件，但不得混淆数据所有权。
+模块名称是语义边界。当前仓库的顶层职责位置遵循 §1.4；模块内部可以合并相邻的私有文件，但不得混淆
+数据所有权或形成第二套平行业务入口。
 
 ### 1.2 岗位采集链路
 
@@ -57,6 +59,82 @@
 ```
 
 编排层可以使用状态图，也可以使用更轻量的显式流程。客户端只依赖运行状态，不依赖内部节点、类名或框架。
+
+### 1.4 当前仓库的分层落地约束
+
+当前 FastAPI 模块化单体采用以下依赖方向：
+
+```text
+Router / Controller
+        ↓
+Application Service
+        ↓
+Port / 私有持久化协议
+        ↑
+Repository / Infrastructure Adapter
+        ↓
+PostgreSQL 或外部服务
+```
+
+新增用户功能按下列位置扩展；条目只在真实功能实现时创建，不为未来能力预建空目录、空 Service 或空
+Repository。现有采集器、Embedding、模型适配器等未展开文件继续保留在其所属模块中。
+
+```text
+src/jobpicky/
+├── app.py                         # FastAPI 应用创建与依赖装配
+├── api/
+│   ├── dependencies.py            # 身份上下文和 Service 注入
+│   └── routers/                   # HTTP Controller
+│       ├── auth.py
+│       ├── jobs.py
+│       ├── saved_jobs.py
+│       ├── profiles.py
+│       └── recommendations.py
+├── auth/
+│   └── service.py
+├── collection/                    # 来源采集与标准化
+├── catalog/
+│   ├── service.py
+│   ├── hard_filter.py
+│   └── query_terms.py
+├── profiles/
+│   └── service.py
+├── matching/
+│   └── service.py
+├── orchestration/
+│   ├── service.py
+│   └── store.py                   # 模块私有记录与持久化协议
+├── contracts/                     # 跨模块公共 DTO
+├── ports.py                       # 跨模块公共端口
+└── infrastructure/
+    ├── database.py
+    ├── auth_store.py
+    ├── credit_store.py
+    ├── saved_job_store.py
+    ├── job_catalog.py
+    ├── profile_store.py
+    └── recommendation_store.py    # PostgreSQL 推荐存储适配器
+```
+
+分层职责必须满足：
+
+- `app.py` 是装配入口，只创建应用、构造依赖并注册 Router。
+- `api/routers/` 只处理 HTTP 参数、身份依赖、状态码和 API DTO，不写 SQL、不决定业务规则，也不直接调用
+  Repository。
+- 各业务模块的 `service.py` 实现用例，负责权限、事务边界、幂等和业务编排；它不依赖 FastAPI 请求对象、
+  ORM 模型或具体数据库实现。
+- 跨模块 DTO 只放在 `contracts/`，跨模块调用只依赖 `ports.py`；模块内部专用记录和持久化协议留在模块内，
+  不为私有实现扩大公共契约。
+- `infrastructure/` 实现数据库、模型、HTTP 和任务执行器等适配器，只负责外部 I/O 和持久化语义，不定义
+  产品规则。
+- `DAO`、`Repository` 和 `Store` 在本项目中属于同一数据访问角色；同一数据边界只能保留一套实现，不增加
+  `Service → Repository → DAO` 的无价值转发层。
+- 涉及多表原子写入的用例由 Service 通过同一事务或最小 Unit of Work 完成，禁止由 Router 顺序调用多个
+  自动提交的 Store 拼接事务。
+
+现有 `orchestration/store.py` 中的 `PostgresRecommendationRunStore` 是迁移点：下一次修改正式推荐持久化时，
+将 PostgreSQL 实现移入 `infrastructure/recommendation_store.py`，模块内只保留记录和私有协议；迁移期间不得
+新增第二套并行实现。
 
 ## 2. 架构不变量
 
@@ -996,9 +1074,9 @@ LangChain 可用于模型适配与结构化输出，LangGraph 可用于显式状
 
 以下内容由实现者根据现有代码和最小可行原则决定：
 
-- 项目目录和文件数量；
+- §1.4 未固定的模块内部私有文件数量与进一步拆分；
 - 函数或类的拆分；
-- Repository、Service 或函数式组织；
+- Service 与 Repository 内部采用类或函数的组织方式；
 - 依赖注入框架；
 - Worker、调度器和队列；
 - 表拆分、JSON 字段、索引和迁移细节；
