@@ -11,6 +11,8 @@ from jobpicky.collection.link_classification import classify_link
         ("https://esunsoft.zhiye.com/", "BEISEN"),
         ("https://kjgb.zhiye.com/", "BEISEN"),
         ("https://example.zhiye.com/campus", "BEISEN"),
+        ("https://campus.boe.com/", "BEISEN"),
+        ("https://zhaopin.xdf.cn/jobs", "BEISEN"),
         (
             "https://young.yingjiesheng.com/xyzlogin?jumpurl=https://xyz.51job.com/External/Others/Login51.aspx?CtmID=1&prd=campus",
             "JOB_51",

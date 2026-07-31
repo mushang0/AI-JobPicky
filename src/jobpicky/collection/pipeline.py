@@ -12,22 +12,32 @@ from jobpicky.contracts.common import JsonObject
 
 from .link_classification import (
     BEISEN,
+    COMPANY_RECRUITMENT_SITE,
+    COMPANY_WEBSITE,
+    CUSTOM_RECRUITMENT_SYSTEM,
+    EMAIL,
     FEISHU,
+    FORM_OR_SHORT,
+    GOVERNMENT_NOTICE,
     GUOPIN,
     HOTJOB,
     JOB_51,
     MOKA,
+    PUBLIC_RECRUITMENT_PORTAL,
     WECHAT,
     ZHAOPIN,
     classify_link,
 )
 from .parsers.beisen import parse as parse_beisen
+from .parsers.email import parse as parse_email
 from .parsers.feishu import parse as parse_feishu
+from .parsers.form import parse as parse_form
 from .parsers.guopin import parse as parse_guopin
 from .parsers.hotjob import parse as parse_hotjob
 from .parsers.job_51 import parse as parse_job_51
 from .parsers.moka import parse as parse_moka
 from .parsers.moka import source_identity as moka_source_identity
+from .parsers.public_web import parse as parse_public_web
 from .parsers.wechat import parse as parse_wechat
 from .parsers.zhaopin import parse as parse_zhaopin
 from .spreadsheet import SpreadsheetRow
@@ -37,11 +47,18 @@ Parser = Callable[[str], Sequence[Mapping[str, object]]]
 # Keep routing visible and boring. Add a parser here only when it is implemented.
 PARSERS: dict[str, Parser] = {
     BEISEN: lambda url: parse_beisen(url),
+    COMPANY_RECRUITMENT_SITE: lambda url: parse_public_web(url, require_description=True),
+    COMPANY_WEBSITE: lambda url: parse_public_web(url, allow_announcement=True),
+    CUSTOM_RECRUITMENT_SYSTEM: lambda url: parse_public_web(url, allow_announcement=True),
+    EMAIL: lambda url: parse_email(url),
     FEISHU: lambda url: parse_feishu(url),
+    FORM_OR_SHORT: lambda url: parse_form(url),
+    GOVERNMENT_NOTICE: lambda url: parse_public_web(url, allow_announcement=True),
     GUOPIN: lambda url: parse_guopin(url),
     HOTJOB: lambda url: parse_hotjob(url),
     JOB_51: lambda url: parse_job_51(url),
     MOKA: lambda url: parse_moka(url),
+    PUBLIC_RECRUITMENT_PORTAL: lambda url: parse_public_web(url, allow_announcement=True),
     WECHAT: lambda url: parse_wechat(url),
     ZHAOPIN: lambda url: parse_zhaopin(url),
 }
@@ -161,7 +178,9 @@ def merge_job_fields(
         website_metadata.get("record_kind") if isinstance(website_metadata, Mapping) else None
     )
     apply_url = _string(website, "apply_url")
-    if apply_url is None and record_kind != "wechat_announcement":
+    if apply_url is None and not (
+        isinstance(record_kind, str) and record_kind.endswith("_announcement")
+    ):
         apply_url = _string(website, "detail_url")
     return CollectedJob(
         source_id=source_id,

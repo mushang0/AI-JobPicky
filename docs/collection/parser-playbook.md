@@ -16,7 +16,7 @@
 缺口汇总：
 
 ```bash
-uv run python scripts/report_parser_gaps.py <csv-or-xlsx> --limit-rows 20
+uv run python scripts/report_parser_gaps.py <csv> --limit-rows 20
 ```
 
 跨平台人工回放：
@@ -150,6 +150,75 @@ uv run python scripts/verify_parser_pipeline.py \
   个、二维码候选 65 个、微信联系 8 个和 URL 22 个；分类结果见回放目录的 `summary.json`。
 - Fixture：`tests/collection/fixtures/wechat_article.html`；回归：
   `tests/collection/test_wechat_parser.py`。
+
+## 公司招聘网站（COMPANY_RECRUITMENT_SITE）
+
+- 先复用已验证的平台分类：`campus.boe.com`、`zhaopin.xdf.cn`、
+  `sunzhaopin.sinosig.com`、`we.zyt.com`、`career.h3c.com`、`career.mindray.com`、
+  `career.naura.com`、`career.shenzhouintl.com`、`careers.mxbc.com`、
+  `careers.narwal.com`、`hr-campus.vivo.com`、`job.lzlj.com` 和 `zhaopin.xa.com` 的公开页面
+  使用北森页面模板，统一转到北森解析器；站点无岗位时仍保持失败。
+- 其余来源使用通用公开网页解析器：优先读取 `JobPosting` JSON-LD、公开内嵌 JSON 和服务端
+  岗位链接；若首页只有“校园招聘/职位/招聘”入口，会再跟随一层公开导航，并从有限数量的同页
+  公开脚本中发现岗位列表 API。只调用公开 GET 列表接口，不执行页面脚本、不提交表单、不绕过登录。
+- 列表只有标题时，解析器会从脚本明确暴露的公开详情 API 或详情页补齐 JD；详情路由和岗位数量
+  都有上限，避免错误候选 URL 放大请求。`COMPANY_RECRUITMENT_SITE` 路由要求最终必须有
+  `description`，所以“只有列表没有 JD”的来源不会被计为成功；其他复用该解析器的类型会保留
+  `needs_review` 标记供复核。
+- 前端懒加载但没有公开 GET 详情、需要登录/验证码/WAF、或 Moka 等返回加密详情的站点保持失败，
+  不把列表摘要、宣传页或浏览器渲染结果冒充稳定 JD。浏览器只用于调查页面链路，批处理仍使用确定性
+  HTTP/API 解析。理想汽车、Sicarrier、长亭科技已验证可分别获得岗位和 JD。
+- Fixture：`tests/collection/fixtures/public_job_page.html`；回归：
+  `tests/collection/test_public_web_parser.py`、`tests/collection/test_link_classification.py`。
+
+## 公司官网公告（COMPANY_WEBSITE）
+
+- 复用通用公开网页解析器。若页面存在可验证的 `JobPosting`、内嵌岗位数据或岗位详情链接，
+  按岗位事实解析；否则仅在标题或正文明确包含招聘语义时保留一条 `public_announcement` 公告级
+  记录，岗位名称、薪资和 JD 不从表格摘要推断。
+- 公告级记录的 `detail_url` 只表示公开来源，`apply_url` 保持为空；登录、WAF、普通公司介绍和
+  无招聘语义的文章保持失败。
+- 回归复用：`tests/collection/test_public_web_parser.py` 和
+  `tests/collection/test_pipeline.py` 的公告链接语义测试。
+
+## 定制招聘系统（CUSTOM_RECRUITMENT_SYSTEM）
+
+- 复用通用公开网页解析器读取公开 JSON、JSON-LD、岗位详情和招聘公告；不会根据系统域名或
+  表格岗位方向猜测岗位事实。
+- `exam-sp.com`、二维码中转页、需要登录的报名页和没有公开岗位数据的系统入口保持失败；不绕过
+  登录、验证码、加密投递或访问控制。
+- 回归复用：`tests/collection/test_public_web_parser.py` 的 JSON、静态页和登录页边界测试。
+
+## 政府招聘公告（GOVERNMENT_NOTICE）
+
+- 公开政务站招聘文章复用通用公开网页解析器；优先读取公开 `JobPosting` 或岗位数据，普通
+  招聘公告保留为一条 `public_announcement` 记录，正文和来源链接可追溯。
+- 公告标题不能证明单个岗位时不拆分岗位、不伪造投递链接；首页、错误页、登录页、当前无公开
+  内容的页面保持失败。
+- 回归复用：`tests/collection/test_public_web_parser.py` 的公告级成功路径和登录页失败边界。
+
+## 公共招聘门户（PUBLIC_RECRUITMENT_PORTAL）
+
+- 复用通用公开网页解析器，读取公开岗位数据、JSON-LD、服务端岗位链接或招聘公告；公告级记录
+  保留来源正文和详情链接，不把公告标题拆成岗位。
+- 门户当前无岗位、跳转登录、返回网关错误或只有报名入口时保持失败；不使用表格岗位方向补齐
+  缺失事实，也不绕过访问控制。
+- 回归复用：`tests/collection/test_public_web_parser.py` 的公开 JSON、静态页、公告和登录页边界。
+
+## 表单或短链（FORM_OR_SHORT）
+
+- 先跟随公开短链，再读取表单页面的标题和正文；只有页面自身明确包含招聘、招募、实习或岗位
+  语义时保留一条 `public_announcement` 记录，`apply_url` 不用表单详情页冒充岗位投递事实。
+- 普通问卷、登录/验证码页、失效短链和没有招聘证据的表单保持失败；不提交表单、不读取登录态，
+  也不从表格岗位摘要猜岗位。
+- Fixture/回归：`tests/collection/test_form_parser.py`，底层字段测试复用
+  `tests/collection/test_public_web_parser.py`。
+
+## 邮箱（EMAIL）
+
+- 邮箱是公告中的投递方式，不是公开岗位来源。解析器显式返回“application method”失败，避免把
+  邮箱地址或主题臆造为岗位标题；后续应由公告解析器记录为 application method。
+- 回归：`tests/collection/test_email_parser.py`。
 
 ## 国聘（GUOPIN）
 

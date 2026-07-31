@@ -96,6 +96,21 @@ def test_wechat_announcement_does_not_use_article_as_apply_url() -> None:
     assert job.apply_url is None
 
 
+def test_public_announcement_does_not_use_notice_as_apply_url() -> None:
+    job = merge_job_fields(
+        "source-1",
+        make_row("https://www.example.test/notices/recruitment.html"),
+        {
+            "title": "校园招聘公告",
+            "detail_url": "https://www.example.test/notices/recruitment.html",
+            "apply_url": None,
+            "metadata": {"record_kind": "public_announcement"},
+        },
+    )
+
+    assert job.apply_url is None
+
+
 def test_one_sheet_row_creates_one_collected_job_per_website_job(monkeypatch) -> None:
     monkeypatch.setitem(
         pipeline.PARSERS,
