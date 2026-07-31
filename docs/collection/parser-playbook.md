@@ -200,6 +200,21 @@ uv run python scripts/verify_parser_pipeline.py \
   缺失事实，也不绕过访问控制。
 - 回归复用：`tests/collection/test_public_web_parser.py` 的公开 JSON、静态页、公告和登录页边界。
 
+## 表单或短链（FORM_OR_SHORT）
+
+- 先跟随公开短链，再读取表单页面的标题和正文；只有页面自身明确包含招聘、招募、实习或岗位
+  语义时保留一条 `public_announcement` 记录，`apply_url` 不用表单详情页冒充岗位投递事实。
+- 普通问卷、登录/验证码页、失效短链和没有招聘证据的表单保持失败；不提交表单、不读取登录态，
+  也不从表格岗位摘要猜岗位。
+- Fixture/回归：`tests/collection/test_form_parser.py`，底层字段测试复用
+  `tests/collection/test_public_web_parser.py`。
+
+## 邮箱（EMAIL）
+
+- 邮箱是公告中的投递方式，不是公开岗位来源。解析器显式返回“application method”失败，避免把
+  邮箱地址或主题臆造为岗位标题；后续应由公告解析器记录为 application method。
+- 回归：`tests/collection/test_email_parser.py`。
+
 ## 国聘（GUOPIN）
 
 - 普通详情使用公开 `GET https://gp-api.iguopin.com/api/jobs/v1/info?id=<岗位ID>`；查询键是

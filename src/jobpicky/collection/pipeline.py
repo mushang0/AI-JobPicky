@@ -15,7 +15,9 @@ from .link_classification import (
     COMPANY_RECRUITMENT_SITE,
     COMPANY_WEBSITE,
     CUSTOM_RECRUITMENT_SYSTEM,
+    EMAIL,
     FEISHU,
+    FORM_OR_SHORT,
     GOVERNMENT_NOTICE,
     GUOPIN,
     HOTJOB,
@@ -27,7 +29,9 @@ from .link_classification import (
     classify_link,
 )
 from .parsers.beisen import parse as parse_beisen
+from .parsers.email import parse as parse_email
 from .parsers.feishu import parse as parse_feishu
+from .parsers.form import parse as parse_form
 from .parsers.guopin import parse as parse_guopin
 from .parsers.hotjob import parse as parse_hotjob
 from .parsers.job_51 import parse as parse_job_51
@@ -46,7 +50,9 @@ PARSERS: dict[str, Parser] = {
     COMPANY_RECRUITMENT_SITE: lambda url: parse_public_web(url),
     COMPANY_WEBSITE: lambda url: parse_public_web(url, allow_announcement=True),
     CUSTOM_RECRUITMENT_SYSTEM: lambda url: parse_public_web(url, allow_announcement=True),
+    EMAIL: lambda url: parse_email(url),
     FEISHU: lambda url: parse_feishu(url),
+    FORM_OR_SHORT: lambda url: parse_form(url),
     GOVERNMENT_NOTICE: lambda url: parse_public_web(url, allow_announcement=True),
     GUOPIN: lambda url: parse_guopin(url),
     HOTJOB: lambda url: parse_hotjob(url),
