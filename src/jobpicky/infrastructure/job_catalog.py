@@ -52,6 +52,7 @@ JOB_TABLE = sa.table(
     sa.column("title", sa.String),
     sa.column("locations", postgresql.ARRAY(sa.String)),
     sa.column("description", sa.Text),
+    sa.column("metadata", postgresql.JSONB),
     sa.column("detail_url", sa.String),
     sa.column("apply_url", sa.String),
     sa.column("recruitment_type", sa.String),
@@ -141,6 +142,7 @@ def _content_hash(job: CollectedJob) -> str:
             "title": job.title,
             "locations": job.locations,
             "description": job.description,
+            "metadata": job.metadata,
             "detail_url": job.detail_url,
             "apply_url": job.apply_url,
             "recruitment_type": job.recruitment_type,
@@ -169,6 +171,7 @@ def _job_values(
         "title": job.title,
         "locations": job.locations,
         "description": job.description,
+        "metadata": job.metadata,
         "detail_url": job.detail_url,
         "apply_url": job.apply_url,
         "recruitment_type": job.recruitment_type,
@@ -210,6 +213,7 @@ def row_to_job_fact(row: sa.RowMapping) -> JobFact:
         first_seen_at=row.first_seen_at,
         last_confirmed_at=row.last_confirmed_at,
         updated_at=row.updated_at,
+        metadata=dict(row.metadata or {}),
     )
 
 

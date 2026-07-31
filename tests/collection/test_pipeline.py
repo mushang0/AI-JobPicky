@@ -34,7 +34,7 @@ def make_row(*links: str) -> SpreadsheetRow:
     )
 
 
-def test_merge_prefers_website_fields_and_uses_detail_as_apply_url() -> None:
+def test_merge_uses_parser_facts_and_table_recruitment_type() -> None:
     job = merge_job_fields(
         "source-1",
         make_row("https://acme.zhiye.com/campus/jobs"),
@@ -54,13 +54,13 @@ def test_merge_prefers_website_fields_and_uses_detail_as_apply_url() -> None:
 
     assert isinstance(job, CollectedJob)
     assert job.title == "网站真实岗位"
-    assert job.description is None
+    assert job.description == "后端, 前端"
     assert job.detail_url == "https://acme.zhiye.com/job/1"
     assert job.apply_url == job.detail_url
     assert job.locations == ["网站地点"]
     assert job.salary_min == 12000
     assert job.education_requirement == "硕士"
-    assert job.recruitment_type == "社招"
+    assert job.recruitment_type == "校招"
     assert job.company_name == "表格公司"
     assert job.company_nature == "民企"
     assert job.graduation_years == [2027]
@@ -68,12 +68,13 @@ def test_merge_prefers_website_fields_and_uses_detail_as_apply_url() -> None:
     assert job.metadata["announcement_url"] == "https://example.com/notice"
 
 
-def test_table_values_do_not_fill_missing_website_facts() -> None:
+def test_table_values_fill_missing_parser_facts() -> None:
     job = merge_job_fields(
         "source-1", make_row("https://acme.zhiye.com/campus/jobs"), {"title": "网站岗位"}
     )
 
     assert job.locations == ["表格地点"]
+    assert job.description == "后端, 前端"
     assert job.education_requirement == "本科"
     assert job.recruitment_type == "校招"
     assert job.deadline_at == datetime(2026, 8, 20, tzinfo=UTC)
@@ -147,7 +148,9 @@ def test_feishu_link_uses_the_platform_parser(monkeypatch) -> None:
 def test_unsupported_link_is_recorded_with_row_and_reason() -> None:
     result = run_pipeline("source-1", [make_row("https://app.mokahr.com/campus-recruitment/acme")])
 
-    assert result.batch.items == []
+    assert len(result.batch.items) == 1
+    assert result.batch.items[0].title == "后端, 前端"
+    assert result.batch.items[0].metadata["collection_mode"] == "TABLE_FALLBACK"
     assert result.batch.complete is False
     assert len(result.unsupported) == 1
     failure = result.unsupported[0]
