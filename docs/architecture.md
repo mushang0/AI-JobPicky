@@ -246,6 +246,7 @@ PENDING | PROFILE | FILTER | RETRIEVE | EVALUATE | SAVE | COMPLETE
 | `first_seen_at` | `datetime` | 是 |
 | `last_confirmed_at` | `datetime` | 是 |
 | `updated_at` | `datetime` | 是 |
+| `metadata` | `object` | 否 | 采集质量、来源等非敏感扩展信息 |
 
 普通用户接口不得返回内部去重键、内容哈希、Embedding、原始响应和秘密采集参数。
 

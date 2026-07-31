@@ -8,6 +8,7 @@ from .common import (
     ContractModel,
     HttpUrlString,
     JobStatus,
+    JsonObject,
     NonEmptyStr,
     NormalizedScore,
 )
@@ -51,6 +52,7 @@ class JobFact(ContractModel):
     first_seen_at: AwareDatetime
     last_confirmed_at: AwareDatetime
     updated_at: AwareDatetime
+    metadata: JsonObject = Field(default_factory=dict)
 
     @model_validator(mode="after")
     def keep_salary_range_ordered(self) -> JobFact:

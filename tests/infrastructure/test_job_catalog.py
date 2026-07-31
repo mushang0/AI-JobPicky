@@ -248,7 +248,10 @@ def test_ingest_is_idempotent_updates_and_protects_history() -> None:
             )
             await session.commit()
 
-        original = _collected(source_id)
+        original = _collected(
+            source_id,
+            metadata={"collection_mode": "TABLE_FALLBACK", "quality_reasons": ["PARSER_FAILED"]},
+        )
         first = await catalog.ingest("ingest-run-1", _batch(source_id, original, complete=True))
         assert (first.created_count, first.updated_count, first.unchanged_count) == (1, 0, 0)
         assert first.closed_count == 0
@@ -265,6 +268,10 @@ def test_ingest_is_idempotent_updates_and_protects_history() -> None:
             )
         assert first_row.status == "OPEN"
         assert first_row.source_job_id == "external-1"
+        assert first_row.metadata == {
+            "collection_mode": "TABLE_FALLBACK",
+            "quality_reasons": ["PARSER_FAILED"],
+        }
         assert first_row.fact_version
         assert first_row.first_seen_at.tzinfo is not None
 
