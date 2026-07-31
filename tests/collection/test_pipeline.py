@@ -80,6 +80,22 @@ def test_table_values_do_not_fill_missing_website_facts() -> None:
     assert job.source_ref == "table-row:12"
 
 
+def test_wechat_announcement_does_not_use_article_as_apply_url() -> None:
+    job = merge_job_fields(
+        "source-1",
+        make_row("https://mp.weixin.qq.com/s/article-001"),
+        {
+            "title": "招聘公告",
+            "detail_url": "https://mp.weixin.qq.com/s/article-001",
+            "apply_url": None,
+            "metadata": {"record_kind": "wechat_announcement"},
+        },
+    )
+
+    assert job.detail_url == "https://mp.weixin.qq.com/s/article-001"
+    assert job.apply_url is None
+
+
 def test_one_sheet_row_creates_one_collected_job_per_website_job(monkeypatch) -> None:
     monkeypatch.setitem(
         pipeline.PARSERS,
@@ -123,7 +139,7 @@ def test_unsupported_link_is_recorded_with_row_and_reason() -> None:
     assert failure.url.endswith("/acme")
     assert failure.link_type == "MOKA"
     assert failure.row_number == 12
-    assert "no parser implemented" in failure.reason
+    assert "parser failed" in failure.reason
 
 
 def test_invalid_website_job_is_not_replaced_by_table_direction() -> None:
@@ -155,3 +171,21 @@ def test_recruitment_entries_get_stable_distinct_source_ids(monkeypatch) -> None
         for result in results
         for item in result.batch.items
     )
+
+
+def test_moka_tracking_links_share_a_source_and_dedupe_jobs(monkeypatch) -> None:
+    monkeypatch.setitem(
+        pipeline.PARSERS,
+        "MOKA",
+        lambda _: [{"source_job_id": "moka-1", "title": "算法工程师"}],
+    )
+    first_url = "https://app.mokahr.com/campus-recruitment/ti/143986?sourceToken=one#/"
+    second_url = "https://app.mokahr.com/campus-recruitment/ti/143986?sourceToken=two#/jobs"
+
+    assert source_id_for_entry("德州仪器", first_url) == source_id_for_entry(
+        "德州仪器-TI", second_url
+    )
+    results = run_pipeline_by_source([make_row(first_url), make_row(second_url)])
+
+    assert len(results) == 1
+    assert [item.source_job_id for item in results[0].batch.items] == ["moka-1"]

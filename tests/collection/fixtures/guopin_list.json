@@ -1,0 +1,35 @@
+{
+  "code": 200,
+  "msg": "OK",
+  "data": {
+    "list": [
+      {
+        "id": "job-guopin-1",
+        "job_name": "测试岗位",
+        "company_id": "company-guopin-1",
+        "company_name": "示例集团",
+        "contents": "<p>负责公开示例工作。</p>",
+        "district_list": [{"area_cn": "北京"}],
+        "education_cn": "本科",
+        "nature_cn": "校招",
+        "min_wage": 5000,
+        "max_wage": 7000,
+        "create_time": "2026-07-01"
+      },
+      {
+        "id": "job-guopin-2",
+        "job_name": "实习岗位",
+        "company_id": "company-guopin-1",
+        "company_name": "示例集团",
+        "contents": "负责公开示例实习工作。",
+        "district_list": [{"area_cn": "上海"}],
+        "education_cn": "硕士",
+        "nature_cn": "实习",
+        "create_time": "2026-07-02"
+      }
+    ],
+    "page": 1,
+    "page_size": 200,
+    "total": 2
+  }
+}

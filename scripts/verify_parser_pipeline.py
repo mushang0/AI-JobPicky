@@ -5,10 +5,12 @@ from __future__ import annotations
 import argparse
 import csv
 import json
-from collections.abc import Sequence
+from collections import Counter
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 
-from jobpicky.collection.link_classification import classify_link
+from jobpicky.collection.link_classification import MOKA, classify_link
+from jobpicky.collection.parsers.moka import entry_identity as moka_entry_identity
 from jobpicky.collection.pipeline import PARSERS, merge_job_fields
 from jobpicky.collection.spreadsheet import SpreadsheetRow, extract_links, extract_row
 from jobpicky.contracts import CollectedJob
@@ -23,7 +25,7 @@ def _write_json(path: Path, value: object) -> None:
 
 def _select_rows(path: Path, platform: str, limit: int) -> tuple[list[str], list[SpreadsheetRow]]:
     selected: list[SpreadsheetRow] = []
-    selected_links: set[str] = set()
+    selected_keys: set[str] = set()
     with path.open(encoding="utf-8-sig", newline="") as file:
         reader = csv.reader(file)
         header = next(reader)
@@ -31,14 +33,18 @@ def _select_rows(path: Path, platform: str, limit: int) -> tuple[list[str], list
             if len(values) <= 12:
                 continue
             for link in extract_links(values[12]):
-                if classify_link(link) != platform or link in selected_links:
+                link_type = classify_link(link)
+                if link_type != platform:
+                    continue
+                link_key = (moka_entry_identity(link) if link_type == MOKA else link) or link
+                if link_key in selected_keys:
                     continue
                 row_values = list(values)
                 row_values[12] = link
                 row = extract_row(row_number, row_values)
                 if row is not None:
                     selected.append(row)
-                    selected_links.add(link)
+                    selected_keys.add(link_key)
                 if limit > 0 and len(selected) >= limit:
                     return header, selected
     return header, selected
@@ -91,6 +97,12 @@ def main() -> None:
     merged_jobs: list[CollectedJob] = []
     review_rows: list[dict[str, object]] = []
     parsed_job_count = 0
+    content_shape_counts: Counter[str] = Counter()
+    application_status_counts: Counter[str] = Counter()
+    application_type_counts: Counter[str] = Counter()
+    application_method_counts: Counter[str] = Counter()
+    failure_reason_counts: Counter[str] = Counter()
+    needs_review_count = 0
     for index, row in enumerate(rows, start=1):
         case_id = f"case-{index:03d}"
         url = row.apply_links[0]
@@ -106,6 +118,30 @@ def main() -> None:
         except Exception as exc:  # noqa: BLE001 - preserve the real verification failure
             errors.append(f"{type(exc).__name__}: {exc}")
         parsed_job_count += len(parsed_jobs)
+        for parsed_job in parsed_jobs:
+            metadata = parsed_job.get("metadata")
+            if not isinstance(metadata, Mapping):
+                continue
+            content_shape = metadata.get("content_shape")
+            if isinstance(content_shape, str):
+                content_shape_counts[content_shape] += 1
+            application_status = metadata.get("application_status")
+            if isinstance(application_status, str):
+                application_status_counts[application_status] += 1
+            application_types = metadata.get("application_types")
+            if isinstance(application_types, list):
+                for application_type in application_types:
+                    if isinstance(application_type, str):
+                        application_type_counts[application_type] += 1
+            application_methods = metadata.get("application_methods")
+            if isinstance(application_methods, list):
+                for method in application_methods:
+                    if isinstance(method, Mapping) and isinstance(method.get("type"), str):
+                        application_method_counts[method["type"]] += 1
+            if metadata.get("needs_review") is True:
+                needs_review_count += 1
+        for error in errors:
+            failure_reason_counts[error.split(": ", 1)[-1]] += 1
         merged_jobs.extend(jobs)
         case: dict[str, object] = {
             "table_data": {
@@ -126,22 +162,38 @@ def main() -> None:
         }
         cases.append(case)
         _write_json(args.output / f"{case_id}.json", case)
-        review_rows.extend(
-            {
-                "case_id": case_id,
-                "table_row_number": row.row_number,
-                "company_name": job.company_name,
-                "source_job_id": job.source_job_id,
-                "title": job.title,
-                "locations": "|".join(job.locations),
-                "description_length": len(job.description or ""),
-                "detail_url": job.detail_url,
-                "schema_valid": True,
-                "manual_result": "PENDING",
-                "manual_note": "",
-            }
-            for job in jobs
-        )
+        for job, parsed_job in zip(jobs, parsed_jobs, strict=False):
+            metadata = parsed_job.get("metadata")
+            metadata = metadata if isinstance(metadata, Mapping) else {}
+            application_types = metadata.get("application_types")
+            review_reasons = metadata.get("review_reasons")
+            review_rows.append(
+                {
+                    "case_id": case_id,
+                    "table_row_number": row.row_number,
+                    "company_name": job.company_name,
+                    "source_job_id": job.source_job_id,
+                    "title": job.title,
+                    "locations": "|".join(job.locations),
+                    "description_length": len(job.description or ""),
+                    "detail_url": job.detail_url,
+                    "application_status": metadata.get("application_status", ""),
+                    "application_types": "|".join(
+                        item for item in application_types if isinstance(item, str)
+                    )
+                    if isinstance(application_types, list)
+                    else "",
+                    "needs_review": metadata.get("needs_review", False),
+                    "review_reasons": "|".join(
+                        item for item in review_reasons if isinstance(item, str)
+                    )
+                    if isinstance(review_reasons, list)
+                    else "",
+                    "schema_valid": True,
+                    "manual_result": "PENDING",
+                    "manual_note": "",
+                }
+            )
 
     summary = {
         "selected_source_count": len(rows),
@@ -151,6 +203,12 @@ def main() -> None:
         "merged_job_count": len(merged_jobs),
         "schema_valid_count": len(merged_jobs),
         "platform": args.platform,
+        "content_shape_counts": dict(content_shape_counts),
+        "application_status_counts": dict(application_status_counts),
+        "application_type_counts": dict(application_type_counts),
+        "application_method_counts": dict(application_method_counts),
+        "needs_review_count": needs_review_count,
+        "failure_reason_counts": dict(failure_reason_counts),
         "cases": [
             {
                 "case_id": f"case-{index:03d}",

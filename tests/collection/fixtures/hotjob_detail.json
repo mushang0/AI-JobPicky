@@ -1,0 +1,21 @@
+{
+  "state": "200",
+  "type": "json",
+  "data": {
+    "postId": "post-001",
+    "postName": "软件工程师",
+    "workPlaceList": [
+      {"code": "1", "name": "北京"},
+      {"code": "2", "name": "苏州"}
+    ],
+    "workContent": "参与服务端功能开发。",
+    "applyPositionContent": "本科及以上学历。",
+    "subject": "计算机相关专业",
+    "education": "本科及以上",
+    "recruitType": 1,
+    "publishDate": "2026-07-01 09:00:00",
+    "endDate": "2026-08-31 23:59:59",
+    "company": "示例公司",
+    "projectName": "2026校园招聘"
+  }
+}

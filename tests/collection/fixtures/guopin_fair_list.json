@@ -1,0 +1,22 @@
+{
+  "code": 200,
+  "msg": "OK",
+  "data": {
+    "list": [
+      {
+        "id": "job-guopin-fair-1",
+        "job_name": "招聘会岗位",
+        "company_id": "company-guopin-1",
+        "company_name": "示例集团",
+        "contents": "<p>招聘会岗位说明。</p>",
+        "district_list": [{"area_cn": "广州"}],
+        "education_cn": "本科",
+        "nature_cn": "校招",
+        "end_time": "2026-08-15 23:59:59"
+      }
+    ],
+    "page": 1,
+    "page_size": 10,
+    "total": 1
+  }
+}
