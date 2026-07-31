@@ -184,6 +184,14 @@ uv run python scripts/verify_parser_pipeline.py \
   登录、验证码、加密投递或访问控制。
 - 回归复用：`tests/collection/test_public_web_parser.py` 的 JSON、静态页和登录页边界测试。
 
+## 政府招聘公告（GOVERNMENT_NOTICE）
+
+- 公开政务站招聘文章复用通用公开网页解析器；优先读取公开 `JobPosting` 或岗位数据，普通
+  招聘公告保留为一条 `public_announcement` 记录，正文和来源链接可追溯。
+- 公告标题不能证明单个岗位时不拆分岗位、不伪造投递链接；首页、错误页、登录页、当前无公开
+  内容的页面保持失败。
+- 回归复用：`tests/collection/test_public_web_parser.py` 的公告级成功路径和登录页失败边界。
+
 ## 国聘（GUOPIN）
 
 - 普通详情使用公开 `GET https://gp-api.iguopin.com/api/jobs/v1/info?id=<岗位ID>`；查询键是
