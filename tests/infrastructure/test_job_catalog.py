@@ -19,6 +19,8 @@ from jobpicky.contracts import (
 from jobpicky.errors import ApplicationError
 from jobpicky.infrastructure.database import create_engine, create_session_factory
 from jobpicky.infrastructure.job_catalog import JOB_TABLE, PostgresJobCatalog
+from jobpicky.infrastructure.recommendation_store import RECOMMENDATION_TABLE
+from jobpicky.infrastructure.saved_job_store import SAVED_JOB_TABLE
 
 _TEST_DATABASE_URL = os.environ.get("JOBPICKY_TEST_DATABASE_URL", "").strip()
 
@@ -95,6 +97,12 @@ def _seed() -> None:
         engine = create_engine(_TEST_DATABASE_URL)
         factory = create_session_factory(engine)
         async with factory() as session:
+            await session.execute(
+                sa.delete(RECOMMENDATION_TABLE).where(RECOMMENDATION_TABLE.c.job_id.in_(_JOB_IDS))
+            )
+            await session.execute(
+                sa.delete(SAVED_JOB_TABLE).where(SAVED_JOB_TABLE.c.job_id.in_(_JOB_IDS))
+            )
             await session.execute(sa.delete(JOB_TABLE).where(JOB_TABLE.c.id.in_(_JOB_IDS)))
             await session.execute(
                 sa.insert(JOB_TABLE),
@@ -243,6 +251,15 @@ def test_ingest_is_idempotent_updates_and_protects_history() -> None:
         factory = create_session_factory(engine)
         catalog = PostgresJobCatalog(factory)
         async with factory() as session:
+            job_ids = sa.select(JOB_TABLE.c.id).where(
+                JOB_TABLE.c.source_id.in_([source_id, other_source_id])
+            )
+            await session.execute(
+                sa.delete(RECOMMENDATION_TABLE).where(RECOMMENDATION_TABLE.c.job_id.in_(job_ids))
+            )
+            await session.execute(
+                sa.delete(SAVED_JOB_TABLE).where(SAVED_JOB_TABLE.c.job_id.in_(job_ids))
+            )
             await session.execute(
                 sa.delete(JOB_TABLE).where(JOB_TABLE.c.source_id.in_([source_id, other_source_id]))
             )
@@ -360,6 +377,13 @@ def test_ingest_identity_fallbacks_and_batch_deduplication() -> None:
         factory = create_session_factory(engine)
         catalog = PostgresJobCatalog(factory)
         async with factory() as session:
+            job_ids = sa.select(JOB_TABLE.c.id).where(JOB_TABLE.c.source_id == source_id)
+            await session.execute(
+                sa.delete(RECOMMENDATION_TABLE).where(RECOMMENDATION_TABLE.c.job_id.in_(job_ids))
+            )
+            await session.execute(
+                sa.delete(SAVED_JOB_TABLE).where(SAVED_JOB_TABLE.c.job_id.in_(job_ids))
+            )
             await session.execute(sa.delete(JOB_TABLE).where(JOB_TABLE.c.source_id == source_id))
             await session.commit()
 

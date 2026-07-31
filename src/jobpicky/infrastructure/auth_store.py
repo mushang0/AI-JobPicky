@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from datetime import datetime
 from uuid import uuid4
 
@@ -43,13 +44,29 @@ REFRESH_SESSION_TABLE = sa.table(
 )
 
 _EMAIL_CONSTRAINT = "uq_user_account_email"
+_CONSTRAINT_PATTERN = re.compile(r'constraint "([^"]+)"')
 
 
 def _constraint_name(exc: IntegrityError) -> str | None:
-    direct = getattr(exc.orig, "constraint_name", None)
-    if direct:
-        return str(direct)
-    return getattr(getattr(exc.orig, "diag", None), "constraint_name", None)
+    candidates = [exc.orig]
+    for candidate in tuple(candidates):
+        nested = getattr(candidate, "orig", None)
+        if nested is not None:
+            candidates.append(nested)
+        cause = getattr(candidate, "__cause__", None)
+        if cause is not None:
+            candidates.append(cause)
+    for candidate in candidates:
+        direct = getattr(candidate, "constraint_name", None)
+        if direct:
+            return str(direct)
+        diagnostic = getattr(getattr(candidate, "diag", None), "constraint_name", None)
+        if diagnostic:
+            return str(diagnostic)
+        match = _CONSTRAINT_PATTERN.search(str(candidate))
+        if match:
+            return match.group(1)
+    return None
 
 
 def _row_to_user(row: sa.RowMapping) -> UserRecord:

@@ -64,12 +64,12 @@ def _seed() -> None:
         engine = create_engine(_TEST_DATABASE_URL)
         factory = create_session_factory(engine)
         async with factory() as session:
-            await session.execute(sa.delete(JOB_TABLE).where(JOB_TABLE.c.id.in_(_JOB_IDS)))
             await session.execute(
                 sa.delete(RECOMMENDATION_TABLE).where(RECOMMENDATION_TABLE.c.user_id == _USER_ID)
             )
             await session.execute(sa.delete(PROFILE_TABLE).where(PROFILE_TABLE.c.id == _PROFILE_ID))
             await session.execute(sa.delete(RUN_TABLE).where(RUN_TABLE.c.user_id == _USER_ID))
+            await session.execute(sa.delete(JOB_TABLE).where(JOB_TABLE.c.id.in_(_JOB_IDS)))
             await session.execute(
                 sa.delete(CREDIT_ACCOUNT_TABLE).where(CREDIT_ACCOUNT_TABLE.c.user_id == _USER_ID)
             )

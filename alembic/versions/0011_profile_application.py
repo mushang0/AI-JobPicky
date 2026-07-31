@@ -37,7 +37,7 @@ def upgrade() -> None:
     op.create_check_constraint(
         "ck_profile_recruitment_types_normalized",
         "profile",
-        "recruitment_types <@ ARRAY['校招', '社招', '实习']::text[]",
+        "recruitment_types <@ ARRAY['校招', '社招', '实习']::varchar[]",
     )
     op.create_index(
         "uq_profile_user_version",

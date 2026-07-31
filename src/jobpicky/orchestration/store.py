@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Protocol
@@ -31,16 +32,29 @@ class IdempotencyConflictError(Exception):
 
 
 _IDEMPOTENCY_INDEX_NAME = "uq_recommendation_run_user_idempotency"
+_CONSTRAINT_PATTERN = re.compile(r'constraint "([^"]+)"')
 
 
 def _integrity_error_constraint_name(exc: IntegrityError) -> str | None:
-    original = exc.orig
-    direct_name = getattr(original, "constraint_name", None)
-    if direct_name is not None:
-        return str(direct_name)
-    diagnostic = getattr(original, "diag", None)
-    diagnostic_name = getattr(diagnostic, "constraint_name", None)
-    return str(diagnostic_name) if diagnostic_name is not None else None
+    candidates = [exc.orig]
+    for candidate in tuple(candidates):
+        nested = getattr(candidate, "orig", None)
+        if nested is not None:
+            candidates.append(nested)
+        cause = getattr(candidate, "__cause__", None)
+        if cause is not None:
+            candidates.append(cause)
+    for candidate in candidates:
+        direct_name = getattr(candidate, "constraint_name", None)
+        if direct_name is not None:
+            return str(direct_name)
+        diagnostic = getattr(getattr(candidate, "diag", None), "constraint_name", None)
+        if diagnostic is not None:
+            return str(diagnostic)
+        match = _CONSTRAINT_PATTERN.search(str(candidate))
+        if match:
+            return match.group(1)
+    return None
 
 
 def _is_idempotency_conflict(exc: IntegrityError) -> bool:

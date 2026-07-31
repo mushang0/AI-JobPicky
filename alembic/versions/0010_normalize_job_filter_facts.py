@@ -192,7 +192,7 @@ def upgrade() -> None:
                     ELSE '实习'
                 END AS new_recruitment_type,
                 coalesce(location_arrays.new_locations, ARRAY[]::text[])
-                    AS new_locations
+                    ::varchar[] AS new_locations
             FROM scalar_facts
             LEFT JOIN location_arrays USING (id)
         ),
