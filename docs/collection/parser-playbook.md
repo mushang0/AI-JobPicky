@@ -16,7 +16,7 @@
 缺口汇总：
 
 ```bash
-uv run python scripts/report_parser_gaps.py <csv-or-xlsx> --limit-rows 20
+uv run python scripts/report_parser_gaps.py <csv> --limit-rows 20
 ```
 
 跨平台人工回放：
@@ -158,11 +158,16 @@ uv run python scripts/verify_parser_pipeline.py \
   `career.naura.com`、`career.shenzhouintl.com`、`careers.mxbc.com`、
   `careers.narwal.com`、`hr-campus.vivo.com`、`job.lzlj.com` 和 `zhaopin.xa.com` 的公开页面
   使用北森页面模板，统一转到北森解析器；站点无岗位时仍保持失败。
-- 其余来源使用通用公开网页解析器：优先读取 `JobPosting` JSON-LD，再读取公开内嵌 JSON，
-  然后读取带岗位语义的服务端链接或直达岗位页。只保存能确认标题的岗位，不执行页面脚本，
-  不把首页导航、登录页或空 SPA 壳当岗位。
-- 没有稳定公开数据的前端 SPA、跳转到登录或访问控制页面、以及只有招聘入口而没有岗位事实的
-  页面保持失败；这类来源需要后续按公开接口调查，不能用表格岗位摘要补写 JD。
+- 其余来源使用通用公开网页解析器：优先读取 `JobPosting` JSON-LD、公开内嵌 JSON 和服务端
+  岗位链接；若首页只有“校园招聘/职位/招聘”入口，会再跟随一层公开导航，并从有限数量的同页
+  公开脚本中发现岗位列表 API。只调用公开 GET 列表接口，不执行页面脚本、不提交表单、不绕过登录。
+- 列表只有标题时，解析器会从脚本明确暴露的公开详情 API 或详情页补齐 JD；详情路由和岗位数量
+  都有上限，避免错误候选 URL 放大请求。`COMPANY_RECRUITMENT_SITE` 路由要求最终必须有
+  `description`，所以“只有列表没有 JD”的来源不会被计为成功；其他复用该解析器的类型会保留
+  `needs_review` 标记供复核。
+- 前端懒加载但没有公开 GET 详情、需要登录/验证码/WAF、或 Moka 等返回加密详情的站点保持失败，
+  不把列表摘要、宣传页或浏览器渲染结果冒充稳定 JD。浏览器只用于调查页面链路，批处理仍使用确定性
+  HTTP/API 解析。理想汽车、Sicarrier、长亭科技已验证可分别获得岗位和 JD。
 - Fixture：`tests/collection/fixtures/public_job_page.html`；回归：
   `tests/collection/test_public_web_parser.py`、`tests/collection/test_link_classification.py`。
 
