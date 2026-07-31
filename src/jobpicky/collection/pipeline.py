@@ -47,7 +47,7 @@ Parser = Callable[[str], Sequence[Mapping[str, object]]]
 # Keep routing visible and boring. Add a parser here only when it is implemented.
 PARSERS: dict[str, Parser] = {
     BEISEN: lambda url: parse_beisen(url),
-    COMPANY_RECRUITMENT_SITE: lambda url: parse_public_web(url),
+    COMPANY_RECRUITMENT_SITE: lambda url: parse_public_web(url, require_description=True),
     COMPANY_WEBSITE: lambda url: parse_public_web(url, allow_announcement=True),
     CUSTOM_RECRUITMENT_SYSTEM: lambda url: parse_public_web(url, allow_announcement=True),
     EMAIL: lambda url: parse_email(url),
