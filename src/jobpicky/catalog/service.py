@@ -148,7 +148,11 @@ class JobPoolService:
                     }
                 ),
                 company_natures=sorted(
-                    {job.company_nature for job, _ in pool if job.company_nature}
+                    {
+                        nature
+                        for job, _ in pool
+                        if (nature := normalize_company_nature(job.company_nature)) is not None
+                    }
                 ),
                 sources=sorted(
                     {source.id: source for _, source in pool}.values(),
@@ -179,6 +183,12 @@ class JobPoolService:
         page: int,
         page_size: int,
     ) -> Page[SavedJobView]:
+        if page < 1 or not 1 <= page_size <= self._settings.saved_jobs_page_size_max:
+            raise ApplicationError(
+                ErrorCode.VALIDATION_ERROR,
+                "invalid pagination",
+                status_code=422,
+            )
         records, total = await self._saved_jobs.list_saved(user_id, page, page_size)
         return Page[SavedJobView](
             items=[
