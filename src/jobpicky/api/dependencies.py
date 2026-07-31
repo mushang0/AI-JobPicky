@@ -10,6 +10,7 @@ from ..catalog.service import JobPoolService
 from ..contracts import AuthUserView, ErrorCode
 from ..credits import CreditService
 from ..errors import ApplicationError
+from ..profiles import ProfileService
 
 _bearer = HTTPBearer(auto_error=False)
 
@@ -24,6 +25,10 @@ def get_credit_service(request: Request) -> CreditService:
 
 def get_job_pool_service(request: Request) -> JobPoolService:
     return cast(JobPoolService, request.app.state.job_pool_service)
+
+
+def get_profile_service(request: Request) -> ProfileService:
+    return cast(ProfileService, request.app.state.profile_service)
 
 
 async def optional_user(
@@ -72,6 +77,7 @@ def _authentication_required() -> ApplicationError:
 AuthServiceDependency = Annotated[AuthService, Depends(get_auth_service)]
 CreditServiceDependency = Annotated[CreditService, Depends(get_credit_service)]
 JobPoolServiceDependency = Annotated[JobPoolService, Depends(get_job_pool_service)]
+ProfileServiceDependency = Annotated[ProfileService, Depends(get_profile_service)]
 OptionalUser = Annotated[AuthUserView | None, Depends(optional_user)]
 RequiredUser = Annotated[AuthUserView, Depends(require_user)]
 
@@ -79,12 +85,14 @@ __all__ = [
     "AuthServiceDependency",
     "CreditServiceDependency",
     "JobPoolServiceDependency",
+    "ProfileServiceDependency",
     "OptionalUser",
     "RequiredUser",
     "client_ip",
     "get_auth_service",
     "get_credit_service",
     "get_job_pool_service",
+    "get_profile_service",
     "optional_user",
     "require_user",
     "validate_browser_origin",

@@ -15,7 +15,13 @@ from fastapi.responses import JSONResponse
 from pydantic import JsonValue
 
 from . import __version__
-from .api.routers import auth_router, credits_router, jobs_router, saved_jobs_router
+from .api.routers import (
+    auth_router,
+    credits_router,
+    jobs_router,
+    profiles_router,
+    saved_jobs_router,
+)
 from .auth import AccessTokenCodec, AuthService
 from .catalog.service import JobPoolService
 from .config import Settings
@@ -26,7 +32,9 @@ from .infrastructure.auth_store import PostgresAuthStore
 from .infrastructure.credit_store import PostgresCreditStore
 from .infrastructure.database import create_engine, create_session_factory
 from .infrastructure.job_pool_store import PostgresJobPoolStore
+from .infrastructure.profile_store import PostgresProfileStore
 from .infrastructure.saved_job_store import PostgresSavedJobStore
+from .profiles import ProfileService
 
 logger = logging.getLogger(__name__)
 
@@ -63,6 +71,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     auth_store = PostgresAuthStore(session_factory)
     credit_store = PostgresCreditStore(session_factory)
     job_pool_store = PostgresJobPoolStore(session_factory)
+    profile_store = PostgresProfileStore(session_factory)
     saved_job_store = PostgresSavedJobStore(session_factory)
     signing_key = settings.jwt_signing_key or secrets.token_urlsafe(48)
 
@@ -100,6 +109,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.credit_service = CreditService(credit_store, settings.recommendation_cost)
     app.state.credit_store = credit_store
     app.state.job_pool_service = JobPoolService(job_pool_store, saved_job_store, settings)
+    app.state.profile_service = ProfileService(
+        profile_store,
+        idempotency_key_max_length=settings.idempotency_key_max_length,
+    )
 
     @app.middleware("http")
     async def add_request_id(
@@ -174,6 +187,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(auth_router)
     app.include_router(credits_router)
     app.include_router(jobs_router)
+    app.include_router(profiles_router)
     app.include_router(saved_jobs_router)
 
     return app

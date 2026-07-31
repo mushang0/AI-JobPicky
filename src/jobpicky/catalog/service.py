@@ -3,13 +3,15 @@ from __future__ import annotations
 import asyncio
 import re
 import time
-from collections.abc import Protocol, Sequence
+from collections.abc import Sequence
 from dataclasses import dataclass
+from typing import Protocol
 
 from ..config import Settings
 from ..contracts import (
     EducationLevel,
     ErrorCode,
+    FilterOptionsLimits,
     JobDetailView,
     JobFact,
     JobFilterOptions,
@@ -23,14 +25,14 @@ from ..contracts import (
     SavedJobState,
     SavedJobView,
 )
-from ..errors import ApplicationError
-from ..infrastructure.saved_job_store import SavedJobRecord
-from .normalization import (
+from ..contracts.normalization import (
     normalize_city,
     normalize_company_nature,
     normalize_education,
     normalize_recruitment_type,
 )
+from ..errors import ApplicationError
+from ..infrastructure.saved_job_store import SavedJobRecord
 from .query_terms import extract_terms
 
 _SPACE_RE = re.compile(r"\s+")
@@ -155,14 +157,14 @@ class JobPoolService:
                 recruitment_types=list(RecruitmentType),
                 educations=list(EducationLevel),
                 graduation_years=sorted({year for job, _ in pool for year in job.graduation_years}),
-                limits={
-                    "visible_pool_limit": self._settings.visible_pool_limit,
-                    "default_page_size": self._settings.job_pool_default_page_size,
-                    "public_page_size_max": self._settings.job_pool_public_page_size_max,
-                    "authenticated_page_size_max": (
+                limits=FilterOptionsLimits(
+                    visible_pool_limit=self._settings.visible_pool_limit,
+                    default_page_size=self._settings.job_pool_default_page_size,
+                    public_page_size_max=self._settings.job_pool_public_page_size_max,
+                    authenticated_page_size_max=(
                         self._settings.job_pool_authenticated_page_size_max
                     ),
-                },
+                ),
             )
             self._filter_cache = _FilterCache(expires_at=now + 300, value=value)
             return value

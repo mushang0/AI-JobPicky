@@ -66,6 +66,7 @@ def test_openapi_lists_only_real_routes_until_business_handlers_exist() -> None:
         "/api/v1/jobs/{job_id}",
         "/api/v1/system/health",
         "/api/v1/user/credits",
+        "/api/v1/user/profiles/current",
         "/api/v1/user/saved-jobs",
         "/api/v1/user/saved-jobs/{job_id}",
     }
