@@ -6,9 +6,11 @@ import re
 import unicodedata
 from collections.abc import Sequence
 from datetime import UTC, datetime
+from typing import cast
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 import sqlalchemy as sa
+from pydantic import JsonValue
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -233,7 +235,7 @@ def _normalized_filter_values(job: CollectedJob) -> dict[str, object]:
     recruitment_type = normalize_recruitment_type(job.recruitment_type)
     education = normalize_education(job.education_requirement)
     metadata = dict(job.metadata)
-    original: dict[str, object] = {}
+    original: dict[str, JsonValue] = {}
     for field, raw, normalized in (
         ("company_nature", job.company_nature, company_nature),
         ("recruitment_type", job.recruitment_type, recruitment_type),
@@ -241,7 +243,7 @@ def _normalized_filter_values(job: CollectedJob) -> dict[str, object]:
         ("locations", job.locations, locations),
     ):
         if raw != normalized and raw is not None:
-            original[field] = raw
+            original[field] = cast(JsonValue, raw)
     if original:
         existing = metadata.get("_normalization_v1_original")
         merged = dict(existing) if isinstance(existing, dict) else {}

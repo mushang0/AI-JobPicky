@@ -5,21 +5,39 @@ from .service import (
     plan_run_input,
 )
 from .store import (
+    CreateRunResult,
     IdempotencyConflictError,
-    PostgresRecommendationRunStore,
+    RecommendationProjection,
+    RecommendationRecord,
     RecommendationRunStore,
     RunRecord,
-    record_to_run_view,
+    projection_to_card,
+    projection_to_result,
+    record_to_task_view,
 )
 
+
+def PostgresRecommendationRunStore(session_factory):
+    """Legacy constructor kept for database integration tests and old callers."""
+    from ..infrastructure.credit_store import PostgresCreditStore
+    from ..infrastructure.recommendation_store import PostgresRecommendationStore
+
+    return PostgresRecommendationStore(session_factory, PostgresCreditStore(session_factory))
+
+
 __all__ = [
+    "CreateRunResult",
     "IdempotencyConflictError",
-    "PostgresRecommendationRunStore",
+    "RecommendationProjection",
+    "RecommendationRecord",
     "RecommendationRunService",
     "RecommendationRunStore",
+    "PostgresRecommendationRunStore",
     "RunRecord",
     "assemble_candidates",
     "assemble_recommendations",
     "plan_run_input",
-    "record_to_run_view",
+    "projection_to_card",
+    "projection_to_result",
+    "record_to_task_view",
 ]

@@ -20,6 +20,7 @@ from .api.routers import (
     credits_router,
     jobs_router,
     profiles_router,
+    recommendations_router,
     saved_jobs_router,
 )
 from .auth import AccessTokenCodec, AuthService
@@ -31,9 +32,15 @@ from .errors import ApplicationError
 from .infrastructure.auth_store import PostgresAuthStore
 from .infrastructure.credit_store import PostgresCreditStore
 from .infrastructure.database import create_engine, create_session_factory
+from .infrastructure.embeddings import LocalBGEEmbedding
+from .infrastructure.job_catalog import PostgresJobCatalog
 from .infrastructure.job_pool_store import PostgresJobPoolStore
+from .infrastructure.llm_evaluator import DashScopeJobEvaluator
 from .infrastructure.profile_store import PostgresProfileStore
+from .infrastructure.recommendation_store import PostgresRecommendationStore
 from .infrastructure.saved_job_store import PostgresSavedJobStore
+from .matching import BaselineMatchingService
+from .orchestration import RecommendationRunService
 from .profiles import ProfileService
 
 logger = logging.getLogger(__name__)
@@ -64,6 +71,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         settings.jwt_signing_key is None or len(settings.jwt_signing_key.encode()) < 32
     ):
         raise ValueError("JWT signing key must contain at least 32 bytes in production")
+    if settings.environment in {"production", "prod"} and not settings.refresh_cookie_secure:
+        raise ValueError("refresh cookie must be secure in production")
     logging.basicConfig(level=settings.log_level)
 
     engine = create_engine(settings.database_url)
@@ -73,6 +82,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     job_pool_store = PostgresJobPoolStore(session_factory)
     profile_store = PostgresProfileStore(session_factory)
     saved_job_store = PostgresSavedJobStore(session_factory)
+    embedding = LocalBGEEmbedding(
+        settings.embedding_model_path,
+        model_revision=settings.embedding_model_revision,
+        query_timeout_seconds=settings.embedding_query_timeout_seconds,
+        batch_timeout_seconds=settings.embedding_backfill_timeout_seconds,
+    )
+    job_catalog = PostgresJobCatalog(session_factory, embedding)
+    recommendation_store = PostgresRecommendationStore(session_factory, credit_store)
     signing_key = settings.jwt_signing_key or secrets.token_urlsafe(48)
 
     @asynccontextmanager
@@ -112,6 +129,24 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.profile_service = ProfileService(
         profile_store,
         idempotency_key_max_length=settings.idempotency_key_max_length,
+    )
+    app.state.recommendation_service = RecommendationRunService(
+        recommendation_store,
+        profile_store,
+        job_catalog,
+        BaselineMatchingService(),
+        DashScopeJobEvaluator(
+            provider=settings.llm_provider,
+            model=settings.llm_model,
+            api_key=settings.dashscope_api_key,
+            base_url=settings.llm_base_url,
+            timeout_seconds=settings.llm_timeout_seconds,
+            max_retries=settings.llm_max_retries,
+        ),
+        settings.model_config_version,
+        recommendation_cost=settings.recommendation_cost,
+        candidate_limit=settings.recommendation_candidate_limit,
+        evaluation_batch_size=settings.evaluation_batch_size,
     )
 
     @app.middleware("http")
@@ -188,6 +223,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(credits_router)
     app.include_router(jobs_router)
     app.include_router(profiles_router)
+    app.include_router(recommendations_router)
     app.include_router(saved_jobs_router)
 
     return app
