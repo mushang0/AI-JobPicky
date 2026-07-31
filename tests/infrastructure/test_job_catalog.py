@@ -8,6 +8,7 @@ from datetime import UTC, datetime
 import pytest
 import sqlalchemy as sa
 from catalog.factories import make_job, make_spec
+from sqlalchemy.dialects import postgresql
 
 from jobpicky.contracts import (
     CollectedJob,
@@ -21,6 +22,7 @@ from jobpicky.infrastructure.database import create_engine, create_session_facto
 from jobpicky.infrastructure.job_catalog import JOB_TABLE, PostgresJobCatalog
 from jobpicky.infrastructure.recommendation_store import RECOMMENDATION_TABLE
 from jobpicky.infrastructure.saved_job_store import SAVED_JOB_TABLE
+from jobpicky.infrastructure.source_store import JOB_SOURCE_TABLE
 
 _TEST_DATABASE_URL = os.environ.get("JOBPICKY_TEST_DATABASE_URL", "").strip()
 
@@ -97,6 +99,16 @@ def _seed() -> None:
         engine = create_engine(_TEST_DATABASE_URL)
         factory = create_session_factory(engine)
         async with factory() as session:
+            await session.execute(
+                postgresql.insert(JOB_SOURCE_TABLE)
+                .values(
+                    id="source-1",
+                    display_name="示例招聘来源",
+                    created_at=now,
+                    updated_at=now,
+                )
+                .on_conflict_do_nothing(index_elements=["id"])
+            )
             await session.execute(
                 sa.delete(RECOMMENDATION_TABLE).where(RECOMMENDATION_TABLE.c.job_id.in_(_JOB_IDS))
             )
