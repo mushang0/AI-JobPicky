@@ -33,6 +33,11 @@ export interface SourceRef {
   name: string;
 }
 
+export interface SourceFilterOption {
+  platform: string;
+  source_ids: string[];
+}
+
 export interface JobListItem {
   id: string;
   title: string;
@@ -73,7 +78,7 @@ export interface JobsPageResponse {
 export interface JobFilterOptions {
   cities: string[];
   company_natures: string[];
-  sources: SourceRef[];
+  sources: SourceFilterOption[];
   recruitment_types: string[];
   educations: string[];
   graduation_years: number[];

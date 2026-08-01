@@ -123,9 +123,9 @@ export const jobFilterOptions: JobFilterOptions = {
   cities: ["北京", "杭州", "上海", "深圳", "远程"],
   company_natures: ["国企", "事业单位", "外资企业", "民营企业"],
   sources: [
-    { id: "source-beisen", name: "北森" },
-    { id: "source-feishu", name: "飞书招聘" },
-    { id: "source-moka", name: "Moka" },
+    { platform: "北森", source_ids: ["source-beisen"] },
+    { platform: "飞书招聘", source_ids: ["source-feishu"] },
+    { platform: "Moka", source_ids: ["source-moka"] },
   ],
   recruitment_types: ["校招", "社招", "实习"],
   educations: ["高中及以下", "专科", "本科", "硕士", "博士"],

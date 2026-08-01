@@ -15,7 +15,7 @@ export function validateCredentials(input: CredentialsRequest): Partial<Record<k
 
   const passwordLength = Array.from(input.password).length;
   if (!input.password) errors.password = "请输入密码。";
-  else if (passwordLength < 15 || passwordLength > 128) errors.password = "密码长度需要在 15 到 128 个字符之间。";
+  else if (passwordLength < 6 || passwordLength > 15) errors.password = "密码长度需要在 6 到 15 个字符之间。";
 
   return errors;
 }

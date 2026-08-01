@@ -43,6 +43,21 @@ OpenAPI：
 http://127.0.0.1:8000/docs
 ```
 
+### 一键启动前后端与数据库
+
+完成根目录 `.env`、`frontend/.env` 和前端依赖配置后，任选一种运行时执行：
+
+```bash
+# Docker
+./scripts/start-dev-docker.sh
+
+# Podman
+./scripts/start-dev-podman.sh
+```
+
+脚本会启动 PostgreSQL/pgvector、执行 Alembic 迁移，并使用 `base` 环境启动后端和前端。
+按 `Ctrl-C` 只停止前后端，数据库保持运行。
+
 ## 本地数据库
 
 岗位事实存储在 PostgreSQL（pgvector 扩展）。需要 Docker（Docker Desktop 或兼容运行时）：

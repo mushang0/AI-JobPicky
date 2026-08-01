@@ -60,6 +60,11 @@ class JobSourceView(ContractModel):
     name: NonEmptyStr
 
 
+class JobFilterSource(ContractModel):
+    platform: NonEmptyStr
+    source_ids: list[NonEmptyStr] = Field(min_length=1)
+
+
 class JobFact(ContractModel):
     id: NonEmptyStr
     source_id: NonEmptyStr
@@ -288,7 +293,7 @@ class FilterOptionsLimits(ContractModel):
 class JobFilterOptions(ContractModel):
     cities: list[NonEmptyStr] = Field(default_factory=list)
     company_natures: list[NonEmptyStr] = Field(default_factory=list)
-    sources: list[JobSourceView] = Field(default_factory=list)
+    sources: list[JobFilterSource] = Field(default_factory=list)
     recruitment_types: list[RecruitmentType] = Field(default_factory=list)
     educations: list[EducationLevel] = Field(default_factory=list)
     graduation_years: list[int] = Field(default_factory=list)

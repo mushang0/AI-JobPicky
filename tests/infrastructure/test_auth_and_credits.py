@@ -31,7 +31,7 @@ pytestmark = pytest.mark.skipif(
 )
 
 _KEY = "integration-signing-key-that-is-longer-than-32-bytes"
-_PASSWORD = "integration password"
+_PASSWORD = "int-pass"
 
 
 def test_registration_rotation_reuse_and_credit_ledger_roundtrip() -> None:

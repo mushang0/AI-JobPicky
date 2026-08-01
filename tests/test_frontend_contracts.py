@@ -15,6 +15,7 @@ from jobpicky.contracts import (
     Feedback,
     FilterOptionsView,
     JobDetailView,
+    JobFilterSource,
     JobListItem,
     JobListQuery,
     JobSourceView,
@@ -113,7 +114,7 @@ def test_filter_options_use_explicit_limits_and_normalized_values() -> None:
     options = FilterOptionsView(
         cities=["北京", "上海"],
         company_natures=["民营企业"],
-        sources=[JobSourceView(id="source-1", name="Moka")],
+        sources=[JobFilterSource(platform="Moka", source_ids=["source-1"])],
         recruitment_types=list(RecruitmentType),
         educations=list(EducationLevel),
         graduation_years=[2026, 2027],
@@ -257,10 +258,15 @@ def test_auth_user_and_password_contracts_are_safe() -> None:
         created_at=NOW,
     )
     assert user.email == "user@example.com"
-    request = LoginRequest(email="user@example.com", password=" 12345678901234 ")
+    request = LoginRequest(email="user@example.com", password=" 12345678901 ")
     assert request.password.startswith(" ") and request.password.endswith(" ")
+    for password in ("123456", "123456789012345"):
+        LoginRequest(email="user@example.com", password=password)
+    for password in ("12345", "1234567890123456"):
+        with pytest.raises(ValidationError):
+            LoginRequest(email="user@example.com", password=password)
     with pytest.raises(ValidationError):
-        LoginRequest(email="not-an-email", password="123456789012345")
+        LoginRequest(email="not-an-email", password="123456")
 
 
 def test_error_codes_have_chinese_default_messages() -> None:

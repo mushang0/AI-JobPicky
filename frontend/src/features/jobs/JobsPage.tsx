@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
-import { BookmarkSimple, Briefcase, CaretLeft, CaretRight, Funnel, MagnifyingGlass, WarningCircle, X } from "@phosphor-icons/react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { BookmarkSimple, Briefcase, CaretDown, CaretLeft, CaretRight, Check, Funnel, MagnifyingGlass, WarningCircle, X } from "@phosphor-icons/react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "../../adapters/web/AuthProvider";
 import { ApiError } from "../../shared/api/client";
@@ -8,6 +8,7 @@ import { jobsApi } from "../../shared/api/jobs";
 import type { JobFilterOptions, JobListItem, JobQuery, JobsPageResponse } from "../../shared/api/types";
 import { formatDate, formatSalaryRange } from "../../shared/formatting";
 import { validateJobQuery } from "../../shared/validation/jobs";
+import { CityPicker } from "../../components/CityPicker";
 
 type LoadState = "loading" | "ready" | "empty" | "error";
 
@@ -15,7 +16,7 @@ interface FilterDraft {
   q: string;
   city: string[];
   companyNature: string[];
-  sourceId: string[];
+  sourcePlatform: string[];
   recruitmentType: string[];
   education: string[];
   graduationYear: string[];
@@ -28,7 +29,7 @@ const emptyDraft: FilterDraft = {
   q: "",
   city: [],
   companyNature: [],
-  sourceId: [],
+  sourcePlatform: [],
   recruitmentType: [],
   education: [],
   graduationYear: [],
@@ -42,7 +43,7 @@ function readDraft(params: URLSearchParams): FilterDraft {
     q: params.get("q") ?? "",
     city: params.getAll("city"),
     companyNature: params.getAll("company_nature"),
-    sourceId: params.getAll("source_id"),
+    sourcePlatform: params.getAll("source_id"),
     recruitmentType: params.getAll("recruitment_type"),
     education: params.getAll("education"),
     graduationYear: params.getAll("graduation_year"),
@@ -79,6 +80,16 @@ function readQuery(params: URLSearchParams): JobQuery {
   };
 }
 
+function sourcePlatformsFromIds(sourceIds: string[], filters: JobFilterOptions | null): string[] {
+  if (!filters) return sourceIds;
+  return Array.from(new Set(sourceIds.map((sourceId) => filters.sources.find((source) => source.platform === sourceId || source.source_ids.includes(sourceId))?.platform ?? sourceId)));
+}
+
+function sourceIdsFromPlatforms(platforms: string[], filters: JobFilterOptions | null): string[] {
+  if (!filters) return platforms;
+  return Array.from(new Set(platforms.flatMap((platform) => filters.sources.find((source) => source.platform === platform)?.source_ids ?? [platform])));
+}
+
 function loginPath(returnTo: string): string {
   return `/login?returnTo=${encodeURIComponent(returnTo)}`;
 }
@@ -99,8 +110,10 @@ export function JobsPage() {
   const [retryKey, setRetryKey] = useState(0);
 
   useEffect(() => {
-    setDraft(readDraft(searchParams));
-  }, [queryString]);
+    const nextDraft = readDraft(searchParams);
+    nextDraft.sourcePlatform = sourcePlatformsFromIds(nextDraft.sourcePlatform, filters);
+    setDraft(nextDraft);
+  }, [filters, queryString]);
 
   useEffect(() => {
     let active = true;
@@ -164,7 +177,7 @@ export function JobsPage() {
       ["q", draft.q.trim()],
       ["city", draft.city],
       ["company_nature", draft.companyNature],
-      ["source_id", draft.sourceId],
+      ["source_id", sourceIdsFromPlatforms(draft.sourcePlatform, filters)],
       ["recruitment_type", draft.recruitmentType],
       ["education", draft.education],
       ["graduation_year", draft.graduationYear],
@@ -242,21 +255,21 @@ export function JobsPage() {
           <span>搜索岗位或公司</span>
           <span className="search-input-wrap">
             <MagnifyingGlass size={18} aria-hidden="true" />
-            <input value={draft.q} onChange={(event) => updateDraft("q", event.target.value)} placeholder="例如：Python、数据平台" />
+            <input value={draft.q} onChange={(event) => updateDraft("q", event.target.value)} placeholder="搜索岗位、公司或关键词，例如：Python、数据平台" />
           </span>
         </label>
         <div className="filter-grid">
-          <MultiSelectField id="job-filter-city" label="城市" value={draft.city} options={filters?.cities ?? []} onChange={(value) => updateDraft("city", value)} />
-          <MultiSelectField id="job-filter-recruitment-type" label="招聘类型" value={draft.recruitmentType} options={filters?.recruitment_types ?? []} onChange={(value) => updateDraft("recruitmentType", value)} />
-          <MultiSelectField id="job-filter-education" label="学历" value={draft.education} options={filters?.educations ?? []} onChange={(value) => updateDraft("education", value)} />
-          <MultiSelectField id="job-filter-company-nature" label="公司性质" value={draft.companyNature} options={filters?.company_natures ?? []} onChange={(value) => updateDraft("companyNature", value)} />
-          <MultiSelectField id="job-filter-source" label="来源" value={draft.sourceId} options={filters?.sources.map((source) => source.id) ?? []} labels={Object.fromEntries(filters?.sources.map((source) => [source.id, source.name]) ?? [])} onChange={(value) => updateDraft("sourceId", value)} />
-          <MultiSelectField id="job-filter-graduation-year" label="届次" value={draft.graduationYear} options={(filters?.graduation_years ?? []).map(String)} onChange={(value) => updateDraft("graduationYear", value)} />
-          <label className="field-group"><span>最低薪资</span><input inputMode="numeric" value={draft.salaryMin} onChange={(event) => updateDraft("salaryMin", event.target.value)} placeholder="元/月" /></label>
-          <label className="field-group"><span>最高薪资</span><input inputMode="numeric" value={draft.salaryMax} onChange={(event) => updateDraft("salaryMax", event.target.value)} placeholder="元/月" /></label>
+          <div className="field-group jobs-city-filter"><span>城市</span><CityPicker label="城市" values={draft.city} onChange={(value) => updateDraft("city", value)} /></div>
+          <FilterDropdown id="job-filter-recruitment-type" label="招聘类型" value={draft.recruitmentType} options={filters?.recruitment_types ?? []} disabled={!filters} onChange={(value) => updateDraft("recruitmentType", value)} />
+          <FilterDropdown id="job-filter-education" label="学历" value={draft.education} options={filters?.educations ?? []} disabled={!filters} onChange={(value) => updateDraft("education", value)} />
+          <FilterDropdown id="job-filter-company-nature" label="公司性质" value={draft.companyNature} options={filters?.company_natures ?? []} disabled={!filters} onChange={(value) => updateDraft("companyNature", value)} />
+          <FilterDropdown id="job-filter-source" label="来源" value={draft.sourcePlatform} options={filters?.sources.map((source) => source.platform) ?? []} disabled={!filters} onChange={(value) => updateDraft("sourcePlatform", value)} />
+          <FilterDropdown id="job-filter-graduation-year" label="届次" value={draft.graduationYear} options={(filters?.graduation_years ?? []).map(String)} disabled={!filters} onChange={(value) => updateDraft("graduationYear", value)} />
+          <label className="field-group"><span>最低薪资</span><input type="number" min="0" inputMode="numeric" value={draft.salaryMin} onChange={(event) => updateDraft("salaryMin", event.target.value)} placeholder="元/月" /></label>
+          <label className="field-group"><span>最高薪资</span><input type="number" min="0" inputMode="numeric" value={draft.salaryMax} onChange={(event) => updateDraft("salaryMax", event.target.value)} placeholder="元/月" /></label>
         </div>
         <div className="filter-actions">
-          <label className="page-size-field"><span>每页</span><select value={draft.pageSize} onChange={(event) => updateDraft("pageSize", event.target.value)}><option value="6">6</option><option value="12">12</option><option value="30">30</option>{status === "authenticated" && <><option value="50">50</option><option value="100">100</option></>}</select></label>
+          <label className="page-size-field"><span>每页显示</span><select aria-label="每页显示岗位数" value={draft.pageSize} onChange={(event) => updateDraft("pageSize", event.target.value)}><option value="6">6</option><option value="12">12</option><option value="30">30</option>{status === "authenticated" && <><option value="50">50</option><option value="100">100</option></>}</select></label>
           {hasFilters && <button className="button button-secondary" type="button" onClick={clearFilters}><X size={16} />清除筛选</button>}
           <button className="button button-primary" type="submit"><Funnel size={17} />应用筛选</button>
         </div>
@@ -280,8 +293,50 @@ export function JobsPage() {
   );
 }
 
-function MultiSelectField({ id, label, value, options, labels, onChange }: { id: string; label: string; value: string[]; options: string[]; labels?: Record<string, string>; onChange: (value: string[]) => void }) {
-  return <div className="field-group multi-select-field"><label htmlFor={id}>{label}</label><select id={id} multiple size={Math.min(4, Math.max(2, options.length))} value={value} onChange={(event) => onChange(Array.from(event.target.selectedOptions, (option) => option.value))} aria-describedby={`${id}-hint`}>{options.map((option) => <option key={option} value={option}>{labels?.[option] ?? option}</option>)}</select><small id={`${id}-hint`}>可多选{value.length > 0 ? `，已选 ${value.length} 项` : "，未选择即不限"}</small></div>;
+function FilterDropdown({ id, label, value, options, labels, disabled = false, onChange }: { id: string; label: string; value: string[]; options: string[]; labels?: Record<string, string>; disabled?: boolean; onChange: (value: string[]) => void }) {
+  const [open, setOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const closeOnOutsidePointer = (event: PointerEvent) => {
+      if (!containerRef.current?.contains(event.target as Node)) setOpen(false);
+    };
+    document.addEventListener("pointerdown", closeOnOutsidePointer);
+    return () => document.removeEventListener("pointerdown", closeOnOutsidePointer);
+  }, [open]);
+
+  const selectedLabels = value.map((option) => labels?.[option] ?? option);
+  const summary = disabled ? "正在加载…" : selectedLabels.length === 0 ? "不限" : selectedLabels.length <= 2 ? selectedLabels.join("、") : `已选 ${selectedLabels.length} 项`;
+
+  function toggleOption(option: string) {
+    onChange(value.includes(option) ? value.filter((item) => item !== option) : [...value, option]);
+  }
+
+  return (
+    <div className={`field-group filter-dropdown${open ? " is-open" : ""}`} ref={containerRef}>
+      <span id={`${id}-label`}>{label}</span>
+      <button className="filter-dropdown-trigger" type="button" aria-labelledby={`${id}-label`} aria-controls={`${id}-menu`} aria-expanded={open} aria-haspopup="listbox" disabled={disabled} onClick={() => setOpen((current) => !current)}>
+        <span className={`filter-dropdown-value${selectedLabels.length === 0 ? " is-placeholder" : ""}`}>{summary}</span>
+        <CaretDown size={16} aria-hidden="true" />
+      </button>
+      {open && (
+        <div className="filter-dropdown-menu" id={`${id}-menu`} role="listbox" aria-labelledby={`${id}-label`} aria-multiselectable="true">
+          <div className="filter-menu-header">
+            <small>可多选，未选择即不限</small>
+            <button className="filter-menu-clear" type="button" disabled={value.length === 0} onClick={() => onChange([])}>清除</button>
+          </div>
+          <div className="filter-menu-options">
+            {options.length > 0 ? options.map((option) => {
+              const selected = value.includes(option);
+              return <button className={`filter-option${selected ? " is-selected" : ""}`} key={option} type="button" role="option" aria-selected={selected} onClick={() => toggleOption(option)}><span className="filter-checkbox" aria-hidden="true">{selected && <Check size={13} weight="bold" />}</span><span>{labels?.[option] ?? option}</span></button>;
+            }) : <div className="filter-menu-empty">暂无可选项</div>}
+          </div>
+          <div className="filter-menu-footer"><button className="filter-menu-done" type="button" onClick={() => setOpen(false)}>完成</button></div>
+        </div>
+      )}
+    </div>
+  );
 }
 
 function JobCard({ job, isSaving, onToggleSaved }: { job: JobListItem; isSaving: boolean; onToggleSaved: () => void }) {

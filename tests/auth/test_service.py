@@ -19,7 +19,7 @@ from jobpicky.contracts import ErrorCode, LoginRequest, RegisterRequest
 from jobpicky.errors import ApplicationError
 
 _KEY = "test-signing-key-that-is-longer-than-32-bytes"
-_PASSWORD = "  exact long password  "
+_PASSWORD = "  exact7  "
 
 
 class MemoryAuthStore:

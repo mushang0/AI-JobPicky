@@ -15,6 +15,7 @@ from ..contracts import (
     JobDetailView,
     JobFact,
     JobFilterOptions,
+    JobFilterSource,
     JobListItem,
     JobListQuery,
     JobPoolPage,
@@ -154,10 +155,7 @@ class JobPoolService:
                         if (nature := normalize_company_nature(job.company_nature)) is not None
                     }
                 ),
-                sources=sorted(
-                    {source.id: source for _, source in pool}.values(),
-                    key=lambda source: (source.name, source.id),
-                ),
+                sources=_group_filter_sources(pool),
                 recruitment_types=list(RecruitmentType),
                 educations=list(EducationLevel),
                 graduation_years=sorted({year for job, _ in pool for year in job.graduation_years}),
@@ -282,6 +280,18 @@ class JobPoolService:
             and job.salary_min is not None
             and job.salary_min > query.salary_max
         )
+
+
+def _group_filter_sources(
+    pool: Sequence[tuple[JobFact, JobSourceView]],
+) -> list[JobFilterSource]:
+    grouped: dict[str, set[str]] = {}
+    for _, source in pool:
+        grouped.setdefault(source.name, set()).add(source.id)
+    return [
+        JobFilterSource(platform=platform, source_ids=sorted(source_ids))
+        for platform, source_ids in sorted(grouped.items())
+    ]
 
 
 def _search_terms(query: str | None) -> list[str]:

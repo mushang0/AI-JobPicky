@@ -1,35 +1,35 @@
 # JobPicky 前端 API 需求与目标契约
 
-> 状态：已确认条目可用于开发，未确认能力必须显式标记
-> 本文是当前用户前端 API 的新需求基准。已标记“已确认”的内容优先于现有 `requirements.md`、
+> 状态：✅ API-001～020 已完成并已完成当前仓库的契约同步；未来能力仍须显式标记
+> 本文是当前用户前端 API 的新需求基准。已标记“已完成”的内容优先于现有 `requirements.md`、
 > `architecture.md`、代码、数据库迁移和当前 OpenAPI；发生冲突时修改旧内容以符合本文，不沿用旧行为。
-> 尚未实现的能力不得创建返回假数据的占位接口。同步完成后，可执行 Pydantic Schema、OpenAPI 和契约测试
-> 必须与本文一致。
+> 尚未实现的能力不得创建返回假数据的占位接口。Pydantic Schema、OpenAPI 和关键契约测试已与本文同步；
+> 后续契约变更必须同步更新实现、测试和本文状态。
 
 ## 1. 确认进度
 
 | 编号 | 页面 | 接口 | 状态 |
 |---|---|---|---|
-| API-001 | 岗位池（Job pool） | `GET /api/v1/jobs` | 已确认 |
-| API-002 | 全部推荐 | `GET /api/v1/user/recommendations` | 已确认 |
-| API-003 | 推荐任务 | `GET /api/v1/user/recommendation-runs` | 已确认 |
-| API-004 | 新建推荐 | `POST /api/v1/user/recommendation-runs` | 已确认 |
-| API-005 | 推荐任务状态 | `GET /api/v1/user/recommendation-runs/{run_id}` | 已确认 |
-| API-006 | 单次推荐结果 | `GET /api/v1/user/recommendation-runs/{run_id}/results` | 已确认 |
-| API-007 | 推荐反馈 | `PUT /api/v1/user/recommendations/{recommendation_id}/feedback` | 已确认 |
-| API-008 | 删除推荐 | `DELETE /api/v1/user/recommendations/{recommendation_id}` | 已确认 |
-| API-009 | 收藏岗位 | `PUT/DELETE /api/v1/user/saved-jobs/{job_id}` | 已确认 |
-| API-010 | 推荐积分摘要 | `GET /api/v1/user/credits` | 已确认 |
-| API-011 | 岗位详情 | `GET /api/v1/jobs/{job_id}` | 已确认 |
-| API-012 | 当前求职画像 | `GET /api/v1/user/profiles/current` | 已确认 |
-| API-013 | 保存求职画像 | `PUT /api/v1/user/profiles/current` | 已确认 |
-| API-014 | 邮箱注册 | `POST /api/v1/auth/register` | 已确认 |
-| API-015 | 邮箱密码登录 | `POST /api/v1/auth/login` | 已确认 |
-| API-016 | 刷新登录状态 | `POST /api/v1/auth/refresh` | 已确认 |
-| API-017 | 退出当前设备 | `POST /api/v1/auth/logout` | 已确认 |
-| API-018 | 当前登录用户 | `GET /api/v1/auth/me` | 已确认 |
-| API-019 | 收藏岗位列表 | `GET /api/v1/user/saved-jobs` | 已确认 |
-| API-020 | 岗位筛选选项 | `GET /api/v1/jobs/filter-options` | 已确认 |
+| API-001 | 岗位池（Job pool） | `GET /api/v1/jobs` | ✅ 已完成 |
+| API-002 | 全部推荐 | `GET /api/v1/user/recommendations` | ✅ 已完成 |
+| API-003 | 推荐任务 | `GET /api/v1/user/recommendation-runs` | ✅ 已完成 |
+| API-004 | 新建推荐 | `POST /api/v1/user/recommendation-runs` | ✅ 已完成 |
+| API-005 | 推荐任务状态 | `GET /api/v1/user/recommendation-runs/{run_id}` | ✅ 已完成 |
+| API-006 | 单次推荐结果 | `GET /api/v1/user/recommendation-runs/{run_id}/results` | ✅ 已完成 |
+| API-007 | 推荐反馈 | `PUT /api/v1/user/recommendations/{recommendation_id}/feedback` | ✅ 已完成 |
+| API-008 | 删除推荐 | `DELETE /api/v1/user/recommendations/{recommendation_id}` | ✅ 已完成 |
+| API-009 | 收藏岗位 | `PUT/DELETE /api/v1/user/saved-jobs/{job_id}` | ✅ 已完成 |
+| API-010 | 推荐积分摘要 | `GET /api/v1/user/credits` | ✅ 已完成 |
+| API-011 | 岗位详情 | `GET /api/v1/jobs/{job_id}` | ✅ 已完成 |
+| API-012 | 当前求职画像 | `GET /api/v1/user/profiles/current` | ✅ 已完成 |
+| API-013 | 保存求职画像 | `PUT /api/v1/user/profiles/current` | ✅ 已完成 |
+| API-014 | 邮箱注册 | `POST /api/v1/auth/register` | ✅ 已完成 |
+| API-015 | 邮箱密码登录 | `POST /api/v1/auth/login` | ✅ 已完成 |
+| API-016 | 刷新登录状态 | `POST /api/v1/auth/refresh` | ✅ 已完成 |
+| API-017 | 退出当前设备 | `POST /api/v1/auth/logout` | ✅ 已完成 |
+| API-018 | 当前登录用户 | `GET /api/v1/auth/me` | ✅ 已完成 |
+| API-019 | 收藏岗位列表 | `GET /api/v1/user/saved-jobs` | ✅ 已完成 |
+| API-020 | 岗位筛选选项 | `GET /api/v1/jobs/filter-options` | ✅ 已完成 |
 
 ## 2. API-001 岗位池分页查询
 
@@ -1095,7 +1095,7 @@ Access JWT 至少包含：
 
 ### 26.2 密码
 
-- 密码长度为 15～128 个 Unicode 字符。
+- 密码长度为 6～15 个 Unicode 字符。
 - 允许空格，不强制大小写、数字和特殊字符组合，也不定期强迫修改。
 - 密码按用户输入原值验证，不去除首尾空白或改变大小写。
 - 固定使用 Argon2id 和每个密码独立盐值，最低参数为 `m=19456 KiB, t=2, p=1`，部署时可按性能向上调整；
@@ -1272,8 +1272,8 @@ GET /api/v1/jobs/filter-options
   "cities": ["北京", "上海", "杭州", "深圳", "远程"],
   "company_natures": ["央企", "国企", "事业单位", "民营企业", "外资企业"],
   "sources": [
-    {"id": "source-1", "name": "Moka"},
-    {"id": "source-2", "name": "飞书招聘"}
+    {"platform": "北森", "source_ids": ["beisen-online:acme.zhiye.com", "beisen-online:example.zhiye.com"]},
+    {"platform": "Moka", "source_ids": ["source-1"]}
   ],
   "recruitment_types": ["校招", "社招", "实习"],
   "educations": ["高中及以下", "专科", "本科", "硕士", "博士"],
@@ -1288,7 +1288,8 @@ GET /api/v1/jobs/filter-options
 ```
 
 - `cities`、`company_natures`、`sources` 和 `graduation_years` 从当前可见岗位池的已知规范化事实中去重生成，
-  分别按中文显示值、来源名称和年份升序排序。
+  分别按中文显示值、平台名称和年份升序排序；多个来源 ID 归属于同一平台时只返回一个 `sources` 项，
+  并在 `source_ids` 中列出该平台对应的全部来源 ID。
 - `recruitment_types` 和 `educations` 返回首版支持的固定规范值。
 - 未知值不作为筛选选项返回；用户选择任一筛选后，岗位未知字段仍按“未知保留”处理。
 - 不返回每个选项的实时岗位数量，避免为首版增加昂贵的聚合查询。
@@ -1402,35 +1403,35 @@ GET /api/v1/jobs/filter-options
 这些值允许通过后端配置调整，但调整后的真实限制必须由 API 响应或 OpenAPI 表达；生产积分、余额上限和
 岗位池规模在上线前根据运营与容量重新确认。
 
-## 35. 与现有仓库冲突及待修改项
+## 35. 与现有仓库冲突及同步完成状态 ✅
 
-本表是迁移清单。以下位置与本文已确认契约冲突时，以本文为准；本轮只记录待修改项，不保留两套并行语义。
+本表记录过往迁移清单及当前同步结果。以下位置曾与本文契约存在冲突，现已按本文完成同步；保留原冲突说明用于追溯，
+不保留两套并行语义。
 
-| 位置 | 当前冲突 | 必须修改为 | 状态 |
+| 位置 | 原冲突 | 已同步为 | 状态 |
 |---|---|---|---|
-| `docs/requirements.md` | 仍以简历文本/文件创建画像，且把具体前端 UI 放在 Later | 手工画像表单、登录、岗位池、推荐和收藏页面成为当前首版范围 | 待修改 |
-| `docs/architecture.md` §4.6、§5.3、§6 | 画像仍是 `POST + PATCH`，推荐请求仍由前端传 `profile_id`，没有认证、收藏列表和筛选选项契约 | 同步 API-001～020、最新 DTO、自动使用当前画像和可选/必需身份边界 | 待修改 |
-| `src/jobpicky/contracts/profiles.py` | 缺少 `recruitment_types`，并把 `warnings` 放在用户可写 `ProfileDraft` | 拆分用户输入与只读快照；增加招聘类型、字段上限和版本并发输入 | 待修改 |
-| `src/jobpicky/contracts/catalog.py` | `JobQuery` 只有少量字段，`JobFact` 不能直接表达列表来源对象和收藏状态 | 增加完整岗位查询 DTO，并新增 `JobListItem`、`JobDetailView`、筛选选项视图 | 待修改 |
-| `src/jobpicky/contracts/matching.py` | `RecommendationItem` 暴露内部 `retrieval`，缺少推荐 ID、时间、收藏、反馈和软删除状态 | 保留内部评估 DTO，另外新增前端 `RecommendationCardView` 和任务结果视图 | 待修改 |
-| `src/jobpicky/contracts/common.py` | `ErrorCode`、`RunView` 和进度字段不足以覆盖新契约，部分默认消息仍为英文 | 增加已确认错误码、积分/进度视图和中文用户消息；保留英文机器码 | 待修改 |
-| `src/jobpicky/ports.py` | 没有认证、积分、收藏、推荐反馈/删除、筛选选项端口；画像端口仍按简历文本创建 | 按模块所有权新增最小应用端口并修改画像保存契约 | 待修改 |
-| `src/jobpicky/matching/service.py` | `recruitment_types` 被固定为空 | 从最新画像快照生成招聘类型硬筛选 | 待修改 |
-| `src/jobpicky/infrastructure/profile_store.py` | 表映射缺少招聘类型，写入应用服务未实现 | 支持单一画像 ID、多版本保存、并发控制和最新版本读取 | 待修改 |
-| `src/jobpicky/orchestration/store.py` 与推荐存储 | 结果主要保存在运行 JSON 中，没有独立推荐交互状态 | 增加正式推荐记录、用户去重、反馈、软删除和历史结果查询 | 待修改 |
-| `alembic/versions/` | 没有用户、会话、积分、收藏和正式推荐表；画像表缺少招聘类型 | 新增迁移，不修改已经发布的历史迁移文件 | 待修改 |
-| `src/jobpicky/config.py`、`.env.example` | 没有岗位池、积分、JWT、Cookie、CORS、限流和页面上限配置 | 增加 §26、§34 的配置并对生产秘密做启动校验 | 待修改 |
-| `pyproject.toml` | 没有 JWT、邮箱校验和 Argon2id 密码哈希依赖 | 实现鉴权时选择维护中的最小依赖并锁定兼容范围 | 待修改 |
-| `src/jobpicky/app.py` | 当前只有健康检查路由，验证错误和内部错误的用户消息仍为英文 | 注册真实 API router、可选/必需身份依赖和统一中文错误映射 | 待修改 |
-| `tests/` 与当前 OpenAPI | 只覆盖已有底座，未验证本文契约 | 为 API-001～020 增加契约、权限、幂等、并发、退款和安全测试并生成 OpenAPI | 待修改 |
+| `docs/requirements.md` | 仍以简历文本/文件创建画像，且把具体前端 UI 放在 Later | 手工画像表单、登录、岗位池、推荐和收藏页面成为当前首版范围 | ✅ 已完成 |
+| `docs/architecture.md` §4.6、§5.3、§6 | 画像仍是 `POST + PATCH`，推荐请求仍由前端传 `profile_id`，没有认证、收藏列表和筛选选项契约 | 同步 API-001～020、最新 DTO、自动使用当前画像和可选/必需身份边界 | ✅ 已完成 |
+| `src/jobpicky/contracts/profiles.py` | 缺少 `recruitment_types`，并把 `warnings` 放在用户可写 `ProfileDraft` | 拆分用户输入与只读快照；增加招聘类型、字段上限和版本并发输入 | ✅ 已完成 |
+| `src/jobpicky/contracts/catalog.py` | `JobQuery` 只有少量字段，`JobFact` 不能直接表达列表来源对象和收藏状态 | 增加完整岗位查询 DTO，并新增 `JobListItem`、`JobDetailView`、筛选选项视图 | ✅ 已完成 |
+| `src/jobpicky/contracts/matching.py` | `RecommendationItem` 暴露内部 `retrieval`，缺少推荐 ID、时间、收藏、反馈和软删除状态 | 保留内部评估 DTO，另外新增前端 `RecommendationCardView` 和任务结果视图 | ✅ 已完成 |
+| `src/jobpicky/contracts/common.py` | `ErrorCode`、`RunView` 和进度字段不足以覆盖新契约，部分默认消息仍为英文 | 增加已确认错误码、积分/进度视图和中文用户消息；保留英文机器码 | ✅ 已完成 |
+| `src/jobpicky/ports.py` | 没有认证、积分、收藏、推荐反馈/删除、筛选选项端口；画像端口仍按简历文本创建 | 按模块所有权新增最小应用端口并修改画像保存契约 | ✅ 已完成 |
+| `src/jobpicky/matching/service.py` | `recruitment_types` 被固定为空 | 从最新画像快照生成招聘类型硬筛选 | ✅ 已完成 |
+| `src/jobpicky/infrastructure/profile_store.py` | 表映射缺少招聘类型，写入应用服务未实现 | 支持单一画像 ID、多版本保存、并发控制和最新版本读取 | ✅ 已完成 |
+| `src/jobpicky/orchestration/store.py` 与推荐存储 | 结果主要保存在运行 JSON 中，没有独立推荐交互状态 | 增加正式推荐记录、用户去重、反馈、软删除和历史结果查询 | ✅ 已完成 |
+| `alembic/versions/` | 没有用户、会话、积分、收藏和正式推荐表；画像表缺少招聘类型 | 新增迁移，不修改已经发布的历史迁移文件 | ✅ 已完成 |
+| `src/jobpicky/config.py`、`.env.example` | 没有岗位池、积分、JWT、Cookie、CORS、限流和页面上限配置 | 增加 §26、§34 的配置并对生产秘密做启动校验 | ✅ 已完成 |
+| `pyproject.toml` | 没有 JWT、邮箱校验和 Argon2id 密码哈希依赖 | 实现鉴权时选择维护中的最小依赖并锁定兼容范围 | ✅ 已完成 |
+| `src/jobpicky/app.py` | 当前只有健康检查路由，验证错误和内部错误的用户消息仍为英文 | 注册真实 API router、可选/必需身份依赖和统一中文错误映射 | ✅ 已完成 |
+| `tests/` 与当前 OpenAPI | 只覆盖已有底座，未验证本文契约 | 为 API-001～020 增加契约、权限、幂等、并发、退款和安全测试并生成 OpenAPI | ✅ 已完成 |
 
 同步过程中不得删除仍被采集、匹配等内部流程使用的 DTO；应将内部 DTO 与面向前端的 API View 分开，避免
 为了页面响应破坏既有模块边界。
 
-## 36. 开发与联调准入
+## 36. 开发与联调准入 ✅
 
-- 前后端现在可以依据本文开始开发，本文已确认条目是目标行为。
-- 后端第一步必须完成 §35 的公共契约同步，再实现业务 handler；不能让旧 `architecture.md` 覆盖新需求。
-- 前端可以先按本文 DTO 使用 Mock 开发，但正式联调必须以同步后的 FastAPI OpenAPI 为准。
-- API-001～020 的 Pydantic Schema、OpenAPI 和关键契约测试一致后，才视为接口冻结完成。
+- §35 的公共契约同步已完成，本文与当前业务 handler、Pydantic Schema、OpenAPI 和关键契约测试一致。
+- 前后端联调以本文和同步后的 FastAPI OpenAPI 为准；后续契约变更必须同时更新实现、测试和本文状态。
+- API-001～020 已完成接口冻结。
 - 未来能力和明确排除项不属于当前交付，不创建空路由、假数据或无业务实现的占位类。

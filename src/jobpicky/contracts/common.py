@@ -219,8 +219,8 @@ class LoginRequest(ContractModel):
 
     email: EmailAddress
     password: str = Field(
-        min_length=15,
-        max_length=128,
+        min_length=6,
+        max_length=15,
         json_schema_extra={"writeOnly": True},
     )
 

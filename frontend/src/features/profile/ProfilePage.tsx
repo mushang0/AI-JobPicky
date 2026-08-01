@@ -9,6 +9,7 @@ import { profileApi } from "../../shared/api/profile";
 import type { JobFilterOptions, ProfileSaveRequest, ProfileView } from "../../shared/api/types";
 import { formatDate } from "../../shared/formatting";
 import { normalizeProfile, validateProfile } from "../../shared/validation/profile";
+import { CityPicker } from "../../components/CityPicker";
 
 const emptyProfile: ProfileSaveRequest = {
   base_version: null,
@@ -180,7 +181,7 @@ export function ProfilePage() {
       <form className="profile-form" onSubmit={handleSubmit}>
         <ProfileSection title="求职目标" description="城市和招聘类型会作为确定性筛选条件。">
           <TagInput label="目标岗位" values={form.target_roles} placeholder="输入岗位名称后按 Enter" onChange={(values) => updateField("target_roles", values)} />
-          <ChoiceField label="目标城市" options={filters?.cities ?? []} values={form.target_locations} onToggle={(value) => toggleListValue("target_locations", value)} emptyText="不选择表示不限地点" />
+          <div className="field-group city-picker-field"><span>目标城市</span><CityPicker label="目标城市" values={form.target_locations} onChange={(values) => updateField("target_locations", values)} /></div>
           <ChoiceField label="招聘类型" options={filters?.recruitment_types ?? []} values={form.recruitment_types} onToggle={(value) => toggleListValue("recruitment_types", value)} emptyText="不选择表示不限类型" />
           <NumberField label="期望税前月薪下限" value={form.expected_salary_min} placeholder="元/月，可不填" onChange={(value) => updateField("expected_salary_min", value)} />
         </ProfileSection>

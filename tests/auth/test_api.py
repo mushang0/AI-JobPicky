@@ -96,7 +96,7 @@ def test_required_identity_and_browser_origin_errors_are_stable() -> None:
 
 
 def test_validation_errors_do_not_echo_passwords() -> None:
-    secret = "short-secret"
+    secret = "12345"
     with TestClient(_app()) as client:
         response = client.post(
             "/api/v1/auth/register",

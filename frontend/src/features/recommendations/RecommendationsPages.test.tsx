@@ -6,6 +6,7 @@ import { recommendationsApi } from "../../shared/api/recommendations";
 
 vi.mock("../../shared/api/jobs", () => ({
   jobsApi: {
+    list: vi.fn(),
     save: vi.fn(),
     unsave: vi.fn(),
   },
@@ -43,6 +44,7 @@ const mockedRecommendationsApi = vi.mocked(recommendationsApi);
 
 describe("RecommendationRunDetailPage", () => {
   it("renders a structured backend failure without crashing the page", async () => {
+    mockedJobsApi.list.mockResolvedValue({ items: [], total: 2000, page: 1, page_size: 1, pool_total: 2000 });
     mockedJobsApi.save.mockReset();
     mockedJobsApi.unsave.mockReset();
     mockedRecommendationsApi.status.mockResolvedValue(failedTask);
@@ -59,5 +61,6 @@ describe("RecommendationRunDetailPage", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent("推荐任务失败");
     expect(screen.getByText("依赖服务暂时不可用，请稍后重试。")).toBeInTheDocument();
     expect(screen.getByText("本次积分已退回")).toBeInTheDocument();
+    expect(screen.getByText("从 2000 个岗位中推荐")).toBeInTheDocument();
   });
 });
