@@ -6,7 +6,7 @@ import { ApiError } from "../../shared/api/client";
 import { getApiErrorMessage } from "../../shared/api/errorMessage";
 import { jobsApi } from "../../shared/api/jobs";
 import type { JobDetailView } from "../../shared/api/types";
-import { formatDate, formatJobStatus, formatSalaryRange } from "../../shared/formatting";
+import { formatJobStatus, formatPublishedDate, formatRecommendationDeadline, formatSalaryRange } from "../../shared/formatting";
 
 type LoadState = "loading" | "ready" | "error";
 
@@ -67,17 +67,19 @@ export function JobDetailPage() {
     return <section className="state-panel detail-state" role="status"><WarningCircle size={28} /><h1>岗位详情暂时不可用</h1><p>{errorMessage ?? "请稍后重试。"}</p><div className="detail-state-actions"><button className="button button-primary" type="button" onClick={() => setRetryKey((current) => current + 1)}>重新加载</button><button className="button button-secondary" type="button" onClick={() => navigate(-1)}>返回岗位池</button></div></section>;
   }
 
+  const isExpired = job.deadline_at !== null && new Date(job.deadline_at).getTime() <= Date.now();
   const isClosed = job.status === "CLOSED";
+  const cannotApply = isClosed || isExpired;
   return (
     <div className="job-detail-page">
       <Link className="back-link" to="/jobs"><ArrowLeft size={18} />返回岗位池</Link>
       <section className="detail-hero">
         <div>
-          <span className={`detail-status ${isClosed ? "detail-status-closed" : ""}`}>{formatJobStatus(job.status)}</span>
+          <span className={`detail-status ${cannotApply ? "detail-status-closed" : ""}`}>{cannotApply ? "已截止" : formatJobStatus(job.status)}</span>
           <h1>{job.title}</h1>
           <p className="detail-company">{job.company_name} · {job.source.name}</p>
         </div>
-        <button className="button button-secondary detail-save-button" type="button" disabled={isSaving} aria-pressed={job.is_saved === true} onClick={() => void toggleSaved()}><BookmarkSimple size={18} weight={job.is_saved ? "fill" : "regular"} />{job.is_saved ? "已收藏" : "收藏岗位"}</button>
+        <button className={`button button-secondary detail-save-button ${job.is_saved ? "is-saved" : ""}`} type="button" disabled={isSaving} aria-pressed={job.is_saved === true} onClick={() => void toggleSaved()}><BookmarkSimple size={18} weight={job.is_saved ? "fill" : "regular"} />{job.is_saved ? "已收藏" : "收藏岗位"}</button>
       </section>
 
       <section className="detail-facts" aria-label="岗位信息">
@@ -85,7 +87,8 @@ export function JobDetailPage() {
         <Fact icon={<Money size={19} />} label="薪资范围" value={formatSalaryRange(job.salary_min, job.salary_max, job.salary_months)} />
         <Fact icon={<GraduationCap size={19} />} label="学历要求" value={job.education_requirement ?? "学历待确认"} />
         <Fact icon={<Briefcase size={19} />} label="招聘类型" value={job.recruitment_type ?? "类型待确认"} />
-        <Fact icon={<CalendarBlank size={19} />} label="最后确认" value={formatDate(job.last_confirmed_at)} />
+        <Fact icon={<CalendarBlank size={19} />} label="发布日期" value={formatPublishedDate(job.published_at)} />
+        <Fact icon={<CalendarBlank size={19} />} label="投递截止" value={formatRecommendationDeadline(job.deadline_at, job.status)} />
       </section>
 
       <section className="detail-content-grid">
@@ -95,14 +98,14 @@ export function JobDetailPage() {
         </article>
         <aside className="detail-side-panel">
           <h2>投递入口</h2>
-          {isClosed ? (
-            <p className="closed-note">该岗位已关闭，暂不可投递。</p>
+          {cannotApply ? (
+            <p className="closed-note">{isExpired ? "该岗位已过投递截止日期，暂不可投递。" : "该岗位已关闭，暂不可投递。"}</p>
           ) : job.apply_url ? (
             <a className="button button-primary apply-button" href={job.apply_url} target="_blank" rel="noreferrer">前往官方投递<ArrowSquareOut size={17} /></a>
           ) : (
             <p className="closed-note">官方投递入口待确认。</p>
           )}
-          <div className="detail-side-meta"><span>岗位来源</span><strong>{job.source.name}</strong><span>首次发现</span><strong>{formatDate(job.first_seen_at)}</strong></div>
+          <div className="detail-side-meta"><span>岗位来源</span><strong>{job.source.name}</strong><span>发布日期</span><strong>{formatPublishedDate(job.published_at)}</strong><span>投递截止</span><strong>{formatRecommendationDeadline(job.deadline_at, job.status)}</strong></div>
         </aside>
       </section>
     </div>

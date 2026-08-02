@@ -2,11 +2,12 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Sequence
+from datetime import UTC, datetime, timedelta
 
 from catalog.factories import make_job
 from jobpicky.catalog.service import JobPoolService
 from jobpicky.config import Settings
-from jobpicky.contracts import JobFact, JobFilterSource, JobSourceView
+from jobpicky.contracts import JobFact, JobFilterSource, JobListQuery, JobSourceView
 from jobpicky.infrastructure.saved_job_store import SavedJobRecord
 
 
@@ -66,3 +67,27 @@ def test_filter_options_group_sources_by_platform() -> None:
         JobFilterSource(platform="Moka", source_ids=["moka-a", "moka-b"]),
         JobFilterSource(platform="北森", source_ids=["beisen-a", "beisen-b"]),
     ]
+
+
+def test_published_date_filters_use_published_at_and_keep_unknown_separate() -> None:
+    now = datetime.now(UTC)
+    pool = [
+        (
+            make_job(id="recent", published_at=now - timedelta(days=2)),
+            JobSourceView(id="a", name="平台"),
+        ),
+        (
+            make_job(id="old", published_at=now - timedelta(days=10)),
+            JobSourceView(id="b", name="平台"),
+        ),
+        (make_job(id="unknown", published_at=None), JobSourceView(id="c", name="平台")),
+    ]
+    service = JobPoolService(
+        _VisibleJobStore(pool), _UnusedSavedJobStore(), Settings(environment="test")
+    )
+
+    recent = asyncio.run(service.list_jobs("user-1", JobListQuery(published_within_days=3)))
+    unknown = asyncio.run(service.list_jobs("user-1", JobListQuery(published_at_unknown=True)))
+
+    assert [item.id for item in recent.items] == ["recent"]
+    assert [item.id for item in unknown.items] == ["unknown"]

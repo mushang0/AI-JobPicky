@@ -2,7 +2,7 @@ import { useState } from "react";
 import { BookmarkSimple, ChatCircleText, Check, ThumbsDown, ThumbsUp, Trash, X } from "@phosphor-icons/react";
 import { Link } from "react-router-dom";
 import type { RecommendationCardView, RecommendationFeedback, RecommendationResultView } from "../../shared/api/types";
-import { formatDate } from "../../shared/formatting";
+import { formatRecommendationDeadline } from "../../shared/formatting";
 
 type RecommendationItem = RecommendationCardView | RecommendationResultView;
 
@@ -14,7 +14,7 @@ export function RecommendationCard({ item, onFeedback, onToggleSaved, onDelete }
     <article className={`recommendation-card ${isDeleted ? "recommendation-card-deleted" : ""}`}>
       <div className="recommendation-card-topline">
         <span className="match-score">AI 匹配度 {item.assessment.match_score}%</span>
-        <span className="recommendation-date">推荐 {formatDate(item.recommended_at)} · 发现 {formatDate(item.job.first_seen_at)}</span>
+        <span className={`recommendation-date recommendation-deadline${item.job.status === "CLOSED" ? " is-closed" : ""}`}>{formatRecommendationDeadline(item.job.deadline_at, item.job.status)}</span>
       </div>
       <Link className="recommendation-card-link" to={`/jobs/${item.job.id}`}>
         <h2>{item.job.title}</h2>
@@ -31,7 +31,7 @@ export function RecommendationCard({ item, onFeedback, onToggleSaved, onDelete }
         <div className="recommendation-actions" aria-label="推荐操作">
           <button className={`icon-button feedback-button ${item.feedback === "LIKE" ? "feedback-selected" : ""}`} type="button" aria-label="点赞" aria-pressed={item.feedback === "LIKE"} disabled={isDeleted} onClick={() => onFeedback(item.feedback === "LIKE" ? null : "LIKE")}><ThumbsUp size={17} /></button>
           <button className={`icon-button feedback-button ${item.feedback === "DISLIKE" ? "feedback-selected" : ""}`} type="button" aria-label="点踩" aria-pressed={item.feedback === "DISLIKE"} disabled={isDeleted} onClick={() => onFeedback(item.feedback === "DISLIKE" ? null : "DISLIKE")}><ThumbsDown size={17} /></button>
-          <button className={`icon-button feedback-button ${item.is_saved ? "feedback-selected" : ""}`} type="button" aria-label={item.is_saved ? "取消收藏岗位" : "收藏岗位"} aria-pressed={item.is_saved} disabled={isDeleted} onClick={onToggleSaved}><BookmarkSimple size={17} weight={item.is_saved ? "fill" : "regular"} /></button>
+        <button className={`icon-button feedback-button ${item.is_saved ? "feedback-selected" : ""}`} type="button" aria-label={item.is_saved ? "取消收藏岗位" : "收藏岗位"} aria-pressed={item.is_saved} disabled={isDeleted} onClick={onToggleSaved}><BookmarkSimple size={19} weight={item.is_saved ? "fill" : "regular"} /></button>
         </div>
         {isDeleted ? <span className="deleted-label">已删除</span> : onDelete && (confirmDelete ? <span className="delete-confirm-actions"><button className="text-button" type="button" onClick={() => { onDelete(); setConfirmDelete(false); }}>确认删除</button><button className="text-button" type="button" onClick={() => setConfirmDelete(false)}>取消</button></span> : <button className="text-button danger-text" type="button" onClick={() => setConfirmDelete(true)}><Trash size={16} />删除推荐</button>)}
       </div>

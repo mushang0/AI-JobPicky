@@ -16,40 +16,27 @@ interface FilterDraft {
   q: string;
   city: string[];
   companyNature: string[];
-  sourcePlatform: string[];
   recruitmentType: string[];
   education: string[];
   graduationYear: string[];
   salaryMin: string;
   salaryMax: string;
-  pageSize: string;
+  publishedDate: string;
 }
 
-const emptyDraft: FilterDraft = {
-  q: "",
-  city: [],
-  companyNature: [],
-  sourcePlatform: [],
-  recruitmentType: [],
-  education: [],
-  graduationYear: [],
-  salaryMin: "",
-  salaryMax: "",
-  pageSize: "30",
-};
+const JOBS_PAGE_SIZE = 12;
 
 function readDraft(params: URLSearchParams): FilterDraft {
   return {
     q: params.get("q") ?? "",
     city: params.getAll("city"),
     companyNature: params.getAll("company_nature"),
-    sourcePlatform: params.getAll("source_id"),
     recruitmentType: params.getAll("recruitment_type"),
     education: params.getAll("education"),
     graduationYear: params.getAll("graduation_year"),
     salaryMin: params.get("salary_min") ?? "",
     salaryMax: params.get("salary_max") ?? "",
-    pageSize: params.get("page_size") ?? "30",
+    publishedDate: params.get("published_at_unknown") === "true" ? "unknown" : params.get("published_within_days") ?? "",
   };
 }
 
@@ -64,30 +51,23 @@ function readQuery(params: URLSearchParams): JobQuery {
     return values.length > 0 ? values : undefined;
   };
   const graduationYears = params.getAll("graduation_year").map(Number).filter(Number.isInteger);
+  const publishedDate = params.get("published_within_days");
+  const publishedAtUnknown = params.get("published_at_unknown") === "true";
 
   return {
     page: numberOrUndefined(params.get("page")) ?? 1,
-    page_size: numberOrUndefined(params.get("page_size")) ?? 30,
+    page_size: JOBS_PAGE_SIZE,
     q: params.get("q") ?? undefined,
     city: many("city"),
     company_nature: many("company_nature"),
-    source_id: many("source_id"),
     recruitment_type: many("recruitment_type"),
     education: many("education"),
     graduation_year: graduationYears.length > 0 ? graduationYears : undefined,
     salary_min: numberOrUndefined(params.get("salary_min")),
     salary_max: numberOrUndefined(params.get("salary_max")),
+    published_within_days: publishedAtUnknown ? undefined : numberOrUndefined(publishedDate),
+    published_at_unknown: publishedAtUnknown || undefined,
   };
-}
-
-function sourcePlatformsFromIds(sourceIds: string[], filters: JobFilterOptions | null): string[] {
-  if (!filters) return sourceIds;
-  return Array.from(new Set(sourceIds.map((sourceId) => filters.sources.find((source) => source.platform === sourceId || source.source_ids.includes(sourceId))?.platform ?? sourceId)));
-}
-
-function sourceIdsFromPlatforms(platforms: string[], filters: JobFilterOptions | null): string[] {
-  if (!filters) return platforms;
-  return Array.from(new Set(platforms.flatMap((platform) => filters.sources.find((source) => source.platform === platform)?.source_ids ?? [platform])));
 }
 
 function loginPath(returnTo: string): string {
@@ -111,9 +91,8 @@ export function JobsPage() {
 
   useEffect(() => {
     const nextDraft = readDraft(searchParams);
-    nextDraft.sourcePlatform = sourcePlatformsFromIds(nextDraft.sourcePlatform, filters);
     setDraft(nextDraft);
-  }, [filters, queryString]);
+  }, [queryString]);
 
   useEffect(() => {
     let active = true;
@@ -123,7 +102,7 @@ export function JobsPage() {
         setFilterErrorMessage(null);
       }
     }).catch(() => {
-      if (active) setFilterErrorMessage("筛选配置暂时无法加载，当前可以先使用关键词搜索。");
+      if (active) setFilterErrorMessage("筛选选项暂时无法加载，你仍可以先搜索岗位。");
     });
     return () => {
       active = false;
@@ -177,7 +156,6 @@ export function JobsPage() {
       ["q", draft.q.trim()],
       ["city", draft.city],
       ["company_nature", draft.companyNature],
-      ["source_id", sourceIdsFromPlatforms(draft.sourcePlatform, filters)],
       ["recruitment_type", draft.recruitmentType],
       ["education", draft.education],
       ["graduation_year", draft.graduationYear],
@@ -191,13 +169,17 @@ export function JobsPage() {
         next.set(key, value);
       }
     });
+    if (draft.publishedDate === "unknown") {
+      next.set("published_at_unknown", "true");
+    } else if (draft.publishedDate) {
+      next.set("published_within_days", draft.publishedDate);
+    }
     next.set("page", "1");
-    next.set("page_size", draft.pageSize || "30");
     setSearchParams(next);
   }
 
   function clearFilters() {
-    setSearchParams({ page: "1", page_size: "30" });
+    setSearchParams({ page: "1" });
   }
 
   function goToPage(page: number) {
@@ -225,7 +207,7 @@ export function JobsPage() {
   }
 
   const totalPages = jobs ? Math.max(1, Math.ceil(jobs.total / jobs.page_size)) : 1;
-  const hasFilters = Array.from(searchParams.keys()).some((key) => key !== "page" && key !== "page_size");
+  const hasFilters = Array.from(searchParams.keys()).some((key) => !["page", "page_size", "source_id"].includes(key));
 
   return (
     <div className="jobs-page">
@@ -233,7 +215,7 @@ export function JobsPage() {
         <div>
           <div className="eyebrow"><span className="eyebrow-dot" aria-hidden="true" />岗位池</div>
           <h1>先看真实岗位，再决定下一步。</h1>
-          <p>岗位来自已确认的公开招聘源。搜索、筛选和收藏会与账号同步。</p>
+          <p>岗位来自已整理的招聘渠道。搜索、筛选和收藏会与账号同步。</p>
         </div>
         <div className="intro-note" aria-label="岗位池说明">
           <Briefcase size={20} />
@@ -244,34 +226,41 @@ export function JobsPage() {
       <section className="jobs-toolbar" aria-label="岗位池状态">
         <div className="toolbar-copy"><span className="toolbar-label">当前视图</span><strong>{jobs ? `共 ${jobs.total} 个匹配岗位` : "正在读取岗位"}</strong></div>
         <div className="toolbar-meta">
-          {filters ? `公开访问每页最多 ${filters.limits.public_page_size_max} 个岗位` : "正在读取筛选配置"}
+          <span>岗位池持续更新</span>
           <span className="toolbar-divider" aria-hidden="true" />
           <span>{status === "authenticated" ? "收藏状态已同步" : "登录后可搜索、筛选和收藏"}</span>
         </div>
       </section>
 
       <form className="job-filters" onSubmit={applyFilters} aria-label="搜索和筛选岗位">
-        <label className="search-field field-group">
-          <span>搜索岗位或公司</span>
-          <span className="search-input-wrap">
-            <MagnifyingGlass size={18} aria-hidden="true" />
-            <input value={draft.q} onChange={(event) => updateDraft("q", event.target.value)} placeholder="搜索岗位、公司或关键词，例如：Python、数据平台" />
-          </span>
-        </label>
+        <div className="job-search-row">
+          <label className="search-field field-group">
+            <span>搜索岗位或公司</span>
+            <span className="search-input-wrap">
+              <MagnifyingGlass size={18} aria-hidden="true" />
+              <input value={draft.q} onChange={(event) => updateDraft("q", event.target.value)} placeholder="搜索岗位、公司或关键词，例如：Python、数据平台" />
+            </span>
+          </label>
+          <div className="job-search-actions">
+            {hasFilters && <button className="button button-secondary" type="button" onClick={clearFilters}><X size={16} />清除筛选</button>}
+            <button className="button button-primary" type="submit"><Funnel size={17} />应用筛选</button>
+          </div>
+        </div>
         <div className="filter-grid">
           <div className="field-group jobs-city-filter"><span>城市</span><CityPicker label="城市" values={draft.city} onChange={(value) => updateDraft("city", value)} /></div>
           <FilterDropdown id="job-filter-recruitment-type" label="招聘类型" value={draft.recruitmentType} options={filters?.recruitment_types ?? []} disabled={!filters} onChange={(value) => updateDraft("recruitmentType", value)} />
           <FilterDropdown id="job-filter-education" label="学历" value={draft.education} options={filters?.educations ?? []} disabled={!filters} onChange={(value) => updateDraft("education", value)} />
           <FilterDropdown id="job-filter-company-nature" label="公司性质" value={draft.companyNature} options={filters?.company_natures ?? []} disabled={!filters} onChange={(value) => updateDraft("companyNature", value)} />
-          <FilterDropdown id="job-filter-source" label="来源" value={draft.sourcePlatform} options={filters?.sources.map((source) => source.platform) ?? []} disabled={!filters} onChange={(value) => updateDraft("sourcePlatform", value)} />
+          <SelectField label="发布日期" value={draft.publishedDate} options={[
+            ["", "不限"],
+            ["3", "最近 3 天"],
+            ["7", "最近 7 天"],
+            ["30", "最近 30 天"],
+            ["unknown", "发布日期未注明"],
+          ]} onChange={(value) => updateDraft("publishedDate", value)} />
           <FilterDropdown id="job-filter-graduation-year" label="届次" value={draft.graduationYear} options={(filters?.graduation_years ?? []).map(String)} disabled={!filters} onChange={(value) => updateDraft("graduationYear", value)} />
           <label className="field-group"><span>最低薪资</span><input type="number" min="0" inputMode="numeric" value={draft.salaryMin} onChange={(event) => updateDraft("salaryMin", event.target.value)} placeholder="元/月" /></label>
           <label className="field-group"><span>最高薪资</span><input type="number" min="0" inputMode="numeric" value={draft.salaryMax} onChange={(event) => updateDraft("salaryMax", event.target.value)} placeholder="元/月" /></label>
-        </div>
-        <div className="filter-actions">
-          <label className="page-size-field"><span>每页显示</span><select aria-label="每页显示岗位数" value={draft.pageSize} onChange={(event) => updateDraft("pageSize", event.target.value)}><option value="6">6</option><option value="12">12</option><option value="30">30</option>{status === "authenticated" && <><option value="50">50</option><option value="100">100</option></>}</select></label>
-          {hasFilters && <button className="button button-secondary" type="button" onClick={clearFilters}><X size={16} />清除筛选</button>}
-          <button className="button button-primary" type="submit"><Funnel size={17} />应用筛选</button>
         </div>
       </form>
 
@@ -291,6 +280,10 @@ export function JobsPage() {
       )}
     </div>
   );
+}
+
+function SelectField({ label, value, options, onChange }: { label: string; value: string; options: ReadonlyArray<readonly [string, string]>; onChange: (value: string) => void }) {
+  return <label className="field-group"><span>{label}</span><span className="select-control-wrap"><select value={value} onChange={(event) => onChange(event.target.value)}>{options.map(([option, optionLabel]) => <option key={option} value={option}>{optionLabel}</option>)}</select><CaretDown className="select-control-arrow" size={16} aria-hidden="true" /></span></label>;
 }
 
 function FilterDropdown({ id, label, value, options, labels, disabled = false, onChange }: { id: string; label: string; value: string[]; options: string[]; labels?: Record<string, string>; disabled?: boolean; onChange: (value: string[]) => void }) {
@@ -344,7 +337,7 @@ function JobCard({ job, isSaving, onToggleSaved }: { job: JobListItem; isSaving:
     <article className="job-card">
       <div className="job-card-topline">
         <span className="source-chip">{job.source.name}</span>
-        <button className="save-button" type="button" aria-label={job.is_saved ? `取消收藏 ${job.title}` : `收藏 ${job.title}`} aria-pressed={job.is_saved === true} disabled={isSaving} onClick={onToggleSaved}>
+        <button className={`save-button ${job.is_saved ? "is-saved" : ""}`} type="button" aria-label={job.is_saved ? `取消收藏 ${job.title}` : `收藏 ${job.title}`} aria-pressed={job.is_saved === true} disabled={isSaving} onClick={onToggleSaved}>
           <BookmarkSimple size={19} weight={job.is_saved ? "fill" : "regular"} />
         </button>
       </div>
@@ -357,7 +350,7 @@ function JobCard({ job, isSaving, onToggleSaved }: { job: JobListItem; isSaving:
           {job.education_requirement && <span>{job.education_requirement}</span>}
         </div>
         <p className="job-preview">{job.description_preview ?? "岗位描述待确认。"}</p>
-        <div className="job-card-footer"><span>{formatSalaryRange(job.salary_min, job.salary_max, job.salary_months)}</span><span className="job-date">{formatDate(job.last_confirmed_at)} 更新</span></div>
+        <div className="job-card-footer"><span>{formatSalaryRange(job.salary_min, job.salary_max, job.salary_months)}</span><span className="job-date">{job.published_at ? `发布 ${formatDate(job.published_at)}` : "发布日期未注明"}</span></div>
       </Link>
     </article>
   );

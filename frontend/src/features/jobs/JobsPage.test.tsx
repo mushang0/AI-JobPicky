@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { JobsPage } from "./JobsPage";
 import { jobsApi } from "../../shared/api/jobs";
@@ -63,7 +63,7 @@ describe("JobsPage", () => {
     expect(screen.getByRole("option", { name: "杭州" })).toBeInTheDocument();
   });
 
-  it("expands a platform selection to all backend source ids", async () => {
+  it("keeps the published date control consistent and hides low-value filters", async () => {
     mockedJobsApi.list.mockResolvedValue({ items: [], total: 0, page: 1, page_size: 30, pool_total: 0 });
     mockedJobsApi.filterOptions.mockResolvedValue({
       cities: [],
@@ -81,11 +81,11 @@ describe("JobsPage", () => {
       </MemoryRouter>,
     );
 
-    fireEvent.click(await screen.findByRole("button", { name: "来源" }));
-    fireEvent.click(screen.getByRole("option", { name: "北森" }));
-    fireEvent.click(screen.getByRole("button", { name: "完成" }));
-    fireEvent.click(screen.getByRole("button", { name: "应用筛选" }));
-
-    await waitFor(() => expect(mockedJobsApi.list).toHaveBeenLastCalledWith(expect.objectContaining({ source_id: ["beisen-a", "beisen-b"] })));
+    const publishedDate = await screen.findByRole("combobox", { name: "发布日期" });
+    expect(publishedDate.parentElement).toHaveClass("select-control-wrap");
+    expect(screen.queryByText("更多筛选")).not.toBeInTheDocument();
+    expect(screen.queryByText("来源")).not.toBeInTheDocument();
+    expect(screen.queryByRole("combobox", { name: "每页显示岗位数" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "应用筛选" })).toBeInTheDocument();
   });
 });

@@ -99,7 +99,11 @@ _SOURCE_DISPLAY_NAMES = {
     "GUOPIN": "国聘",
     "WECHAT": "微信公众号",
     "HOTJOB": "HotJob",
-    "PUBLIC_WEB": "公开网页",
+    "OFFICIAL_WEBSITE": "企业官网",
+    "OFFICIAL_WEB": "企业官网",
+    "PUBLIC_WEB": "公开招聘公告",
+    "PUBLIC_RECRUITMENT": "公开招聘公告",
+    "PUBLIC_ANNOUNCEMENT": "公开招聘公告",
 }
 
 
@@ -192,8 +196,11 @@ def _source_display_name(source_id: str, items: Sequence[CollectedJob]) -> str:
     }
     if len(known) == 1:
         return next(iter(known))
-    companies = {item.company_name.strip() for item in items if item.company_name.strip()}
-    return next(iter(companies)) if len(companies) == 1 else source_id
+    source_key = source_id.strip().upper()
+    for platform, display_name in _SOURCE_DISPLAY_NAMES.items():
+        if platform in source_key:
+            return display_name
+    return "公开招聘公告"
 
 
 def _job_values(

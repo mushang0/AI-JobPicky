@@ -36,6 +36,7 @@ def test_evaluation_prompt_and_schemas_are_external_resources() -> None:
     assert "assessments" in prompt
     assert input_schema["required"] == ["profile", "candidates"]
     assert set(output_schema["properties"]) == {"assessments"}
+    assert "retrieval_score" not in prompt
 
 
 class FakeChat:
@@ -80,6 +81,89 @@ def test_evaluator_accepts_only_strict_assessment_json() -> None:
         system_message = cast(list[tuple[str, str]], chat.messages[0])[0][1]
         assert "{{INPUT_SCHEMA}}" not in system_message
         assert "target_locations" in system_message
+
+    asyncio.run(check())
+
+
+def test_evaluator_rejects_objective_constraint_conflicts() -> None:
+    async def check() -> None:
+        chat = FakeChat(
+            {
+                "assessments": [
+                    {
+                        "job_id": "job-1",
+                        "matched": True,
+                        "match_score": 88,
+                        "reason": "相关经验充分",
+                        "matched_strengths": ["Python"],
+                        "gaps": [],
+                        "constraint_conclusions": {"education": "NOT_SATISFIED"},
+                    }
+                ]
+            }
+        )
+        with pytest.raises(ApplicationError) as error:
+            await DashScopeJobEvaluator(chat_model=chat).evaluate(
+                make_profile(), [make_job()], [_candidate()]
+            )
+        assert error.value.code == str(ErrorCode.RECOMMENDATION_FAILED)
+
+    asyncio.run(check())
+
+
+def test_evaluator_retries_invalid_output_with_validation_feedback() -> None:
+    class RepairChat:
+        def __init__(self) -> None:
+            self.calls = 0
+            self.messages: list[object] = []
+
+        async def ainvoke(self, messages: object) -> object:
+            self.calls += 1
+            self.messages.append(messages)
+            if self.calls == 1:
+                return {
+                    "assessments": [
+                        {
+                            "job_id": "job-1",
+                            "matched": True,
+                            "match_score": 88,
+                            "reason": "相关经验充分",
+                            "matched_strengths": ["Python"],
+                            "gaps": [],
+                            "evidence_details": [
+                                {
+                                    "requirement": "Python",
+                                    "candidate_evidence": "Python 项目经验",
+                                    "alignment": "NOT_SATISFIED",
+                                    "importance": "CORE",
+                                    "explanation": "字段枚举错误",
+                                }
+                            ],
+                        }
+                    ]
+                }
+            return {
+                "assessments": [
+                    {
+                        "job_id": "job-1",
+                        "matched": True,
+                        "match_score": 88,
+                        "reason": "相关经验充分",
+                        "matched_strengths": ["Python"],
+                        "gaps": [],
+                    }
+                ]
+            }
+
+    async def check() -> None:
+        chat = RepairChat()
+        result = await DashScopeJobEvaluator(chat_model=chat).evaluate(
+            make_profile(), [make_job()], [_candidate()]
+        )
+        assert result[0].matched is True
+        assert chat.calls == 2
+        repair_message = cast(list[tuple[str, str]], chat.messages[1])[-1][1]
+        assert "alignment" in repair_message
 
     asyncio.run(check())
 

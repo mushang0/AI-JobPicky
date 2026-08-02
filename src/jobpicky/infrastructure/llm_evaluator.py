@@ -9,6 +9,7 @@ from pydantic import BaseModel, ValidationError
 
 from ..contracts import (
     Candidate,
+    ConstraintStatus,
     ErrorCode,
     EvaluationResponse,
     JobFact,
@@ -16,8 +17,11 @@ from ..contracts import (
     ProfileSnapshot,
     validate_assessments,
 )
+from ..contracts.common import JobStatus
 from ..errors import ApplicationError
 from .evaluation_resources import load_evaluation_output_schema, load_evaluation_prompt
+
+_OUTPUT_VALIDATION_RETRIES = 1
 
 
 class DashScopeJobEvaluator:
@@ -30,7 +34,7 @@ class DashScopeJobEvaluator:
         model: str | None = None,
         api_key: str | None = None,
         base_url: str = "https://dashscope.aliyuncs.com/compatible-mode/v1",
-        timeout_seconds: float = 30.0,
+        timeout_seconds: float = 180.0,
         max_retries: int = 1,
         chat_model: Any | None = None,
     ) -> None:
@@ -61,23 +65,40 @@ class DashScopeJobEvaluator:
             candidates,
             effective_extra_request=effective_extra_request,
         )
-        raw = await self._invoke_with_retries(payload)
-        try:
-            response = EvaluationResponse.model_validate(self._extract_payload(raw))
-        except (TypeError, ValueError, ValidationError, json.JSONDecodeError) as exc:
-            raise self._evaluation_error("evaluator returned invalid structured output") from exc
-        try:
-            return validate_assessments(candidate_ids, response.assessments)
-        except ValueError as exc:
-            raise self._evaluation_error(
-                "evaluator job IDs did not match the candidate batch"
-            ) from exc
+        repair_hint: str | None = None
+        for attempt in range(_OUTPUT_VALIDATION_RETRIES + 1):
+            raw = await self._invoke_with_retries(payload, repair_hint=repair_hint)
+            try:
+                response = EvaluationResponse.model_validate(self._extract_payload(raw))
+                assessments = validate_assessments(candidate_ids, response.assessments)
+                _validate_constraint_conclusions(payload, assessments)
+                return assessments
+            except (TypeError, ValueError, ValidationError, json.JSONDecodeError) as exc:
+                if attempt == _OUTPUT_VALIDATION_RETRIES:
+                    raise self._evaluation_error(
+                        "evaluator output did not match the required structure or candidate facts"
+                    ) from exc
+                repair_hint = _format_validation_error(exc)
+        raise AssertionError("unreachable")
 
-    async def _invoke_with_retries(self, payload: dict[str, Any]) -> Any:
+    async def _invoke_with_retries(
+        self,
+        payload: dict[str, Any],
+        *,
+        repair_hint: str | None = None,
+    ) -> Any:
         messages = [
             ("system", load_evaluation_prompt()),
             ("human", json.dumps(payload, ensure_ascii=False, separators=(",", ":"))),
         ]
+        if repair_hint:
+            messages.append(
+                (
+                    "human",
+                    "上一次输出未通过本地结构校验。请只输出修正后的完整 JSON，不要解释。"
+                    f"校验提示：{repair_hint}",
+                )
+            )
         model = self._get_chat_model()
         attempts = self._max_retries + 1
         for attempt in range(attempts):
@@ -151,10 +172,7 @@ class DashScopeJobEvaluator:
             candidate_payload.append(
                 {
                     "job_id": candidate.job_id,
-                    "retrieval_score": candidate.retrieval_score,
-                    "keyword_score": candidate.keyword_score,
-                    "semantic_score": candidate.semantic_score,
-                    "sources": [str(source) for source in candidate.sources],
+                    "constraint_checks": _constraint_checks(profile, job),
                     "job": {
                         "id": job.id,
                         "company_name": job.company_name,
@@ -167,6 +185,7 @@ class DashScopeJobEvaluator:
                         "salary_max": job.salary_max,
                         "salary_months": job.salary_months,
                         "graduation_years": job.graduation_years,
+                        "status": job.status,
                     },
                 }
             )
@@ -257,6 +276,164 @@ def _is_retryable_provider_error(exc: Exception) -> bool:
         return status == 429 or 500 <= status <= 599
     text = str(exc).lower()
     return "timeout" in text or "429" in text or any(f"{code}" in text for code in range(500, 600))
+
+
+def _format_validation_error(exc: Exception) -> str:
+    return " ".join(str(exc).split())[:1200]
+
+
+_EDUCATION_LEVELS = {
+    "专科": 1,
+    "大专": 1,
+    "本科": 2,
+    "学士": 2,
+    "硕士": 3,
+    "研究生": 3,
+    "博士": 4,
+}
+
+
+def _education_level(value: str | None) -> int | None:
+    if not value:
+        return None
+    return max(
+        (level for keyword, level in _EDUCATION_LEVELS.items() if keyword in value),
+        default=None,
+    )
+
+
+def _constraint(
+    status: ConstraintStatus,
+    candidate_value: object,
+    job_value: object,
+) -> dict[str, object]:
+    return {
+        "status": status,
+        "candidate_value": candidate_value,
+        "job_value": job_value,
+    }
+
+
+def _constraint_checks(profile: ProfileSnapshot, job: JobFact) -> dict[str, dict[str, object]]:
+    location_status = ConstraintStatus.UNKNOWN
+    if profile.target_locations and job.locations:
+        location_status = (
+            ConstraintStatus.SATISFIED
+            if set(profile.target_locations) & set(job.locations)
+            else ConstraintStatus.NOT_SATISFIED
+        )
+
+    recruitment_status = ConstraintStatus.UNKNOWN
+    if profile.recruitment_types and job.recruitment_type is not None:
+        recruitment_status = (
+            ConstraintStatus.SATISFIED
+            if job.recruitment_type in profile.recruitment_types
+            else ConstraintStatus.NOT_SATISFIED
+        )
+
+    education_status = ConstraintStatus.UNKNOWN
+    candidate_education_level = _education_level(profile.education)
+    required_education_level = _education_level(job.education_requirement)
+    if candidate_education_level is not None and required_education_level is not None:
+        education_status = (
+            ConstraintStatus.SATISFIED
+            if required_education_level <= candidate_education_level
+            else ConstraintStatus.NOT_SATISFIED
+        )
+
+    graduation_status = ConstraintStatus.UNKNOWN
+    if profile.graduation_year is not None and job.graduation_years:
+        graduation_status = (
+            ConstraintStatus.SATISFIED
+            if profile.graduation_year in job.graduation_years
+            else ConstraintStatus.NOT_SATISFIED
+        )
+
+    salary_status = ConstraintStatus.UNKNOWN
+    if profile.expected_salary_min is not None and job.salary_max is not None:
+        salary_status = (
+            ConstraintStatus.SATISFIED
+            if job.salary_max >= profile.expected_salary_min
+            else ConstraintStatus.NOT_SATISFIED
+        )
+
+    excluded_role_status = ConstraintStatus.SATISFIED
+    if any(role.casefold() in job.title.casefold() for role in profile.excluded_roles):
+        excluded_role_status = ConstraintStatus.NOT_SATISFIED
+
+    return {
+        "location": _constraint(
+            location_status,
+            profile.target_locations,
+            job.locations,
+        ),
+        "recruitment_type": _constraint(
+            recruitment_status,
+            profile.recruitment_types,
+            job.recruitment_type,
+        ),
+        "education": _constraint(
+            education_status,
+            profile.education,
+            job.education_requirement,
+        ),
+        "graduation_year": _constraint(
+            graduation_status,
+            profile.graduation_year,
+            job.graduation_years,
+        ),
+        "salary": _constraint(
+            salary_status,
+            profile.expected_salary_min,
+            job.salary_max,
+        ),
+        "excluded_role": _constraint(
+            excluded_role_status,
+            profile.excluded_roles,
+            job.title,
+        ),
+        "status": _constraint(
+            ConstraintStatus.SATISFIED
+            if job.status == JobStatus.OPEN
+            else ConstraintStatus.NOT_SATISFIED,
+            JobStatus.OPEN,
+            job.status,
+        ),
+    }
+
+
+def _validate_constraint_conclusions(
+    payload: dict[str, Any],
+    assessments: Sequence[MatchAssessment],
+) -> None:
+    checks_by_job = {
+        str(candidate["job_id"]): candidate.get("constraint_checks", {})
+        for candidate in payload.get("candidates", [])
+    }
+    for assessment in assessments:
+        checks = checks_by_job.get(assessment.job_id)
+        if not isinstance(checks, dict):
+            continue
+        for name, conclusion in assessment.constraint_conclusions.items():
+            check = checks.get(name)
+            if not isinstance(check, dict) or "status" not in check:
+                raise ValueError(f"unknown objective constraint: {name}")
+            fact_status = ConstraintStatus(str(check["status"]))
+            if (
+                (
+                    fact_status == ConstraintStatus.SATISFIED
+                    and conclusion == ConstraintStatus.NOT_SATISFIED
+                )
+                or (
+                    fact_status == ConstraintStatus.NOT_SATISFIED
+                    and conclusion == ConstraintStatus.SATISFIED
+                )
+                or (
+                    fact_status == ConstraintStatus.UNKNOWN
+                    and conclusion == ConstraintStatus.NOT_SATISFIED
+                )
+            ):
+                raise ValueError(f"objective constraint conflicts with job facts: {name}")
 
 
 __all__ = ["DashScopeJobEvaluator"]

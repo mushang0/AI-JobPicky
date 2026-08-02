@@ -102,6 +102,8 @@ export interface JobQuery {
   graduation_year?: number[];
   salary_min?: number | null;
   salary_max?: number | null;
+  published_within_days?: number | null;
+  published_at_unknown?: boolean;
 }
 
 export interface AuthUserView {
@@ -170,8 +172,17 @@ export interface RecommendationCardView {
   recommended_at: IsoDate;
   job: Pick<
     JobListItem,
-    "id" | "title" | "company_name" | "company_nature" | "locations"
-  > & { first_seen_at: IsoDate };
+    | "id"
+    | "title"
+    | "company_name"
+    | "company_nature"
+    | "locations"
+    | "published_at"
+  > & {
+    status: "OPEN" | "CLOSED" | "UNKNOWN";
+    deadline_at: IsoDate | null;
+    first_seen_at: IsoDate;
+  };
   assessment: {
     match_score: number;
     reason: string;

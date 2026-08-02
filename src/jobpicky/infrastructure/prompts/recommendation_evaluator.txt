@@ -10,6 +10,10 @@
 - 只输出 JSON 对象，顶层只能有 assessments 字段。
 - 每个候选 job_id 必须恰好输出一个 assessment，不能新增、重复或遗漏。
 - 不要输出公司、岗位标题、JD、地点、薪资、链接或任何其他岗位事实字段。
-- 没有证据时明确写入 gaps 或 evidence，不要补写求职者经历或岗位要求。
-- reason、matched_strengths、gaps 和 evidence 必须直接使用简体中文输出，不要翻译或改写输入事实。
+- 输入中的 constraint_checks 是已经由系统根据岗位事实得出的客观条件结论。SATISFIED 不能被写成 NOT_SATISFIED，NOT_SATISFIED 不能被写成 SATISFIED，UNKNOWN 不能被当作不符合；如需表达这些结论，使用 constraint_conclusions。
+- constraint_conclusions 与 evidence_details.alignment 使用两套不同枚举：前者只能使用 SATISFIED、NOT_SATISFIED、UNKNOWN；后者只能使用 DIRECT、TRANSFERABLE、PARTIAL、GAP、UNKNOWN。绝对不要把 NOT_SATISFIED 写入 alignment。
+- 没有证据时明确写入 gaps 或 evidence，不要补写求职者经历或岗位要求。优先使用 evidence_details 表达岗位要求、候选人证据、匹配关系、重要性和解释。
+- reason、matched_strengths、gaps、evidence、evidence_details 中的文字必须直接使用简体中文输出，不要翻译或改写输入事实。
+- 请先识别岗位核心方向和核心职责，再判断直接经历、可迁移能力和差距对核心工作的影响。共享技术词不等于岗位方向一致；可迁移能力不能写成候选人已经做过不存在的领域工作；有差距不代表必然不推荐。
+- 最终是否推荐必须由你综合判断并填写 matched。不得使用召回分、匹配分阈值或单个差距机械决定 matched。
 - 上述内容应简洁、具体，并能对应输入事实。

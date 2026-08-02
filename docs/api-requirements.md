@@ -97,6 +97,8 @@ API-001 的响应语义。
 | `graduation_year` | `list[int]` | `[]` | 是 | 届次多选 |
 | `salary_min` | `int \| null` | `null` | 是 | 用户选择的薪资区间下限，单位为元/月 |
 | `salary_max` | `int \| null` | `null` | 是 | 用户选择的薪资区间上限，单位为元/月 |
+| `published_within_days` | `int \| null` | `null` | 是 | 只保留最近指定天数内有发布日期的岗位，例如 `3`、`7`、`30` |
+| `published_at_unknown` | `bool` | `false` | 是 | 只保留没有发布日期的岗位；不能与 `published_within_days` 同时使用 |
 
 列表参数使用重复查询参数传递，不使用逗号拼接：
 
@@ -120,6 +122,8 @@ GET /api/v1/jobs?page=1&page_size=30&city=上海&city=北京&company_nature=民�
 - 字段未知时默认保留岗位；只有字段已知且能够确认不匹配时才排除。
 - 薪资筛选同样遵循“未知保留”：只有已知薪资信息能够证明岗位区间与查询区间不相交时才排除。
 - `salary_min` 和 `salary_max` 同时存在时，`salary_min` 不得大于 `salary_max`。
+- `published_within_days` 只按岗位事实的 `published_at` 计算，不使用 `first_seen_at`；没有发布日期的岗位不进入该范围。
+- `published_at_unknown=true` 只返回 `published_at=null` 的岗位，不为缺失日期猜造时间。
 
 筛选值使用 §32 的统一规范化语义；前端通过 API-020 获得可用选项，不自行维护另一套字典。
 
@@ -262,15 +266,18 @@ GET /api/v1/jobs?page=1&page_size=30&city=上海&city=北京&company_nature=民�
 | `assessment.matched_strengths` | 匹配优势 |
 | `assessment.gaps` | 能力缺口 |
 | `assessment.evidence` | 匹配依据 |
-| `recommended_at` | 推荐时间 |
-| `job.first_seen_at` | 岗位发现时间 |
+| `job.published_at` | 岗位发布日期（已知时） |
+| `job.deadline_at` | 投递截止日期（已知时） |
+| `job.status` | 当前岗位状态 |
 
 展示规则：
 
 - 不显示原始英文字段名。
 - 公司性质为空时隐藏该项。
 - 匹配优势、能力缺口或匹配依据为空时隐藏对应区域。
-- 卡片不展示岗位薪资、学历、届次、完整 JD、来源标识或内部检索分。
+- 卡片不展示岗位薪资、学历、届次、完整 JD、来源标识或内部检索分；推荐时间和 `first_seen_at` 作为兼容字段保留，
+  但不作为卡片主信息。
+- 有未来截止日期时展示截止日期；没有截止日期时显示“建议尽快投递”；已截止或当前关闭时显示相应状态并停止引导投递。
 - 卡片提供收藏、点赞、点踩和删除推荐四个操作。
 - 点击卡片通过 API-011 打开统一岗位详情；岗位池、推荐和收藏列表不创建平行的岗位详情接口。
 
@@ -287,6 +294,9 @@ GET /api/v1/jobs?page=1&page_size=30&city=上海&city=北京&company_nature=民�
     "company_name": "示例科技",
     "company_nature": "民营企业",
     "locations": ["上海"],
+    "status": "OPEN",
+    "published_at": "2026-07-30T08:00:00Z",
+    "deadline_at": "2026-08-31T15:59:59Z",
     "first_seen_at": "2026-07-20T08:00:00Z"
   },
   "assessment": {
@@ -316,7 +326,7 @@ GET /api/v1/user/recommendations
 |---|---|---:|---|
 | `page` | `int` | `1` | 从 1 开始的页码 |
 | `page_size` | `int` | `10` | 用户可调整，最大 50 |
-| `sort` | `str` | `recommended_at_desc` | 排序方式 |
+| `sort` | `str` | `match_score_desc` | 排序方式 |
 
 `sort` 只接受：
 
@@ -327,7 +337,7 @@ match_score_desc
 
 - `recommended_at_desc`：最新推荐优先。
 - `match_score_desc`：AI 匹配度最高优先。
-- 排序值相同时使用 `recommendation_id ASC` 保证分页稳定。
+- 两种排序在排序值相同时都使用 `recommendation_id ASC` 保证分页稳定。
 
 响应使用统一分页外形，`items` 为 §3.4 的推荐卡片视图：
 
@@ -451,6 +461,7 @@ GET /api/v1/user/recommendation-runs/{run_id}
 - 只有成功完成的任务显示 100。
 - 失败任务停留在失败前的实际进度，同时显示中文失败原因。
 - 不返回虚假的预计剩余时间。
+- 前端可以把真实进度做平滑视觉过渡，但不得提前显示完成、伪造逐岗事件或把轮询频率作为普通用户文案。
 
 ## 8. API-006 单次推荐结果
 

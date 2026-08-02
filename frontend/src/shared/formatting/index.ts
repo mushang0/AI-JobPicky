@@ -10,6 +10,21 @@ export function formatDate(value: string | null): string {
   }).format(date);
 }
 
+export function formatPublishedDate(value: string | null): string {
+  return value ? `发布于 ${formatDate(value)}` : "发布日期未注明";
+}
+
+export function formatRecommendationDeadline(
+  deadline: string | null,
+  status: "OPEN" | "CLOSED" | "UNKNOWN",
+): string {
+  if (status === "CLOSED") return "已截止";
+  if (!deadline) return "建议尽快投递";
+  const timestamp = new Date(deadline).getTime();
+  if (!Number.isFinite(timestamp) || timestamp <= Date.now()) return "已截止";
+  return `截止 ${formatDate(deadline)}`;
+}
+
 export function formatSalaryRange(
   min: number | null,
   max: number | null,
@@ -36,11 +51,11 @@ export function formatJobStatus(status: "OPEN" | "CLOSED" | "UNKNOWN"): string {
 export function formatRecommendationStep(step: "PENDING" | "PROFILE" | "FILTER" | "RETRIEVE" | "EVALUATE" | "SAVE" | "COMPLETE" | null): string {
   return {
     PENDING: "等待开始",
-    PROFILE: "读取用户画像",
-    FILTER: "筛选符合条件的岗位",
-    RETRIEVE: "召回候选岗位",
-    EVALUATE: "AI 正在评估岗位",
-    SAVE: "保存推荐结果",
+    PROFILE: "正在理解你的求职方向",
+    FILTER: "正在排除不符合要求的岗位",
+    RETRIEVE: "正在寻找相关岗位",
+    EVALUATE: "正在比较你的经历和岗位要求",
+    SAVE: "正在整理推荐结果",
     COMPLETE: "推荐完成",
   }[step ?? "PENDING"];
 }

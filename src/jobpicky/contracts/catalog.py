@@ -120,6 +120,8 @@ class JobListQuery(ContractModel):
     graduation_year: list[int] = Field(default_factory=list, max_length=50)
     salary_min: NonNegativeInt | None = None
     salary_max: NonNegativeInt | None = None
+    published_within_days: int | None = Field(default=None, ge=1, le=3650)
+    published_at_unknown: bool = False
 
     @model_validator(mode="before")
     @classmethod
@@ -143,6 +145,8 @@ class JobListQuery(ContractModel):
             and self.salary_min > self.salary_max
         ):
             raise ValueError("salary_min must not exceed salary_max")
+        if self.published_within_days is not None and self.published_at_unknown:
+            raise ValueError("published date filters cannot be combined")
         self.q = self.q.strip() if self.q and self.q.strip() else None
         for field_name in (
             "city",

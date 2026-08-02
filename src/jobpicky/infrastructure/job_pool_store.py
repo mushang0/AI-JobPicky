@@ -9,7 +9,35 @@ from .source_store import JOB_SOURCE_TABLE
 
 
 def _source_name(row: sa.RowMapping) -> str:
-    return str(row.get("source_name") or row.source_id)
+    metadata = row.get("metadata")
+    platform = metadata.get("platform") if isinstance(metadata, dict) else None
+    normalized_platform = str(platform or "").strip().upper()
+    known_names = {
+        "MOKA": "Moka",
+        "FEISHU": "飞书招聘",
+        "FEISHU_RECRUITMENT": "飞书招聘",
+        "BEISEN": "北森",
+        "JOB_51": "前程无忧",
+        "ZHAOPIN": "智联招聘",
+        "GUOPIN": "国聘",
+        "WECHAT": "微信公众号",
+        "HOTJOB": "HotJob",
+        "OFFICIAL_WEBSITE": "企业官网",
+        "OFFICIAL_WEB": "企业官网",
+        "PUBLIC_WEB": "公开招聘公告",
+        "PUBLIC_RECRUITMENT": "公开招聘公告",
+        "PUBLIC_ANNOUNCEMENT": "公开招聘公告",
+    }
+    if normalized_platform in known_names:
+        return known_names[normalized_platform]
+    source_key = str(row.source_id).strip().upper()
+    for platform, display_name in known_names.items():
+        if platform in source_key:
+            return display_name
+    stored_name = str(row.get("source_name") or "").strip()
+    if stored_name in known_names.values():
+        return stored_name
+    return "公开招聘公告"
 
 
 def row_to_source_view(row: sa.RowMapping) -> JobSourceView:

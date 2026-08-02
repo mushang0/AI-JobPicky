@@ -11,6 +11,7 @@ from ..contracts import (
     ErrorCode,
     Feedback,
     JobFact,
+    JobStatus,
     MatchAssessment,
     RecommendationRunInput,
     RecommendationSort,
@@ -26,6 +27,7 @@ from ..orchestration.store import (
     RunRecord,
 )
 from .credit_store import CREDIT_ACCOUNT_TABLE, PostgresCreditStore
+from .job_catalog import JOB_TABLE
 from .saved_job_store import SAVED_JOB_TABLE
 
 RUN_TABLE = sa.table(
@@ -354,6 +356,9 @@ class PostgresRecommendationStore:
         page_size: int,
     ) -> tuple[list[RecommendationProjection], int]:
         join = RECOMMENDATION_TABLE.outerjoin(
+            JOB_TABLE,
+            JOB_TABLE.c.id == RECOMMENDATION_TABLE.c.job_id,
+        ).outerjoin(
             SAVED_JOB_TABLE,
             sa.and_(
                 SAVED_JOB_TABLE.c.job_id == RECOMMENDATION_TABLE.c.job_id,
@@ -367,6 +372,9 @@ class PostgresRecommendationStore:
             result = await session.execute(
                 sa.select(
                     RECOMMENDATION_TABLE,
+                    JOB_TABLE.c.status.label("current_job_status"),
+                    JOB_TABLE.c.published_at.label("current_published_at"),
+                    JOB_TABLE.c.deadline_at.label("current_deadline_at"),
                     SAVED_JOB_TABLE.c.job_id.is_not(None).label("is_saved"),
                 )
                 .select_from(join)
@@ -379,6 +387,13 @@ class PostgresRecommendationStore:
                 RecommendationProjection(
                     record=_row_to_recommendation(row),
                     is_saved=bool(row.is_saved),
+                    current_job_status=(
+                        JobStatus(row.current_job_status)
+                        if row.current_job_status is not None
+                        else None
+                    ),
+                    current_published_at=row.current_published_at,
+                    current_deadline_at=row.current_deadline_at,
                 )
                 for row in result.mappings()
             ]

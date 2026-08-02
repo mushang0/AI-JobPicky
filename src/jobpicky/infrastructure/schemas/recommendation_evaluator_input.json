@@ -41,18 +41,24 @@
         "additionalProperties": false,
         "required": [
           "job_id",
-          "retrieval_score",
-          "keyword_score",
-          "semantic_score",
-          "sources",
+          "constraint_checks",
           "job"
         ],
         "properties": {
           "job_id": {"type": "string", "minLength": 1},
-          "retrieval_score": {"type": "number", "minimum": 0, "maximum": 1},
-          "keyword_score": {"type": ["number", "null"], "minimum": 0, "maximum": 1},
-          "semantic_score": {"type": ["number", "null"], "minimum": 0, "maximum": 1},
-          "sources": {"type": "array", "items": {"type": "string", "minLength": 1}},
+          "constraint_checks": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["status", "candidate_value", "job_value"],
+              "properties": {
+                "status": {"enum": ["SATISFIED", "NOT_SATISFIED", "UNKNOWN"]},
+                "candidate_value": {},
+                "job_value": {}
+              }
+            }
+          },
           "job": {
             "type": "object",
             "additionalProperties": false,
@@ -80,7 +86,8 @@
               "salary_min": {"type": ["integer", "null"], "minimum": 0},
               "salary_max": {"type": ["integer", "null"], "minimum": 0},
               "salary_months": {"type": ["integer", "null"], "minimum": 1},
-              "graduation_years": {"type": "array", "items": {"type": "integer"}}
+              "graduation_years": {"type": "array", "items": {"type": "integer"}},
+              "status": {"type": "string"}
             }
           }
         }

@@ -26,6 +26,10 @@ export function buildJobsQuery(query: JobQuery = {}): string {
   if (query.salary_max !== undefined && query.salary_max !== null) {
     params.set("salary_max", String(query.salary_max));
   }
+  if (query.published_within_days !== undefined && query.published_within_days !== null) {
+    params.set("published_within_days", String(query.published_within_days));
+  }
+  if (query.published_at_unknown) params.set("published_at_unknown", "true");
 
   return params.toString();
 }

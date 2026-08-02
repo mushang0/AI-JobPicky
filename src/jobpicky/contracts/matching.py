@@ -1,11 +1,20 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+from enum import StrEnum
 
 from pydantic import Field, model_validator
 
 from .catalog import JobFact, RetrievalChannel
-from .common import AwareDatetime, ContractModel, Feedback, MatchScore, NonEmptyStr, NormalizedScore
+from .common import (
+    AwareDatetime,
+    ContractModel,
+    Feedback,
+    JobStatus,
+    MatchScore,
+    NonEmptyStr,
+    NormalizedScore,
+)
 
 
 class Candidate(ContractModel):
@@ -16,6 +25,34 @@ class Candidate(ContractModel):
     sources: list[RetrievalChannel] = Field(min_length=1)
 
 
+class ConstraintStatus(StrEnum):
+    SATISFIED = "SATISFIED"
+    NOT_SATISFIED = "NOT_SATISFIED"
+    UNKNOWN = "UNKNOWN"
+
+
+class EvidenceAlignment(StrEnum):
+    DIRECT = "DIRECT"
+    TRANSFERABLE = "TRANSFERABLE"
+    PARTIAL = "PARTIAL"
+    GAP = "GAP"
+    UNKNOWN = "UNKNOWN"
+
+
+class EvidenceImportance(StrEnum):
+    CORE = "CORE"
+    PREFERRED = "PREFERRED"
+    OPTIONAL = "OPTIONAL"
+
+
+class MatchEvidence(ContractModel):
+    requirement: NonEmptyStr
+    candidate_evidence: NonEmptyStr
+    alignment: EvidenceAlignment
+    importance: EvidenceImportance
+    explanation: NonEmptyStr
+
+
 class MatchAssessment(ContractModel):
     job_id: NonEmptyStr
     matched: bool
@@ -24,6 +61,8 @@ class MatchAssessment(ContractModel):
     matched_strengths: list[NonEmptyStr]
     gaps: list[NonEmptyStr]
     evidence: list[NonEmptyStr] = Field(default_factory=list)
+    evidence_details: list[MatchEvidence] = Field(default_factory=list)
+    constraint_conclusions: dict[str, ConstraintStatus] = Field(default_factory=dict)
 
 
 class MatchAssessmentResponse(ContractModel):
@@ -72,6 +111,9 @@ class RecommendationJobView(ContractModel):
     company_name: NonEmptyStr
     company_nature: NonEmptyStr | None = None
     locations: list[NonEmptyStr] = Field(default_factory=list)
+    status: JobStatus = JobStatus.UNKNOWN
+    published_at: AwareDatetime | None = None
+    deadline_at: AwareDatetime | None = None
     first_seen_at: AwareDatetime
 
 

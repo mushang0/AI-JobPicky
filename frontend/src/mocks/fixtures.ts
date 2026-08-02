@@ -189,6 +189,9 @@ export const recommendationFixtures: RecommendationCardView[] = [
       company_name: "澄明科技",
       company_nature: "民营企业",
       locations: ["上海"],
+      status: "OPEN",
+      published_at: "2026-07-29T08:00:00Z",
+      deadline_at: "2026-08-31T15:59:59Z",
       first_seen_at: "2026-07-20T08:00:00Z",
     },
     assessment: {

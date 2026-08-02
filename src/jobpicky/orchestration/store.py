@@ -13,6 +13,7 @@ from ..contracts import (
     CreditUsage,
     Feedback,
     JobFact,
+    JobStatus,
     MatchAssessment,
     RecommendationAssessmentView,
     RecommendationCardView,
@@ -130,6 +131,9 @@ class RecommendationRecord:
 class RecommendationProjection:
     record: RecommendationRecord
     is_saved: bool
+    current_job_status: JobStatus | None = None
+    current_published_at: datetime | None = None
+    current_deadline_at: datetime | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -161,6 +165,10 @@ def projection_to_card(projection: RecommendationProjection) -> RecommendationCa
     record = projection.record
     job = record.job_snapshot
     assessment = record.assessment
+    current_status = projection.current_job_status or job.status
+    current_published_at = projection.current_published_at or job.published_at
+    current_deadline_at = projection.current_deadline_at or job.deadline_at
+    evidence = assessment.evidence or [detail.explanation for detail in assessment.evidence_details]
     return RecommendationCardView(
         recommendation_id=record.recommendation_id,
         run_id=record.run_id,
@@ -171,6 +179,9 @@ def projection_to_card(projection: RecommendationProjection) -> RecommendationCa
             company_name=job.company_name,
             company_nature=job.company_nature,
             locations=job.locations,
+            status=current_status,
+            published_at=current_published_at,
+            deadline_at=current_deadline_at,
             first_seen_at=job.first_seen_at,
         ),
         assessment=RecommendationAssessmentView(
@@ -178,7 +189,7 @@ def projection_to_card(projection: RecommendationProjection) -> RecommendationCa
             reason=assessment.reason,
             matched_strengths=assessment.matched_strengths,
             gaps=assessment.gaps,
-            evidence=assessment.evidence,
+            evidence=evidence,
         ),
         is_saved=projection.is_saved,
         feedback=record.feedback,

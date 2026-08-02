@@ -5,6 +5,7 @@ import re
 import time
 from collections.abc import Sequence
 from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
 from typing import Protocol
 
 from ..config import Settings
@@ -224,6 +225,8 @@ class JobPoolService:
                 query.graduation_year,
                 query.salary_min is not None,
                 query.salary_max is not None,
+                query.published_within_days is not None,
+                query.published_at_unknown,
             )
         )
         if (
@@ -241,6 +244,15 @@ class JobPoolService:
 
     @staticmethod
     def _matches(job: JobFact, query: JobListQuery) -> bool:
+        if query.published_at_unknown:
+            if job.published_at is not None:
+                return False
+        elif query.published_within_days is not None:
+            if job.published_at is None:
+                return False
+            cutoff = datetime.now(UTC) - timedelta(days=query.published_within_days)
+            if job.published_at < cutoff:
+                return False
         if query.city:
             known_locations = {
                 canonical

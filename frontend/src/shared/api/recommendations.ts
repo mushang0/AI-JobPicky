@@ -30,7 +30,7 @@ export const creditsApi = {
 
 export const recommendationsApi = {
   list(query: RecommendationListQuery = {}): Promise<PageResponse<RecommendationCardView>> {
-    const search = queryString({ page: query.page ?? 1, page_size: query.page_size ?? 10, sort: query.sort ?? "recommended_at_desc" });
+    const search = queryString({ page: query.page ?? 1, page_size: query.page_size ?? 10, sort: query.sort ?? "match_score_desc" });
     return request<PageResponse<RecommendationCardView>>(`/api/v1/user/recommendations?${search}`);
   },
 

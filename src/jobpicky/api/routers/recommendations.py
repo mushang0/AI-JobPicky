@@ -40,7 +40,7 @@ async def list_recommendations(
     sort_by: Annotated[
         RecommendationSort,
         Query(alias="sort"),
-    ] = RecommendationSort.RECOMMENDED_AT_DESC,
+    ] = RecommendationSort.MATCH_SCORE_DESC,
 ) -> Page[RecommendationCardView]:
     return await service.list_recommendations(user.id, page, page_size, sort_by)
 

@@ -65,9 +65,13 @@ from .common import (
 )
 from .matching import (
     Candidate,
+    ConstraintStatus,
     EvaluationResponse,
+    EvidenceAlignment,
+    EvidenceImportance,
     MatchAssessment,
     MatchAssessmentResponse,
+    MatchEvidence,
     RecommendationAssessmentView,
     RecommendationCandidate,
     RecommendationCardView,
@@ -104,6 +108,7 @@ from .profiles import (
 
 __all__ = [
     "Candidate",
+    "ConstraintStatus",
     "COMPANY_NATURE_VALUES",
     "CollectedJob",
     "CollectionBatch",
@@ -118,6 +123,8 @@ __all__ = [
     "EducationLevel",
     "EDUCATION_VALUES",
     "EvaluationResponse",
+    "EvidenceAlignment",
+    "EvidenceImportance",
     "Feedback",
     "FilterExclusion",
     "FilterOptionsView",
@@ -143,6 +150,7 @@ __all__ = [
     "LoginResponse",
     "MatchAssessment",
     "MatchAssessmentResponse",
+    "MatchEvidence",
     "Page",
     "ProfileDraft",
     "CurrentProfileView",

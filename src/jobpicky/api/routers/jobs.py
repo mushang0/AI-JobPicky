@@ -30,6 +30,8 @@ def job_list_query(
     graduation_year: Annotated[list[int] | None, Query(max_length=50)] = None,
     salary_min: Annotated[NonNegativeInt | None, Query()] = None,
     salary_max: Annotated[NonNegativeInt | None, Query()] = None,
+    published_within_days: Annotated[int | None, Query(ge=1, le=3650)] = None,
+    published_at_unknown: Annotated[bool, Query()] = False,
 ) -> JobListQuery:
     return JobListQuery(
         page=page,
@@ -43,6 +45,8 @@ def job_list_query(
         graduation_year=graduation_year or [],
         salary_min=salary_min,
         salary_max=salary_max,
+        published_within_days=published_within_days,
+        published_at_unknown=published_at_unknown,
     )
 
 

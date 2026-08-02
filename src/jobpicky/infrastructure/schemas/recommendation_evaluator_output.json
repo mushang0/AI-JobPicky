@@ -33,6 +33,25 @@
           "evidence": {
             "type": "array",
             "items": {"type": "string", "minLength": 1}
+          },
+          "evidence_details": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["requirement", "candidate_evidence", "alignment", "importance", "explanation"],
+              "properties": {
+                "requirement": {"type": "string", "minLength": 1},
+                "candidate_evidence": {"type": "string", "minLength": 1},
+                "alignment": {"enum": ["DIRECT", "TRANSFERABLE", "PARTIAL", "GAP", "UNKNOWN"]},
+                "importance": {"enum": ["CORE", "PREFERRED", "OPTIONAL"]},
+                "explanation": {"type": "string", "minLength": 1}
+              }
+            }
+          },
+          "constraint_conclusions": {
+            "type": "object",
+            "additionalProperties": {"enum": ["SATISFIED", "NOT_SATISFIED", "UNKNOWN"]}
           }
         }
       }

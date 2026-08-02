@@ -1,16 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
-import {
-  BookmarkSimple,
-  Briefcase,
-  CheckCircle,
-  ListChecks,
-  List as Menu,
-  SignOut,
-  Sparkle,
-  UserCircle,
-  X,
-} from "@phosphor-icons/react";
+import { BookmarkSimple, Briefcase, CheckCircle, ListChecks, List as Menu, SignOut, Sparkle, UserCircle, X } from "@phosphor-icons/react";
 import { useAuth } from "../adapters/web/AuthProvider";
 import { BrandMark } from "./BrandMark";
 
@@ -79,7 +69,7 @@ export function AppShell() {
 
         <div className="sidebar-context">
           <CheckCircle size={16} weight="fill" />
-          <span>岗位事实来自公开招聘源</span>
+          <span>岗位信息持续整理中</span>
         </div>
 
         <nav id="primary-navigation" className="primary-nav" aria-label="主导航">
@@ -97,10 +87,6 @@ export function AppShell() {
           ))}
         </nav>
 
-        <div className="sidebar-footer">
-          <span className="sidebar-footer-label">当前版本</span>
-          <span className="sidebar-footer-value">前端工作台</span>
-        </div>
       </aside>
 
       <div className="workspace">

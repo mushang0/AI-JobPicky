@@ -27,7 +27,7 @@ class Settings:
     llm_model: str | None = None
     llm_base_url: str = _DEFAULT_DASHSCOPE_BASE_URL
     dashscope_api_key: str | None = None
-    llm_timeout_seconds: float = 30.0
+    llm_timeout_seconds: float = 180.0
     llm_max_retries: int = 1
     evaluation_batch_size: int = 10
     model_config_version: str = "recommendation-v1"

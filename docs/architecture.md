@@ -365,6 +365,8 @@ API View，避免把 `fact_version`、召回分或其他内部字段泄露到页
   `last_confirmed_at`、`updated_at` 等时间字段；不含 `fact_version`、去重键、Embedding 或秘密来源配置。
 - `SavedJobView` 包含 `saved_at` 与岗位列表视图，岗位状态保留以便展示已关闭或待确认岗位。
 - `JobFilterOptions` 提供当前可见岗位池的规范化城市、公司性质、来源、招聘类型、学历、届次和分页限制。
+- 岗位池的发布日期筛选使用 `JobListQuery.published_within_days` 或 `published_at_unknown`，只读取岗位事实的
+  `published_at`，不把 `first_seen_at` 当作发布日期。
 
 这些 View 不继承或替换 `JobFact`；目录内部仍以 `JobFact` 作为岗位事实唯一来源。
 
@@ -436,6 +438,8 @@ SALARY_MISMATCH
 | `matched_strengths` | `list[str]` | 是 |
 | `gaps` | `list[str]` | 是 |
 | `evidence` | `list[str]` | 否 |
+| `evidence_details` | `list[MatchEvidence]` | 否 | 岗位要求、候选人证据、匹配关系、重要性和解释 |
+| `constraint_conclusions` | `object` | 否 | 模型对客观约束的结构化结论 |
 
 `job_id` 必须来自输入候选且每批最多出现一次。评估中不得包含可覆盖 `JobFact` 的岗位字段。
 
@@ -451,7 +455,7 @@ SALARY_MISMATCH
 }
 ```
 
-完整字段分别遵循 `JobFact`、`Candidate` 和 `MatchAssessment`。三个 `job_id` 必须一致；普通结果列表只包含 `matched=true` 的项。`job` 是保存推荐结果前从岗位目录读取并与结果一同保存的事实快照，其 `fact_version` 用于追溯；当前岗位状态可另通过岗位详情接口查询。
+完整字段分别遵循 `JobFact`、`Candidate` 和 `MatchAssessment`。三个 `job_id` 必须一致；普通结果列表只包含 `matched=true` 的项。`job` 是保存推荐结果前从岗位目录读取并与结果一同保存的事实快照，其 `fact_version` 用于追溯；用户结果投影在查询时优先组合当前岗位的 `status`、`published_at` 和 `deadline_at`，岗位已不存在或字段不可用时回退快照。
 
 `RecommendationCandidate` 只作为召回到评估之间的内部中间契约；推荐运行持久化和用户结果接口使用
 `RecommendationItem`，并要求 `assessment.matched=true`。该内部 DTO 保留 `retrieval` 和完整 `JobFact`，
@@ -470,6 +474,9 @@ SALARY_MISMATCH
     "company_name": "示例科技",
     "company_nature": "民营企业",
     "locations": ["上海"],
+    "status": "OPEN",
+    "published_at": "2026-07-30T08:00:00Z",
+    "deadline_at": "2026-08-31T15:59:59Z",
     "first_seen_at": "2026-07-20T08:00:00Z"
   },
   "assessment": {"match_score": 89, "reason": "…", "matched_strengths": [], "gaps": [], "evidence": []},

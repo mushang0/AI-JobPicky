@@ -1,12 +1,13 @@
 import { useEffect, useRef, useState } from "react";
-import { ArrowLeft, ArrowRight, CheckCircle, Clock, Coins, ListChecks, Plus, Sparkle, UserCircle, WarningCircle } from "@phosphor-icons/react";
+import { ArrowLeft, ArrowRight, CaretDown, CheckCircle, Clock, Coins, ListChecks, MagnifyingGlass, Sparkle, WarningCircle } from "@phosphor-icons/react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { ApiError } from "../../shared/api/client";
 import { getApiErrorMessage } from "../../shared/api/errorMessage";
 import { createIdempotencyKey } from "../../shared/api/idempotency";
 import { jobsApi } from "../../shared/api/jobs";
+import { profileApi } from "../../shared/api/profile";
 import { creditsApi, recommendationsApi } from "../../shared/api/recommendations";
-import type { CreditSummary, RecommendationCardView, RecommendationFeedback, RecommendationResultView, RecommendationTaskView } from "../../shared/api/types";
+import type { CreditSummary, ProfileView, RecommendationCardView, RecommendationFeedback, RecommendationResultView, RecommendationTaskView } from "../../shared/api/types";
 import { formatDate, formatRecommendationStatus, formatRecommendationStep } from "../../shared/formatting";
 import { RecommendationCard } from "./RecommendationCard";
 
@@ -14,10 +15,11 @@ export function AllRecommendationsPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const [items, setItems] = useState<RecommendationCardView[]>([]);
   const [credits, setCredits] = useState<CreditSummary | null>(null);
-  const [sort, setSort] = useState<"recommended_at_desc" | "match_score_desc">((searchParams.get("sort") as "recommended_at_desc" | "match_score_desc") || "recommended_at_desc");
+  const [sort, setSort] = useState<"recommended_at_desc" | "match_score_desc">(searchParams.get("sort") === "recommended_at_desc" ? "recommended_at_desc" : "match_score_desc");
   const [page, setPage] = useState(Number(searchParams.get("page") ?? "1"));
   const [totalPages, setTotalPages] = useState(1);
-  const [state, setState] = useState<"loading" | "ready" | "empty" | "error">("loading");
+  const [activeRunId, setActiveRunId] = useState<string | null>(null);
+  const [state, setState] = useState<"loading" | "ready" | "no-profile" | "no-runs" | "running" | "no-match" | "failed" | "empty" | "error">("loading");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [creditError, setCreditError] = useState<string | null>(null);
   const [retryKey, setRetryKey] = useState(0);
@@ -26,15 +28,46 @@ export function AllRecommendationsPage() {
     let active = true;
     setState("loading");
     setCreditError(null);
-    Promise.all([recommendationsApi.list({ page, page_size: 10, sort }), creditsApi.summary().catch((error: unknown) => {
-      if (active) setCreditError(error instanceof ApiError ? getApiErrorMessage(error.code, error.message) : "积分暂时无法加载，请稍后重试。");
-      return null;
-    })]).then(([response, creditResponse]) => {
+    Promise.all([
+      recommendationsApi.list({ page, page_size: 10, sort }),
+      recommendationsApi.runs({ page: 1, page_size: 20 }),
+      profileApi.current().catch((error: unknown) => {
+        if (error instanceof ApiError && error.code === "PROFILE_NOT_FOUND") return null;
+        throw error;
+      }),
+      creditsApi.summary().catch((error: unknown) => {
+        if (active) setCreditError(error instanceof ApiError ? getApiErrorMessage(error.code, error.message) : "积分暂时无法加载，请稍后重试。");
+        return null;
+      }),
+    ]).then(([response, runsResponse, currentProfile, creditResponse]) => {
       if (!active) return;
       setItems(response.items);
       setCredits(creditResponse);
       setTotalPages(Math.max(1, Math.ceil(response.total / response.page_size)));
-      setState(response.items.length ? "ready" : "empty");
+      if (response.total > 0) {
+        setState("ready");
+        return;
+      }
+      if (!currentProfile) {
+        setState("no-profile");
+        return;
+      }
+      const activeRun = runsResponse.items.find((run) => run.status === "PENDING" || run.status === "RUNNING");
+      setActiveRunId(activeRun?.run_id ?? null);
+      if (activeRun) {
+        setState("running");
+        return;
+      }
+      const latestRun = runsResponse.items[0];
+      if (!latestRun) {
+        setState("no-runs");
+      } else if (latestRun.status === "FAILED") {
+        setState("failed");
+      } else if (latestRun.status === "SUCCEEDED") {
+        setState("no-match");
+      } else {
+        setState("empty");
+      }
     }).catch((error: unknown) => {
       if (!active) return;
       setState("error");
@@ -79,15 +112,18 @@ export function AllRecommendationsPage() {
   return (
     <div className="recommendations-page">
       <section className="page-intro recommendations-intro">
-        <div><div className="eyebrow"><Sparkle size={16} />全部推荐</div><h1>推荐结果，留给你自己判断。</h1><p>每张卡片只展示推荐依据。岗位事实和投递入口统一从岗位详情查看。</p></div>
-        <Link className="button button-primary" to="/recommendation-runs/new"><Plus size={18} />新建推荐</Link>
+        <div><div className="eyebrow"><Sparkle size={16} />全部推荐</div><h1>把合适的岗位留在这里。</h1><p>先看匹配理由，再打开岗位详情了解发布日期、截止时间和投递入口。</p></div>
       </section>
-      <section className="recommendation-toolbar"><div className="credit-summary"><Coins size={20} /><span>当前积分</span><strong>{credits?.balance ?? "..."}</strong><small>单次推荐 {credits?.recommendation_cost ?? "..."}</small></div><label className="sort-field"><span>排序</span><select value={sort} onChange={(event) => changeSort(event.target.value as typeof sort)}><option value="recommended_at_desc">最新推荐</option><option value="match_score_desc">匹配度最高</option></select></label></section>
+      <section className="recommendation-toolbar"><div className="credit-summary"><Coins size={20} /><span>当前积分</span><strong>{credits?.balance ?? "..."}</strong><small>单次推荐 {credits?.recommendation_cost ?? "..."}</small></div><label className="sort-field"><span>排序</span><span className="sort-select-wrap"><select value={sort} onChange={(event) => changeSort(event.target.value as typeof sort)}><option value="recommended_at_desc">最新推荐</option><option value="match_score_desc">匹配度最高</option></select><CaretDown className="sort-select-arrow" size={15} aria-hidden="true" /></span></label></section>
       {errorMessage && <p className="form-error inline-page-error" role="alert">{errorMessage}</p>}
       {creditError && <p className="form-error inline-page-error" role="alert">{creditError}</p>}
       {state === "loading" && <RecommendationSkeleton />}
       {state === "error" && <StatePanel title="推荐列表暂时不可用" description={errorMessage ?? "请稍后重试。"} actionLabel="重新加载" onAction={() => setRetryKey((current) => current + 1)} />}
-      {state === "empty" && <ProfileEmptyState />}
+      {state === "no-profile" && <StatePanel title="先告诉我们想找什么工作" description="完成求职画像后，我们才能按你的方向寻找岗位。" actionLabel="创建求职画像" onAction={() => undefined} link="/profile" />}
+      {state === "no-runs" && <StatePanel title="还没有开始找岗位" description="你的求职画像已经准备好，现在可以开始第一次寻找。" actionLabel="开始推荐" onAction={() => undefined} link="/recommendation-runs/new" />}
+      {state === "running" && <StatePanel title="正在寻找适合你的岗位" description="这次寻找完成后，结果会出现在这里。" actionLabel="查看当前任务" onAction={() => undefined} link={activeRunId ? `/recommendation-runs/${activeRunId}` : "/recommendation-runs"} />}
+      {state === "no-match" && <StatePanel title="这次暂时没有找到合适岗位" description="可以调整求职画像或补充本次要求，再试一次。" actionLabel="再次寻找岗位" onAction={() => undefined} link="/recommendation-runs/new" />}
+      {state === "failed" && <StatePanel title="上一次寻找没有完成" description="可以查看任务详情了解原因，或重新开始一次寻找。" actionLabel="重新开始" onAction={() => undefined} link="/recommendation-runs/new" />}
       {state === "ready" && <><section className="recommendation-grid" aria-label="全部推荐">{items.map((item) => <RecommendationCard key={item.recommendation_id} item={item} onFeedback={(feedback) => void updateFeedback(item, feedback)} onToggleSaved={() => void toggleSaved(item)} onDelete={() => void removeRecommendation(item)} />)}</section><Pagination page={page} totalPages={totalPages} onChange={(next) => { setPage(next); setSearchParams({ sort, page: String(next) }); }} /></>}
     </div>
   );
@@ -95,38 +131,71 @@ export function AllRecommendationsPage() {
 
 export function RecommendationRunsPage() {
   const [runs, setRuns] = useState<RecommendationTaskView[]>([]);
-  const [state, setState] = useState<"loading" | "ready" | "empty" | "error">("loading");
+  const [hasProfile, setHasProfile] = useState<boolean | null>(null);
+  const [state, setState] = useState<"loading" | "ready" | "error">("loading");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [retryKey, setRetryKey] = useState(0);
   useEffect(() => {
     let active = true;
-    recommendationsApi.runs().then((response) => { if (active) { setRuns(response.items); setState(response.items.length ? "ready" : "empty"); } }).catch((error: unknown) => { if (active) { setState("error"); setErrorMessage(error instanceof ApiError ? getApiErrorMessage(error.code, error.message) : "推荐任务暂时无法加载，请稍后重试。"); } });
+    Promise.all([
+      recommendationsApi.runs(),
+      profileApi.current().catch((error: unknown) => {
+        if (error instanceof ApiError && error.code === "PROFILE_NOT_FOUND") return null;
+        throw error;
+      }),
+    ]).then(([response, currentProfile]) => {
+      if (!active) return;
+      setRuns(response.items);
+      setHasProfile(currentProfile !== null);
+      setState("ready");
+    }).catch((error: unknown) => {
+      if (active) {
+        setState("error");
+        setErrorMessage(error instanceof ApiError ? getApiErrorMessage(error.code, error.message) : "推荐任务暂时无法加载，请稍后重试。");
+      }
+    });
     return () => { active = false; };
   }, [retryKey]);
 
-  return <div className="recommendation-runs-page"><section className="page-intro recommendations-intro"><div><div className="eyebrow"><ListChecks size={16} />推荐任务</div><h1>每次推荐，都留下一条可追溯记录。</h1><p>任务运行期间展示接口返回的步骤和进度。失败任务会明确显示退款状态。</p></div><Link className="button button-primary" to="/recommendation-runs/new"><Plus size={18} />新建推荐</Link></section>{state === "loading" && <RecommendationSkeleton />}{state === "error" && <StatePanel title="推荐任务暂时不可用" description={errorMessage ?? "请稍后重试。"} actionLabel="重新加载" onAction={() => setRetryKey((current) => current + 1)} />}{state === "empty" && <StatePanel title="还没有推荐任务" description="保存求职画像后，可以创建第一条推荐任务。" actionLabel="完善求职画像" onAction={() => undefined} link="/profile" />}{state === "ready" && <section className="run-list" aria-label="推荐任务列表">{runs.map((run) => <RunRow key={run.run_id} run={run} />)}</section>}</div>;
+  return <div className="recommendation-runs-page"><section className="page-intro recommendations-intro"><div><div className="eyebrow"><ListChecks size={16} />推荐任务</div><h1>查看每一次岗位寻找。</h1><p>从这里开始新的寻找，也可以回看之前的结果。</p></div></section>{state === "loading" && <RecommendationSkeleton />}{state === "error" && <StatePanel title="推荐任务暂时不可用" description={errorMessage ?? "请稍后重试。"} actionLabel="重新加载" onAction={() => setRetryKey((current) => current + 1)} />}{state === "ready" && <><StartRecommendationCard hasProfile={hasProfile === true} /><section className="run-list" aria-label="推荐任务列表">{runs.length ? runs.map((run) => <RunRow key={run.run_id} run={run} />) : <div className="run-list-empty"><span>还没有历史记录</span><p>开始一次寻找后，结果会保存在这里。</p></div>}</section></>}</div>;
 }
 
 export function NewRecommendationPage() {
   const navigate = useNavigate();
   const [credits, setCredits] = useState<CreditSummary | null>(null);
   const [creditsError, setCreditsError] = useState<string | null>(null);
+  const [profileState, setProfileState] = useState<"loading" | "present" | "missing" | "error">("loading");
+  const [profileError, setProfileError] = useState<string | null>(null);
   const [extraRequest, setExtraRequest] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const keyRef = useRef<string | null>(null);
   useEffect(() => {
-    creditsApi.summary().then((response) => {
-      setCredits(response);
-      setCreditsError(null);
-    }).catch((error: unknown) => {
-      setCredits(null);
-      setCreditsError(error instanceof ApiError ? getApiErrorMessage(error.code, error.message) : "积分暂时无法加载，请稍后重试。");
-    });
+    Promise.all([
+      creditsApi.summary().then((response) => {
+        setCredits(response);
+        setCreditsError(null);
+      }).catch((error: unknown) => {
+        setCredits(null);
+        setCreditsError(error instanceof ApiError ? getApiErrorMessage(error.code, error.message) : "积分暂时无法加载，请稍后重试。");
+      }),
+      profileApi.current().then(() => {
+        setProfileState("present");
+        setProfileError(null);
+      }).catch((error: unknown) => {
+        if (error instanceof ApiError && error.code === "PROFILE_NOT_FOUND") {
+          setProfileState("missing");
+          return;
+        }
+        setProfileState("error");
+        setProfileError(error instanceof ApiError ? getApiErrorMessage(error.code, error.message) : "求职画像暂时无法确认，请稍后重试。");
+      }),
+    ]).catch(() => undefined);
   }, []);
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (profileState !== "present") return;
     const key = keyRef.current ?? createIdempotencyKey("recommendation");
     keyRef.current = key;
     setIsSubmitting(true);
@@ -149,14 +218,14 @@ export function NewRecommendationPage() {
           <div className="auth-icon"><Sparkle size={24} /></div>
           <div>
             <div className="eyebrow">新建推荐</div>
-            <h1>用已保存的画像找一次岗位。</h1>
-            <p>推荐任务会读取当前最新画像。下面的补充要求只影响这一次评估。</p>
+            <h1>根据你的方向寻找岗位。</h1>
+            <p>我们会使用当前求职画像；下面的补充要求只影响这一次寻找。</p>
           </div>
           <div className="recommendation-flow" aria-label="推荐流程">
             <span className="recommendation-flow-label">推荐会依次处理</span>
-            <div><span className="recommendation-flow-step">01</span><span>读取最新画像</span></div>
-            <div><span className="recommendation-flow-step">02</span><span>筛选符合条件的岗位</span></div>
-            <div><span className="recommendation-flow-step">03</span><span>评估匹配度并生成理由</span></div>
+            <div><span className="recommendation-flow-step">01</span><span>理解你的求职方向</span></div>
+            <div><span className="recommendation-flow-step">02</span><span>寻找相关岗位</span></div>
+            <div><span className="recommendation-flow-step">03</span><span>比较经历与岗位要求</span></div>
           </div>
         </div>
         <div className="new-recommendation-form-column">
@@ -164,9 +233,10 @@ export function NewRecommendationPage() {
           <form className="new-recommendation-form" onSubmit={handleSubmit}>
             <label className="field-group"><span>本次补充要求 <em>可选</em></span><textarea value={extraRequest} placeholder="例如：本次优先推荐 Python 后端岗位" maxLength={1000} onChange={(event) => { setExtraRequest(event.target.value); keyRef.current = null; }} /><small>最多 1000 个字符，将仅影响这一次推荐。</small></label>
             {creditsError && <p className="form-error" role="alert">{creditsError}</p>}
+            {profileError && <p className="form-error" role="alert">{profileError}</p>}
+            {profileState === "missing" && <div className="profile-required-panel"><strong>先完成求职画像</strong><p>告诉我们目标岗位、城市和经历后，才能开始寻找。</p><Link className="inline-action" to="/profile">去创建求职画像<ArrowRight size={16} /></Link></div>}
             {errorMessage && <p className="form-error" role="alert">{errorMessage}</p>}
-            {errorMessage?.includes("画像") && <Link className="inline-action" to="/profile">去完善求职画像<ArrowRight size={16} /></Link>}
-            <button className="button button-primary" type="submit" disabled={isSubmitting}><Sparkle size={18} />{isSubmitting ? "创建中" : "开始推荐"}</button>
+            <button className="button button-primary" type="submit" disabled={isSubmitting || profileState !== "present"}><Sparkle size={18} />{isSubmitting ? "准备中" : "开始推荐"}</button>
           </form>
         </div>
       </section>
@@ -178,6 +248,7 @@ export function RecommendationRunDetailPage() {
   const { runId } = useParams<{ runId: string }>();
   const [task, setTask] = useState<RecommendationTaskView | null>(null);
   const [results, setResults] = useState<RecommendationResultView[]>([]);
+  const [profileHighlights, setProfileHighlights] = useState<string[]>([]);
   const [totalJobs, setTotalJobs] = useState<number | null>(null);
   const [state, setState] = useState<"loading" | "ready" | "error">("loading");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -188,6 +259,12 @@ export function RecommendationRunDetailPage() {
     let timer: number | undefined;
     let resultsLoaded = false;
     setTotalJobs(null);
+    setProfileHighlights([]);
+
+    void profileApi.current().then((profile) => {
+      if (!active) return;
+      setProfileHighlights(buildProfileHighlights(profile));
+    }).catch(() => undefined);
 
     void jobsApi.list({ page: 1, page_size: 1 }).then((response) => {
       if (active) setTotalJobs(response.pool_total);
@@ -249,14 +326,19 @@ export function RecommendationRunDetailPage() {
     }
   }
 
+  const displayedProgress = useDisplayedProgress(task);
   if (state === "loading") return <RecommendationSkeleton />;
   if (state === "error" || !task) return <StatePanel title="推荐任务暂时不可用" description={errorMessage ?? "请稍后重试。"} actionLabel="返回推荐任务" onAction={() => undefined} link="/recommendation-runs" />;
   const running = task.status === "PENDING" || task.status === "RUNNING";
-  return <div className="run-detail-page"><Link className="back-link" to="/recommendation-runs">返回推荐任务</Link><section className="run-detail-header"><div><div className="eyebrow"><Clock size={16} />推荐任务</div><h1>{formatRecommendationStatus(task.status)}</h1><p>任务编号 {task.run_id}，创建于 {formatDate(task.created_at)}</p></div><div className={`run-status-badge run-status-${task.status.toLowerCase()}`}>{formatRecommendationStatus(task.status)}</div></section>{errorMessage && <p className="form-error inline-page-error" role="alert">{errorMessage}</p>}<section className="run-progress-panel"><div className="run-progress-copy"><div><span>当前步骤</span><strong>{formatRecommendationStep(task.current_step)}</strong></div><strong>{task.progress_percent}%</strong></div><div className="run-progress-track" aria-label={`推荐进度 ${task.progress_percent}%`}><span style={{ width: `${task.progress_percent}%` }} /></div><div className="run-counts"><span>从 {totalJobs ?? "..."} 个岗位中推荐</span><span>已推荐 {task.counts.recommended}</span>{running && <span>每 2 秒更新状态</span>}</div></section>{task.status === "FAILED" && <section className="run-failure-panel" role="alert"><WarningCircle size={21} /><div><strong>推荐任务失败</strong><p>{task.error?.message ?? "服务暂时不可用，请稍后重试。"}</p>{task.credits.refunded && <span>本次积分已退回</span>}</div></section>}{task.status === "SUCCEEDED" && <section className="run-result-section"><div className="section-heading"><div><h2>本次推荐结果</h2><p>点击岗位名称查看统一岗位详情。</p></div></div>{results.length ? <div className="recommendation-grid">{results.map((item) => <RecommendationCard key={item.recommendation_id} item={item} onFeedback={(feedback) => void updateFeedback(item, feedback)} onToggleSaved={() => void toggleSaved(item)} onDelete={() => void removeRecommendation(item)} />)}</div> : <div className="inline-empty"><CheckCircle size={24} /><strong>这次没有匹配岗位</strong><p>任务已完成，但没有符合画像和本次要求的结果。</p></div>}</section>}</div>;
+  return <div className="run-detail-page"><Link className="back-link" to="/recommendation-runs">返回推荐任务</Link><section className="run-detail-header"><div><div className="eyebrow"><Clock size={16} />推荐任务</div><h1>{formatRecommendationStatus(task.status)}</h1><p>创建于 {formatDate(task.created_at)}</p></div><div className={`run-status-badge run-status-${task.status.toLowerCase()}`}>{formatRecommendationStatus(task.status)}</div></section>{errorMessage && <p className="form-error inline-page-error" role="alert">{errorMessage}</p>}<section className="run-progress-panel"><div className="run-progress-copy"><div><span>现在正在做什么</span><strong>{formatRecommendationStep(task.current_step)}</strong></div><strong>{displayedProgress}%</strong></div><div className="run-progress-track" role="progressbar" aria-label="推荐进度" aria-valuemin={0} aria-valuemax={100} aria-valuenow={displayedProgress}><span className="run-progress-fill" style={{ transform: `scaleX(${displayedProgress / 100})` }} /></div>{running && <><div className="run-progress-hint">{formatProgressEstimate(displayedProgress)}</div><div className="run-search-visual" role="status" aria-live="polite"><div className="run-search-header"><span><MagnifyingGlass size={17} />正在综合你的求职画像</span><span className="run-search-status"><span className="run-live-dot" aria-hidden="true" />实时寻找</span></div><div className="run-search-pills">{(profileHighlights.length ? profileHighlights : ["综合用户画像"]).map((highlight) => <span key={highlight}>{highlight}</span>)}</div><div className="run-activity"><MagnifyingGlass size={16} /><span>正在把方向、技能和经历放在一起查看</span></div></div></>}<div className="run-counts"><span>从 {totalJobs ?? "..."} 个岗位中推荐</span><span>已推荐 {task.counts.recommended}</span></div></section>{task.status === "FAILED" && <section className="run-failure-panel" role="alert"><WarningCircle size={21} /><div><strong>推荐任务失败，这次寻找没有完成</strong><p>{task.error?.message ?? "服务暂时不可用，请稍后重试。"}</p>{task.credits.refunded && <span>本次积分已退回</span>}<Link className="inline-action" to="/recommendation-runs/new">重新开始<ArrowRight size={16} /></Link></div></section>}{task.status === "SUCCEEDED" && <section className="run-result-section"><div className="section-heading"><div><h2>本次推荐结果</h2><p>点击岗位名称查看岗位详情。</p></div></div>{results.length ? <div className="recommendation-grid">{results.map((item) => <RecommendationCard key={item.recommendation_id} item={item} onFeedback={(feedback) => void updateFeedback(item, feedback)} onToggleSaved={() => void toggleSaved(item)} onDelete={() => void removeRecommendation(item)} />)}</div> : <div className="inline-empty"><CheckCircle size={24} /><strong>这次暂时没有找到合适岗位</strong><p>可以调整求职画像或补充本次要求，再试一次。</p><div className="inline-empty-actions"><Link className="button button-secondary" to="/profile">调整画像</Link><Link className="button button-primary" to="/recommendation-runs/new">再次寻找</Link></div></div>}</section>}</div>;
 }
 
 function RunRow({ run }: { run: RecommendationTaskView }) {
   return <Link className="run-row" to={`/recommendation-runs/${run.run_id}`}><div className="run-row-icon"><ListChecks size={20} /></div><div className="run-row-main"><strong>{formatRecommendationStatus(run.status)}</strong><span>{formatDate(run.created_at)} 创建 · {formatRecommendationStep(run.current_step)}</span></div><div className="run-row-count"><strong>{run.progress_percent}%</strong><span>{run.counts.recommended} 个推荐</span></div><ArrowRight size={19} /></Link>;
+}
+
+function StartRecommendationCard({ hasProfile }: { hasProfile: boolean }) {
+  return <section className="run-start-card"><div className="run-start-card-copy"><span className="profile-empty-kicker">下一步</span><h2>{hasProfile ? "准备好开始下一次寻找了吗？" : "先告诉我们想找什么工作"}</h2><p>{hasProfile ? "根据你的求职画像寻找新的岗位。" : "完成求职画像后，我们才能按你的方向寻找岗位。"}</p></div><Link className="button button-primary" to={hasProfile ? "/recommendation-runs/new" : "/profile"}>{hasProfile ? "开始推荐" : "创建求职画像"}<ArrowRight size={17} /></Link></section>;
 }
 
 function Pagination({ page, totalPages, onChange }: { page: number; totalPages: number; onChange: (page: number) => void }) {
@@ -269,20 +351,75 @@ function RecommendationSkeleton() {
 }
 
 function StatePanel({ title, description, actionLabel, onAction, link }: { title: string; description: string; actionLabel: string; onAction: () => void; link?: string }) {
-  return <section className="state-panel" role="status"><WarningCircle size={28} /><h2>{title}</h2><p>{description}</p>{link ? <Link className="button button-secondary" to={link}>{actionLabel}</Link> : <button className="button button-secondary" type="button" onClick={onAction}>{actionLabel}</button>}</section>;
+  return <section className="state-panel" role="status"><WarningCircle size={28} /><h2>{title}</h2><p>{description}</p>{link ? <Link className="button button-primary" to={link}>{actionLabel}</Link> : <button className="button button-primary" type="button" onClick={onAction}>{actionLabel}</button>}</section>;
 }
 
-function ProfileEmptyState() {
-  return (
-    <section className="state-panel profile-empty-state" role="status">
-      <div className="profile-empty-visual" aria-hidden="true"><UserCircle size={30} /></div>
-      <div className="profile-empty-copy">
-        <span className="profile-empty-kicker">从画像开始</span>
-        <h2>先完善你的求职画像</h2>
-        <p>填写目标岗位、城市和技能，再创建第一条推荐。</p>
-      </div>
-      <Link className="profile-empty-cta" to="/profile"><span>完善求职画像</span><ArrowRight size={17} weight="bold" /></Link>
-      <span className="profile-empty-note">保存后即可开始寻找适合你的岗位</span>
-    </section>
-  );
+function useDisplayedProgress(task: RecommendationTaskView | null) {
+  const [displayedProgress, setDisplayedProgress] = useState(0);
+  const targetProgressRef = useRef(0);
+  const isRunning = task?.status === "PENDING" || task?.status === "RUNNING";
+
+  useEffect(() => {
+    if (!task) return;
+    targetProgressRef.current = Math.max(targetProgressRef.current, task.progress_percent);
+  }, [task?.progress_percent]);
+
+  useEffect(() => {
+    if (!task) {
+      targetProgressRef.current = 0;
+      setDisplayedProgress(0);
+      return;
+    }
+    if (!isRunning) {
+      const finalProgress = task.status === "SUCCEEDED" ? 100 : task.progress_percent;
+      targetProgressRef.current = finalProgress;
+      setDisplayedProgress(finalProgress);
+      return;
+    }
+
+    const startedAt = Date.parse(task.started_at ?? task.created_at);
+    const tick = () => {
+      const elapsed = Math.max(0, Date.now() - startedAt);
+      const estimatedProgress = Math.min(94, 8 + 86 * (1 - Math.exp(-elapsed / 180000)));
+      targetProgressRef.current = Math.max(targetProgressRef.current, task.progress_percent, estimatedProgress);
+      setDisplayedProgress((current) => {
+        const gap = targetProgressRef.current - current;
+        if (gap <= 0.05) return current;
+        return Math.min(targetProgressRef.current, current + Math.min(0.85, Math.max(0.08, gap * 0.16)));
+      });
+    };
+
+    tick();
+    const timer = window.setInterval(tick, 350);
+    return () => window.clearInterval(timer);
+  }, [isRunning, task?.created_at, task?.started_at, task?.status]);
+
+  return Math.max(0, Math.min(100, Math.round(displayedProgress)));
+}
+
+function formatProgressEstimate(progress: number) {
+  if (progress < 35) return "通常需要约 3-8 分钟，正在准备岗位池。";
+  if (progress < 65) return "通常还需约 2-6 分钟，正在比较岗位要求。";
+  if (progress < 85) return "通常还需约 1-3 分钟，正在整理匹配结果。";
+  return "正在收尾，通常还需要几十秒。";
+}
+
+function buildProfileHighlights(profile: ProfileView): string[] {
+  const experienceKeywords = (profile.experience_summary ?? "")
+    .split(/[，。；、,.;\s/]+/)
+    .map((value) => value.trim())
+    .filter((value) => value.length >= 2 && value.length <= 18)
+    .slice(0, 5)
+    .map((value) => `经历 ${value}`);
+  const values = [
+    "综合用户画像",
+    ...profile.target_roles.map((value) => `方向 ${value}`),
+    ...profile.target_locations.map((value) => `地点 ${value}`),
+    ...profile.recruitment_types,
+    ...profile.skills,
+    profile.education,
+    profile.graduation_year ? `${profile.graduation_year} 届` : null,
+    ...experienceKeywords,
+  ];
+  return [...new Set(values.filter((value): value is string => Boolean(value)))].slice(0, 14);
 }

@@ -41,6 +41,8 @@ function shouldRequireAuth(url: URL, authenticated: boolean): boolean {
     "graduation_year",
     "salary_min",
     "salary_max",
+    "published_within_days",
+    "published_at_unknown",
   ].some((key) => url.searchParams.has(key));
   return !authenticated && (Number(url.searchParams.get("page") ?? "1") >= 2 || hasFilter);
 }
@@ -77,6 +79,14 @@ function filterJobs(url: URL, authenticated: boolean): JobListItem[] {
       const salaryMax = Number(url.searchParams.get("salary_max"));
       if (url.searchParams.has("salary_min") && job.salary_max !== null && job.salary_max < salaryMin) return false;
       if (url.searchParams.has("salary_max") && job.salary_min !== null && job.salary_min > salaryMax) return false;
+      const publishedUnknown = url.searchParams.get("published_at_unknown") === "true";
+      if (publishedUnknown && job.published_at !== null) return false;
+      const withinDays = Number(url.searchParams.get("published_within_days"));
+      if (url.searchParams.has("published_within_days") && Number.isFinite(withinDays) && job.published_at === null) return false;
+      if (url.searchParams.has("published_within_days") && Number.isFinite(withinDays) && job.published_at !== null) {
+        const cutoff = Date.now() - withinDays * 24 * 60 * 60 * 1000;
+        if (new Date(job.published_at).getTime() < cutoff) return false;
+      }
       return true;
     });
 }
