@@ -45,17 +45,13 @@ http://127.0.0.1:8000/docs
 
 ### 一键启动前后端与数据库
 
-完成根目录 `.env`、`frontend/.env` 和前端依赖配置后，任选一种运行时执行：
+完成根目录 `.env`、`frontend/.env` 和前端依赖配置后执行：
 
 ```bash
-# Docker
-./scripts/start-dev-docker.sh
-
-# Podman
-./scripts/start-dev-podman.sh
+./scripts/start-dev.sh
 ```
 
-脚本会启动 PostgreSQL/pgvector、执行 Alembic 迁移，并使用 `base` 环境启动后端和前端。
+脚本会启动 Docker 中的 PostgreSQL/pgvector、执行 Alembic 迁移，并启动真实 API 模式的后端和前端。
 按 `Ctrl-C` 只停止前后端，数据库保持运行。
 
 ## 本地数据库
@@ -78,11 +74,13 @@ uv run alembic upgrade head
 仓库自带校招汇总表样本（`data/raw/campus_jobs_sample.csv`），可灌入约 1000 条真实岗位：
 
 ```bash
-uv run python scripts/ingest_campus_csv.py            # 默认前 1000 条
+uv run python scripts/ingest_campus_csv.py            # 默认全部写入，幂等 upsert
 uv run python scripts/ingest_campus_csv.py --limit 500
+uv run python scripts/ingest_campus_csv.py --reset --row-limit 600  # 清空后只灌入前 600 条记录
 ```
 
-脚本幂等（按公告链接去重），重复执行不会新增数据。
+不带 `--reset` 时按岗位身份幂等 upsert：新岗位新增，内容变化的岗位更新，未变化的岗位保留。
+`--reset` 仅用于 development/test，会在解析得到岗位后清空岗位目录及其关联的收藏/推荐记录，再用当前仓库代码重新灌入；它不删除表结构、用户账户或画像，也不会运行解析验证脚本。
 
 ## 验证
 

@@ -423,6 +423,19 @@ class PostgresJobCatalog:
             warnings=[*batch.warnings, _CLOSE_WARNING],
         )
 
+    async def reset_development_data(self) -> None:
+        """Clear the job catalog and rows that reference its jobs.
+
+        This is intentionally a separate, explicit operation for rebuilding a
+        development database from the latest collection code.  It preserves
+        the schema and user/account data; PostgreSQL cascades only through
+        tables that reference ``job`` or ``job_source``.
+        """
+        async with self._session_factory() as session, session.begin():
+            await session.execute(
+                sa.text("TRUNCATE TABLE job, job_source RESTART IDENTITY CASCADE")
+            )
+
     async def get_jobs(self, job_ids: Sequence[str]) -> list[JobFact]:
         if not job_ids:
             return []
