@@ -148,9 +148,8 @@ def test_feishu_link_uses_the_platform_parser(monkeypatch) -> None:
 def test_unsupported_link_is_recorded_with_row_and_reason() -> None:
     result = run_pipeline("source-1", [make_row("https://app.mokahr.com/campus-recruitment/acme")])
 
-    assert len(result.batch.items) == 1
-    assert result.batch.items[0].title == "后端, 前端"
-    assert result.batch.items[0].metadata["collection_mode"] == "TABLE_FALLBACK"
+    assert [item.title for item in result.batch.items] == ["后端", "前端"]
+    assert all(item.metadata["collection_mode"] == "TABLE_FALLBACK" for item in result.batch.items)
     assert result.batch.complete is False
     assert len(result.unsupported) == 1
     failure = result.unsupported[0]

@@ -50,17 +50,35 @@ describe("ProfilePage resume import", () => {
       </MemoryRouter>,
     );
 
-    await screen.findByText("这是你正在寻找的工作。");
+    await screen.findByRole("heading", { name: "我的求职画像", level: 1 });
     const input = container.querySelector<HTMLInputElement>('input[type="file"]');
     expect(input).not.toBeNull();
     fireEvent.change(input!, {
       target: { files: [new File(["resume text"], "resume.txt", { type: "text/plain" })] },
     });
 
-    expect(await screen.findByText("简历已解析为画像草稿，请逐项确认后再保存。")).toBeInTheDocument();
+    expect(await screen.findByText("简历已解析，请确认填写内容后保存。")).toBeInTheDocument();
     expect(screen.getByText("数据平台工程师")).toBeInTheDocument();
     expect(screen.getByText("未从简历中确认期望薪资，请补充或校对。")).toBeInTheDocument();
     expect(mockedProfileApi.importResume).toHaveBeenCalledOnce();
     expect(mockedProfileApi.save).not.toHaveBeenCalled();
+  });
+
+  it("opens a direct editor for an existing profile instead of restarting the wizard", async () => {
+    render(
+      <MemoryRouter>
+        <ProfilePage />
+      </MemoryRouter>,
+    );
+
+    await screen.findByRole("heading", { name: "我的求职画像", level: 1 });
+    fireEvent.click(screen.getByRole("button", { name: "修改画像" }));
+
+    expect(screen.getByText("选择要修改的字段")).toBeInTheDocument();
+    expect(screen.queryByText("第 1 步，共 9 步")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "下一步" })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /薪资期望/ }));
+    expect(screen.getByRole("spinbutton", { name: "期望税前月薪下限" })).toHaveValue(18000);
   });
 });

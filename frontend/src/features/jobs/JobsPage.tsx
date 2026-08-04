@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { BookmarkSimple, Briefcase, CaretDown, CaretLeft, CaretRight, Check, Funnel, MagnifyingGlass, WarningCircle, X } from "@phosphor-icons/react";
+import { BookmarkSimple, CaretDown, CaretLeft, CaretRight, Check, Funnel, MagnifyingGlass, WarningCircle, X } from "@phosphor-icons/react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "../../adapters/web/AuthProvider";
 import { ApiError } from "../../shared/api/client";
@@ -16,7 +16,7 @@ interface FilterDraft {
   q: string;
   city: string[];
   companyNature: string[];
-  recruitmentType: string[];
+  batch: string[];
   education: string[];
   graduationYear: string[];
   salaryMin: string;
@@ -25,13 +25,29 @@ interface FilterDraft {
 }
 
 const JOBS_PAGE_SIZE = 12;
+const FILTER_PARAM_KEYS = [
+  "city",
+  "company_nature",
+  "batch",
+  "recruitment_type",
+  "education",
+  "graduation_year",
+  "salary_min",
+  "salary_max",
+  "published_within_days",
+  "published_at_unknown",
+] as const;
+
+function hasFilterParams(params: URLSearchParams): boolean {
+  return FILTER_PARAM_KEYS.some((key) => params.getAll(key).some(Boolean));
+}
 
 function readDraft(params: URLSearchParams): FilterDraft {
   return {
     q: params.get("q") ?? "",
     city: params.getAll("city"),
     companyNature: params.getAll("company_nature"),
-    recruitmentType: params.getAll("recruitment_type"),
+    batch: params.getAll("batch"),
     education: params.getAll("education"),
     graduationYear: params.getAll("graduation_year"),
     salaryMin: params.get("salary_min") ?? "",
@@ -60,6 +76,7 @@ function readQuery(params: URLSearchParams): JobQuery {
     q: params.get("q") ?? undefined,
     city: many("city"),
     company_nature: many("company_nature"),
+    batch: many("batch"),
     recruitment_type: many("recruitment_type"),
     education: many("education"),
     graduation_year: graduationYears.length > 0 ? graduationYears : undefined,
@@ -88,6 +105,7 @@ export function JobsPage() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [savingJobId, setSavingJobId] = useState<string | null>(null);
   const [retryKey, setRetryKey] = useState(0);
+  const [isFilterPanelOpen, setIsFilterPanelOpen] = useState(() => hasFilterParams(searchParams));
 
   useEffect(() => {
     const nextDraft = readDraft(searchParams);
@@ -102,7 +120,7 @@ export function JobsPage() {
         setFilterErrorMessage(null);
       }
     }).catch(() => {
-      if (active) setFilterErrorMessage("筛选选项暂时无法加载，你仍可以先搜索岗位。");
+      if (active) setFilterErrorMessage("筛选项加载失败，仍可以使用关键词搜索。");
     });
     return () => {
       active = false;
@@ -127,7 +145,7 @@ export function JobsPage() {
     }).catch((error: unknown) => {
       if (!active) return;
       setLoadState("error");
-      setErrorMessage(error instanceof ApiError ? getApiErrorMessage(error.code, error.message) : "岗位暂时无法加载，请稍后重试。");
+      setErrorMessage(error instanceof ApiError ? getApiErrorMessage(error.code, error.message) : "岗位加载失败，请稍后重试。");
     });
 
     return () => {
@@ -156,7 +174,7 @@ export function JobsPage() {
       ["q", draft.q.trim()],
       ["city", draft.city],
       ["company_nature", draft.companyNature],
-      ["recruitment_type", draft.recruitmentType],
+      ["batch", draft.batch],
       ["education", draft.education],
       ["graduation_year", draft.graduationYear],
       ["salary_min", draft.salaryMin],
@@ -180,6 +198,7 @@ export function JobsPage() {
 
   function clearFilters() {
     setSearchParams({ page: "1" });
+    setIsFilterPanelOpen(false);
   }
 
   function goToPage(page: number) {
@@ -208,25 +227,35 @@ export function JobsPage() {
 
   const totalPages = jobs ? Math.max(1, Math.ceil(jobs.total / jobs.page_size)) : 1;
   const hasFilters = Array.from(searchParams.keys()).some((key) => !["page", "page_size", "source_id"].includes(key));
+  const activeFilterCount = [
+    draft.city.length,
+    draft.companyNature.length,
+    draft.batch.length,
+    draft.education.length,
+    draft.graduationYear.length,
+    draft.publishedDate ? 1 : 0,
+    draft.salaryMin ? 1 : 0,
+    draft.salaryMax ? 1 : 0,
+  ].reduce((total, count) => total + count, 0);
 
   return (
     <div className="jobs-page">
       <section className="page-intro">
         <div>
           <div className="eyebrow"><span className="eyebrow-dot" aria-hidden="true" />岗位池</div>
-          <h1>先看真实岗位，再决定下一步。</h1>
-          <p>岗位来自已整理的招聘渠道。搜索、筛选和收藏会与账号同步。</p>
-        </div>
-        <div className="intro-note" aria-label="岗位池说明">
-          <Briefcase size={20} />
-          <div><strong>{jobs?.pool_total ?? "..."}</strong><span>可见岗位池</span></div>
+          <h1>找岗位</h1>
+          <p>搜索岗位、公司或关键词，再按条件筛选。</p>
         </div>
       </section>
 
-      <section className="jobs-toolbar" aria-label="岗位池状态">
-        <div className="toolbar-copy"><span className="toolbar-label">当前视图</span><strong>{jobs ? `共 ${jobs.total} 个匹配岗位` : "正在读取岗位"}</strong></div>
+      <section className="jobs-toolbar" aria-label="岗位数量">
+        <div className="toolbar-stats">
+          <div className="toolbar-stat"><span className="toolbar-label">岗位池</span><strong>{jobs ? jobs.pool_total.toLocaleString("zh-CN") : "..."}</strong></div>
+          <span className="toolbar-divider" aria-hidden="true" />
+          <div className="toolbar-stat"><span className="toolbar-label">当前视图</span><strong>{jobs ? jobs.total.toLocaleString("zh-CN") : "..."}</strong></div>
+        </div>
         <div className="toolbar-meta">
-          <span>岗位池持续更新</span>
+          <span>数据持续更新</span>
           <span className="toolbar-divider" aria-hidden="true" />
           <span>{status === "authenticated" ? "收藏状态已同步" : "登录后可搜索、筛选和收藏"}</span>
         </div>
@@ -238,17 +267,26 @@ export function JobsPage() {
             <span>搜索岗位或公司</span>
             <span className="search-input-wrap">
               <MagnifyingGlass size={18} aria-hidden="true" />
-              <input value={draft.q} onChange={(event) => updateDraft("q", event.target.value)} placeholder="搜索岗位、公司或关键词，例如：Python、数据平台" />
+              <input value={draft.q} onChange={(event) => updateDraft("q", event.target.value)} placeholder="搜索岗位、公司或关键词" />
             </span>
           </label>
           <div className="job-search-actions">
             {hasFilters && <button className="button button-secondary" type="button" onClick={clearFilters}><X size={16} />清除筛选</button>}
-            <button className="button button-primary" type="submit"><Funnel size={17} />应用筛选</button>
+            <button
+              className="button button-secondary mobile-filter-toggle"
+              type="button"
+              aria-expanded={isFilterPanelOpen}
+              aria-controls="job-filter-panel"
+              onClick={() => setIsFilterPanelOpen((current) => !current)}
+            >
+              <Funnel size={17} />筛选{activeFilterCount > 0 && <span className="filter-count">{activeFilterCount}</span>}
+            </button>
+            <button className="button button-primary desktop-filter-submit" type="submit"><Funnel size={17} />应用筛选</button>
           </div>
         </div>
-        <div className="filter-grid">
+        <div id="job-filter-panel" className={`filter-grid${isFilterPanelOpen ? " is-open" : ""}`}>
           <div className="field-group jobs-city-filter"><span>城市</span><CityPicker label="城市" values={draft.city} onChange={(value) => updateDraft("city", value)} /></div>
-          <FilterDropdown id="job-filter-recruitment-type" label="招聘类型" value={draft.recruitmentType} options={filters?.recruitment_types ?? []} disabled={!filters} onChange={(value) => updateDraft("recruitmentType", value)} />
+          <FilterDropdown id="job-filter-batch" label="招聘批次" value={draft.batch} options={filters?.batches ?? []} disabled={!filters} onChange={(value) => updateDraft("batch", value)} />
           <FilterDropdown id="job-filter-education" label="学历" value={draft.education} options={filters?.educations ?? []} disabled={!filters} onChange={(value) => updateDraft("education", value)} />
           <FilterDropdown id="job-filter-company-nature" label="公司性质" value={draft.companyNature} options={filters?.company_natures ?? []} disabled={!filters} onChange={(value) => updateDraft("companyNature", value)} />
           <SelectField label="发布日期" value={draft.publishedDate} options={[
@@ -262,13 +300,17 @@ export function JobsPage() {
           <label className="field-group"><span>最低薪资</span><input type="number" min="0" inputMode="numeric" value={draft.salaryMin} onChange={(event) => updateDraft("salaryMin", event.target.value)} placeholder="元/月" /></label>
           <label className="field-group"><span>最高薪资</span><input type="number" min="0" inputMode="numeric" value={draft.salaryMax} onChange={(event) => updateDraft("salaryMax", event.target.value)} placeholder="元/月" /></label>
         </div>
+        <div className="filter-panel-actions">
+          <button className="button button-secondary" type="button" onClick={clearFilters} disabled={!hasFilters}>清除筛选</button>
+          <button className="button button-primary" type="submit"><Funnel size={17} />应用筛选</button>
+        </div>
       </form>
 
       {filterErrorMessage && <p className="form-error inline-page-error" role="alert">{filterErrorMessage}</p>}
 
       {loadState === "loading" && <JobGridSkeleton />}
-      {loadState === "error" && <StatePanel title="岗位暂时没有准备好" description={errorMessage ?? "请稍后重试。"} actionLabel="重新加载" onAction={() => setRetryKey((current) => current + 1)} />}
-      {loadState === "empty" && <StatePanel title="当前没有匹配岗位" description="没有找到符合当前条件的岗位，可以放宽筛选条件后再试。" actionLabel="清除筛选" onAction={clearFilters} />}
+      {loadState === "error" && <StatePanel title="岗位加载失败" description={errorMessage ?? "请稍后重试。"} actionLabel="重新加载" onAction={() => setRetryKey((current) => current + 1)} />}
+      {loadState === "empty" && <StatePanel title="没有找到岗位" description="没有找到符合条件的岗位。可以减少筛选条件后再试。" actionLabel="清除筛选" onAction={clearFilters} />}
 
       {loadState === "ready" && jobs && (
         <>
@@ -336,7 +378,7 @@ function JobCard({ job, isSaving, onToggleSaved }: { job: JobListItem; isSaving:
   return (
     <article className="job-card">
       <div className="job-card-topline">
-        <span className="source-chip">{job.source.name}</span>
+        {job.batch && <span className="batch-chip">{job.batch}</span>}
         <button className={`save-button ${job.is_saved ? "is-saved" : ""}`} type="button" aria-label={job.is_saved ? `取消收藏 ${job.title}` : `收藏 ${job.title}`} aria-pressed={job.is_saved === true} disabled={isSaving} onClick={onToggleSaved}>
           <BookmarkSimple size={19} weight={job.is_saved ? "fill" : "regular"} />
         </button>

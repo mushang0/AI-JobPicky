@@ -46,6 +46,7 @@ export interface JobListItem {
   company_nature: string | null;
   locations: string[];
   source: SourceRef;
+  batch: string | null;
   recruitment_type: string | null;
   education_requirement: string | null;
   graduation_years: number[];
@@ -80,11 +81,11 @@ export interface JobFilterOptions {
   cities: string[];
   company_natures: string[];
   sources: SourceFilterOption[];
+  batches: string[];
   recruitment_types: string[];
   educations: string[];
   graduation_years: number[];
   limits: {
-    visible_pool_limit: number;
     default_page_size: number;
     public_page_size_max: number;
     authenticated_page_size_max: number;
@@ -98,6 +99,7 @@ export interface JobQuery {
   city?: string[];
   company_nature?: string[];
   source_id?: string[];
+  batch?: string[];
   recruitment_type?: string[];
   education?: string[];
   graduation_year?: number[];

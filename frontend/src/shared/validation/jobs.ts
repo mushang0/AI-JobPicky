@@ -13,6 +13,7 @@ export function validateJobQuery(query: JobQuery): string | null {
     query.city,
     query.company_nature,
     query.source_id,
+    query.batch,
     query.recruitment_type,
     query.education,
     query.graduation_year,

@@ -52,6 +52,7 @@ def test_jobs_route_builds_query_from_repeated_query_parameters() -> None:
                 ("company_nature", "民企"),
                 ("source_id", "source-1"),
                 ("source_id", "source-1"),
+                ("batch", "秋招提前批"),
                 ("recruitment_type", "社招"),
                 ("education", "本科"),
                 ("graduation_year", "2026"),
@@ -69,6 +70,7 @@ def test_jobs_route_builds_query_from_repeated_query_parameters() -> None:
     assert service.query.city == ["上海", "北京"]
     assert service.query.company_nature == ["民营企业"]
     assert service.query.source_id == ["source-1"]
+    assert service.query.batch == ["秋招提前批"]
     assert service.query.recruitment_type == [RecruitmentType.SOCIAL]
     assert service.query.education == [EducationLevel.BACHELOR]
     assert service.query.graduation_year == [2026]

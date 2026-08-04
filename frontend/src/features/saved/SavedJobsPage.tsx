@@ -28,7 +28,7 @@ export function SavedJobsPage() {
     }).catch((error: unknown) => {
       if (!active) return;
       setState("error");
-      setErrorMessage(error instanceof ApiError ? getApiErrorMessage(error.code, error.message) : "收藏岗位暂时无法加载，请稍后重试。");
+      setErrorMessage(error instanceof ApiError ? getApiErrorMessage(error.code, error.message) : "收藏岗位加载失败，请稍后重试。");
     });
     return () => { active = false; };
   }, [page, retryKey]);
@@ -44,7 +44,7 @@ export function SavedJobsPage() {
     }
   }
 
-  return <div className="saved-jobs-page"><section className="page-intro saved-jobs-intro"><div><div className="eyebrow"><BookmarkSimple size={16} />收藏岗位</div><h1>把值得回看的岗位留在这里。</h1><p>收藏状态与岗位池、推荐卡片和岗位详情保持一致。</p></div><div className="intro-note"><BookmarkSimple size={20} /><div><strong>{state === "ready" ? items.length : "..."}</strong><span>本页收藏</span></div></div></section>{errorMessage && <p className="form-error inline-page-error" role="alert">{errorMessage}</p>}{state === "loading" && <SavedJobsSkeleton />}{state === "error" && <StatePanel title="收藏岗位暂时不可用" description={errorMessage ?? "请稍后重试。"} actionLabel="重新加载" onAction={() => setRetryKey((current) => current + 1)} />}{state === "empty" && <StatePanel title="还没有收藏岗位" description="在岗位池或推荐结果中收藏岗位后，会出现在这里。" actionLabel="去岗位池" link="/jobs" onAction={() => undefined} />}{state === "ready" && <><section className="saved-job-list" aria-label="收藏岗位列表">{items.map((item) => <SavedJobCard key={item.job.id} item={item} onRemove={() => void removeSaved(item)} />)}</section><Pagination page={page} totalPages={totalPages} onChange={(next) => setSearchParams({ page: String(next) })} /></>}</div>;
+  return <div className="saved-jobs-page"><section className="page-intro saved-jobs-intro"><div><div className="eyebrow"><BookmarkSimple size={16} />收藏岗位</div><h1>我的收藏</h1><p>收藏的岗位会显示在这里。</p></div><div className="intro-note"><BookmarkSimple size={20} /><div><strong>{state === "ready" ? items.length : "..."}</strong><span>已收藏</span></div></div></section>{errorMessage && <p className="form-error inline-page-error" role="alert">{errorMessage}</p>}{state === "loading" && <SavedJobsSkeleton />}{state === "error" && <StatePanel title="收藏岗位加载失败" description={errorMessage ?? "请稍后重试。"} actionLabel="重新加载" onAction={() => setRetryKey((current) => current + 1)} />}{state === "empty" && <StatePanel title="还没有收藏岗位" description="在岗位池或推荐结果中收藏岗位后，会显示在这里。" actionLabel="去岗位池" link="/jobs" onAction={() => undefined} />}{state === "ready" && <><section className="saved-job-list" aria-label="收藏岗位列表">{items.map((item) => <SavedJobCard key={item.job.id} item={item} onRemove={() => void removeSaved(item)} />)}</section><Pagination page={page} totalPages={totalPages} onChange={(next) => setSearchParams({ page: String(next) })} /></>}</div>;
 }
 
 function SavedJobCard({ item, onRemove }: { item: SavedJobView; onRemove: () => void }) {

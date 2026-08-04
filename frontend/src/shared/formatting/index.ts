@@ -51,11 +51,11 @@ export function formatJobStatus(status: "OPEN" | "CLOSED" | "UNKNOWN"): string {
 export function formatRecommendationStep(step: "PENDING" | "PROFILE" | "FILTER" | "RETRIEVE" | "EVALUATE" | "SAVE" | "COMPLETE" | null): string {
   return {
     PENDING: "等待开始",
-    PROFILE: "正在理解你的求职方向",
-    FILTER: "正在排除不符合要求的岗位",
-    RETRIEVE: "正在寻找相关岗位",
-    EVALUATE: "正在比较你的经历和岗位要求",
-    SAVE: "正在整理推荐结果",
+    PROFILE: "读取求职画像",
+    FILTER: "应用筛选条件",
+    RETRIEVE: "筛选相关岗位",
+    EVALUATE: "比较岗位要求",
+    SAVE: "整理推荐结果",
     COMPLETE: "推荐完成",
   }[step ?? "PENDING"];
 }

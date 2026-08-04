@@ -40,8 +40,17 @@ from .query_terms import extract_terms
 _SPACE_RE = re.compile(r"\s+")
 
 
+def _job_sort_key(job: JobFact) -> tuple[bool, float, float, str]:
+    return (
+        job.published_at is None,
+        -(job.published_at.timestamp() if job.published_at else 0.0),
+        -job.last_confirmed_at.timestamp(),
+        job.id,
+    )
+
+
 class JobPoolStore(Protocol):
-    async def list_visible(self, limit: int) -> list[tuple[JobFact, JobSourceView]]: ...
+    async def list_visible(self) -> list[tuple[JobFact, JobSourceView]]: ...
 
     async def get_job(self, job_id: str) -> tuple[JobFact, JobSourceView] | None: ...
 
@@ -80,7 +89,7 @@ class JobPoolService:
 
     async def list_jobs(self, user_id: str | None, query: JobListQuery) -> JobPoolPage:
         self._authorize_pool_query(user_id, query)
-        pool = await self._jobs.list_visible(self._settings.visible_pool_limit)
+        pool = await self._jobs.list_visible()
         filtered = [(job, source) for job, source in pool if self._matches(job, query)]
         terms = _search_terms(query.q)
         if terms:
@@ -89,12 +98,10 @@ class JobPoolService:
                 for job, source in filtered
             ]
             ranked = [item for item in ranked if item[0] > 0]
-            ranked.sort(
-                key=lambda item: (-item[0], -item[1].last_confirmed_at.timestamp(), item[1].id)
-            )
+            ranked.sort(key=lambda item: (-item[0], *_job_sort_key(item[1])))
             filtered = [(job, source) for _, job, source in ranked]
         else:
-            filtered.sort(key=lambda item: (-item[0].last_confirmed_at.timestamp(), item[0].id))
+            filtered.sort(key=lambda item: _job_sort_key(item[0]))
 
         start = (query.page - 1) * query.page_size
         page_items = filtered[start : start + query.page_size]
@@ -139,7 +146,7 @@ class JobPoolService:
             cached = self._filter_cache
             if cached is not None and cached.expires_at > now:
                 return cached.value
-            pool = await self._jobs.list_visible(self._settings.visible_pool_limit)
+            pool = await self._jobs.list_visible()
             value = JobFilterOptions(
                 cities=sorted(
                     {
@@ -157,11 +164,13 @@ class JobPoolService:
                     }
                 ),
                 sources=_group_filter_sources(pool),
+                batches=sorted(
+                    {batch for job, _ in pool if (batch := _batch_value(job)) is not None}
+                ),
                 recruitment_types=list(RecruitmentType),
                 educations=list(EducationLevel),
                 graduation_years=sorted({year for job, _ in pool for year in job.graduation_years}),
                 limits=FilterOptionsLimits(
-                    visible_pool_limit=self._settings.visible_pool_limit,
                     default_page_size=self._settings.job_pool_default_page_size,
                     public_page_size_max=self._settings.job_pool_public_page_size_max,
                     authenticated_page_size_max=(
@@ -220,6 +229,7 @@ class JobPoolService:
                 query.city,
                 query.company_nature,
                 query.source_id,
+                query.batch,
                 query.recruitment_type,
                 query.education,
                 query.graduation_year,
@@ -267,6 +277,10 @@ class JobPoolService:
                 return False
         if query.source_id and job.source_id not in query.source_id:
             return False
+        if query.batch:
+            batch = _batch_value(job)
+            if batch is not None and batch not in query.batch:
+                return False
         if query.recruitment_type:
             recruitment_type = normalize_recruitment_type(job.recruitment_type)
             if recruitment_type is not None and recruitment_type not in query.recruitment_type:
@@ -306,6 +320,14 @@ def _group_filter_sources(
     ]
 
 
+def _batch_value(job: JobFact) -> str | None:
+    value = job.metadata.get("batch")
+    if not isinstance(value, str):
+        return None
+    batch = value.strip()
+    return batch or None
+
+
 def _search_terms(query: str | None) -> list[str]:
     if not query:
         return []
@@ -340,6 +362,7 @@ def _to_list_item(
         company_nature=job.company_nature,
         locations=job.locations,
         source=source,
+        batch=_batch_value(job),
         recruitment_type=_recruitment_enum(job.recruitment_type),
         education_requirement=job.education_requirement,
         graduation_years=job.graduation_years,
@@ -361,6 +384,7 @@ def _to_detail_view(job: JobFact, source: JobSourceView, *, is_saved: bool | Non
         company_nature=job.company_nature,
         locations=job.locations,
         source=source,
+        batch=_batch_value(job),
         recruitment_type=_recruitment_enum(job.recruitment_type),
         education_requirement=job.education_requirement,
         graduation_years=job.graduation_years,

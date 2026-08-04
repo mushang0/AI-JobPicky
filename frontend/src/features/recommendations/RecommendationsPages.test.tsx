@@ -58,9 +58,9 @@ describe("RecommendationRunDetailPage", () => {
       </MemoryRouter>,
     );
 
-    expect(await screen.findByRole("alert")).toHaveTextContent("推荐任务失败");
+    expect(await screen.findByRole("alert")).toHaveTextContent("推荐失败");
     expect(screen.getByText("依赖服务暂时不可用，请稍后重试。")).toBeInTheDocument();
     expect(screen.getByText("本次积分已退回")).toBeInTheDocument();
-    expect(screen.getByText("从 2000 个岗位中推荐")).toBeInTheDocument();
+    expect(screen.getByText("从 2000 个岗位中筛选")).toBeInTheDocument();
   });
 });

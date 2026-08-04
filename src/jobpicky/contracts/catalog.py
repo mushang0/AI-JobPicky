@@ -115,6 +115,7 @@ class JobListQuery(ContractModel):
     city: list[NonEmptyStr] = Field(default_factory=list, max_length=50)
     company_nature: list[NonEmptyStr] = Field(default_factory=list, max_length=50)
     source_id: list[NonEmptyStr] = Field(default_factory=list, max_length=50)
+    batch: list[NonEmptyStr] = Field(default_factory=list, max_length=50)
     recruitment_type: list[RecruitmentType] = Field(default_factory=list, max_length=50)
     education: list[EducationLevel] = Field(default_factory=list, max_length=50)
     graduation_year: list[int] = Field(default_factory=list, max_length=50)
@@ -152,6 +153,7 @@ class JobListQuery(ContractModel):
             "city",
             "company_nature",
             "source_id",
+            "batch",
             "recruitment_type",
             "education",
             "graduation_year",
@@ -210,6 +212,7 @@ class JobListItem(ContractModel):
     company_nature: NonEmptyStr | None = None
     locations: list[NonEmptyStr] = Field(default_factory=list)
     source: JobSourceView
+    batch: NonEmptyStr | None = None
     recruitment_type: RecruitmentType | None = None
     education_requirement: NonEmptyStr | None = None
     graduation_years: list[int] = Field(default_factory=list)
@@ -241,6 +244,7 @@ class JobDetailView(ContractModel):
     company_nature: NonEmptyStr | None = None
     locations: list[NonEmptyStr] = Field(default_factory=list)
     source: JobSourceView
+    batch: NonEmptyStr | None = None
     recruitment_type: RecruitmentType | None = None
     education_requirement: NonEmptyStr | None = None
     graduation_years: list[int] = Field(default_factory=list)
@@ -288,7 +292,6 @@ class JobPoolPage(ContractModel):
 
 
 class FilterOptionsLimits(ContractModel):
-    visible_pool_limit: int = Field(ge=1)
     default_page_size: int = Field(ge=1, le=100)
     public_page_size_max: int = Field(ge=1, le=100)
     authenticated_page_size_max: int = Field(ge=1, le=100)
@@ -298,6 +301,7 @@ class JobFilterOptions(ContractModel):
     cities: list[NonEmptyStr] = Field(default_factory=list)
     company_natures: list[NonEmptyStr] = Field(default_factory=list)
     sources: list[JobFilterSource] = Field(default_factory=list)
+    batches: list[NonEmptyStr] = Field(default_factory=list)
     recruitment_types: list[RecruitmentType] = Field(default_factory=list)
     educations: list[EducationLevel] = Field(default_factory=list)
     graduation_years: list[int] = Field(default_factory=list)

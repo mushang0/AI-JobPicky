@@ -300,6 +300,7 @@ a:focus-visible {
   font-weight: 780;
   letter-spacing: -0.065em;
   line-height: 1.02;
+  text-wrap: balance;
 }
 
 .page-intro p {
@@ -308,6 +309,7 @@ a:focus-visible {
   color: var(--muted);
   font-size: 1rem;
   line-height: 1.7;
+  text-wrap: pretty;
 }
 
 .intro-note {
@@ -341,17 +343,22 @@ a:focus-visible {
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  min-height: 70px;
+  min-height: 64px;
   padding: 14px 18px;
   border-radius: 19px;
 }
 
-.toolbar-copy,
+.toolbar-stats,
 .toolbar-meta {
   gap: 10px;
 }
 
-.toolbar-copy {
+.toolbar-stats {
+  display: flex;
+  align-items: center;
+}
+
+.toolbar-stat {
   display: grid;
   gap: 3px;
 }
@@ -363,9 +370,10 @@ a:focus-visible {
   text-transform: uppercase;
 }
 
-.toolbar-copy strong {
+.toolbar-stat strong {
   color: var(--text);
-  font-size: 0.92rem;
+  font-size: 1.02rem;
+  font-variant-numeric: tabular-nums;
 }
 
 .toolbar-meta {
@@ -405,7 +413,7 @@ a:focus-visible {
   gap: 10px;
 }
 
-.source-chip {
+.batch-chip {
   padding: 5px 9px;
   color: var(--accent-deep);
   border: 1px solid rgb(8 184 139 / 0.24);
@@ -885,27 +893,67 @@ a:focus-visible {
   .page-intro {
     align-items: flex-start;
     flex-direction: column;
+    gap: 14px;
+    padding: 4px 4px 6px;
   }
 
   .page-intro h1 {
-    font-size: clamp(2.15rem, 11vw, 3.3rem);
+    font-size: clamp(1.8rem, 8vw, 2.4rem);
+    line-height: 1.08;
+  }
+
+  .page-intro p {
+    margin-top: 10px;
+    font-size: 0.92rem;
+    line-height: 1.55;
   }
 
   .intro-note {
     width: 100%;
+    padding: 13px 15px;
+  }
+
+  .jobs-page {
+    gap: 20px;
   }
 
   .jobs-toolbar {
-    align-items: flex-start;
-    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+    min-height: 0;
+    padding: 12px 14px;
+  }
+
+  .toolbar-stats {
+    flex: 1;
+    justify-content: space-between;
+    min-width: 0;
+  }
+
+  .toolbar-stat {
+    min-width: 0;
+  }
+
+  .toolbar-stat strong {
+    font-size: 0.95rem;
+    white-space: nowrap;
   }
 
   .toolbar-meta {
-    flex-wrap: wrap;
+    display: none;
   }
 
   .job-grid {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .job-card-heading {
+    margin-top: 20px;
+  }
+
+  .job-card-heading h2 {
+    font-size: 1.08rem;
+    line-height: 1.35;
   }
 }
 
@@ -968,6 +1016,24 @@ a:focus-visible {
 
 .job-search-actions .button {
   min-height: 54px;
+}
+
+.mobile-filter-toggle,
+.filter-panel-actions {
+  display: none;
+}
+
+.filter-count {
+  display: inline-grid;
+  min-width: 20px;
+  height: 20px;
+  place-items: center;
+  padding: 0 5px;
+  color: var(--accent-deep);
+  border-radius: 999px;
+  background: rgb(255 255 255 / 0.7);
+  font-size: 0.68rem;
+  font-weight: 800;
 }
 
 .search-field {
@@ -1252,15 +1318,42 @@ a:focus-visible {
   }
 
   .job-search-row {
-    grid-template-columns: minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 9px;
   }
 
   .job-search-actions {
-    width: 100%;
+    width: auto;
   }
 
-  .job-search-actions .button {
-    flex: 1;
+  .job-search-actions > .button-secondary:not(.mobile-filter-toggle),
+  .desktop-filter-submit {
+    display: none;
+  }
+
+  .mobile-filter-toggle {
+    display: inline-flex;
+    min-width: 50px;
+    padding: 0 13px;
+  }
+
+  .filter-grid:not(.is-open) {
+    display: none;
+  }
+
+  .filter-grid.is-open + .filter-panel-actions {
+    display: flex;
+    gap: 9px;
+    padding-top: 4px;
+    border-top: 1px solid var(--line);
+  }
+
+  .filter-panel-actions .button {
+    flex: 1 1 0;
+    width: 100%;
+    min-width: 0;
+    min-height: 46px;
+    margin-top: 0;
   }
 
   .filter-dropdown-menu {
@@ -1617,7 +1710,15 @@ a:focus-visible {
   }
 
   .auth-context h1 {
-    font-size: clamp(2.25rem, 12vw, 3.6rem);
+    font-size: clamp(2rem, 10vw, 3rem);
+    line-height: 1.08;
+    text-wrap: balance;
+  }
+
+  .auth-context-copy {
+    margin-top: 16px;
+    font-size: 0.92rem;
+    line-height: 1.6;
   }
 
   .auth-points {
@@ -1644,7 +1745,8 @@ a:focus-visible {
   }
 
   .detail-hero h1 {
-    font-size: clamp(2.2rem, 11vw, 3.2rem);
+    font-size: clamp(1.9rem, 8vw, 2.65rem);
+    line-height: 1.12;
   }
 
   .detail-save-button {
@@ -1803,6 +1905,105 @@ a:focus-visible {
 .profile-form {
   display: grid;
   gap: 16px;
+}
+
+.profile-direct-editor {
+  max-width: 900px;
+  margin: 0 auto;
+}
+
+.profile-direct-selection {
+  display: grid;
+  gap: 20px;
+  padding: clamp(22px, 4vw, 34px);
+  border: 1px solid rgb(255 255 255 / 0.9);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+  box-shadow: var(--shadow-soft), inset 0 1px 0 rgb(255 255 255 / 0.62);
+  backdrop-filter: blur(24px) saturate(120%);
+  -webkit-backdrop-filter: blur(24px) saturate(120%);
+}
+
+.profile-direct-heading {
+  display: grid;
+  gap: 6px;
+}
+
+.profile-direct-heading h2 {
+  margin: 5px 0 0;
+  color: var(--text);
+  font-size: 1.35rem;
+  letter-spacing: -0.045em;
+}
+
+.profile-direct-heading p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.82rem;
+  line-height: 1.6;
+}
+
+.profile-edit-options {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.profile-edit-option {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(90px, 0.9fr) auto;
+  gap: 10px;
+  min-width: 0;
+  min-height: 76px;
+  align-items: center;
+  padding: 13px 14px;
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: rgb(255 255 255 / 0.3);
+  text-align: left;
+  transition: border-color var(--motion), background var(--motion), transform var(--motion);
+}
+
+.profile-edit-option:hover,
+.profile-edit-option.is-active {
+  border-color: rgb(8 184 139 / 0.42);
+  background: rgb(166 235 212 / 0.22);
+  transform: translateY(-1px);
+}
+
+.profile-edit-option-copy {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+}
+
+.profile-edit-option-copy strong {
+  overflow-wrap: anywhere;
+  font-size: 0.84rem;
+}
+
+.profile-edit-option-copy small {
+  color: var(--muted);
+  font-size: 0.68rem;
+  line-height: 1.45;
+}
+
+.profile-edit-option-value {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 0.72rem;
+  line-height: 1.5;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.profile-edit-option-action {
+  color: var(--accent-deep);
+  font-size: 0.72rem;
+  font-weight: 750;
+  white-space: nowrap;
 }
 
 .profile-wizard {
@@ -3389,6 +3590,7 @@ a:focus-visible {
 
 @media (prefers-reduced-transparency: reduce) {
   .profile-section,
+  .profile-direct-selection,
   .profile-skeleton,
   .recommendation-toolbar,
   .recommendation-card,
@@ -3442,6 +3644,28 @@ a:focus-visible {
 
   .profile-section {
     padding: 21px 18px;
+  }
+
+  .profile-direct-selection {
+    padding: 21px 18px;
+  }
+
+  .profile-edit-options {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .profile-edit-option {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .profile-edit-option-value {
+    grid-column: 1;
+    grid-row: 2;
+  }
+
+  .profile-edit-option-action {
+    grid-column: 2;
+    grid-row: 1 / span 2;
   }
 
   .profile-section-fields {

@@ -6,8 +6,8 @@ import { BrandMark } from "./BrandMark";
 
 const navItems = [
   { label: "岗位池", to: "/jobs", icon: Briefcase },
-  { label: "全部推荐", to: "/recommendations", icon: Sparkle },
-  { label: "推荐任务", to: "/recommendation-runs", icon: ListChecks },
+  { label: "推荐岗位", to: "/recommendations", icon: Sparkle },
+  { label: "推荐记录", to: "/recommendation-runs", icon: ListChecks },
   { label: "我的求职画像", to: "/profile", icon: UserCircle },
   { label: "收藏岗位", to: "/saved-jobs", icon: BookmarkSimple },
 ];
@@ -69,7 +69,7 @@ export function AppShell() {
 
         <div className="sidebar-context">
           <CheckCircle size={16} weight="fill" />
-          <span>岗位信息持续整理中</span>
+          <span>公开招聘岗位</span>
         </div>
 
         <nav id="primary-navigation" className="primary-nav" aria-label="主导航">
@@ -105,7 +105,7 @@ export function AppShell() {
 
           <div className="topbar-status">
             <span className="status-orb" aria-hidden="true" />
-            <span>{status === "authenticated" ? "已登录" : "公开岗位预览"}</span>
+            <span>{status === "authenticated" ? "已登录" : "未登录"}</span>
           </div>
 
           <button

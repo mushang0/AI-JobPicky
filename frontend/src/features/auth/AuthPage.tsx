@@ -57,7 +57,7 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
       if (error instanceof ApiError) {
         setSubmitError(getApiErrorMessage(error.code, error.message));
       } else {
-        setSubmitError("网络暂时不可用，请稍后重试。");
+        setSubmitError("网络连接失败，请稍后重试。");
       }
     } finally {
       setIsSubmitting(false);
@@ -69,11 +69,11 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
       <section className="auth-context" aria-label="JobPicky 介绍">
         <BrandMark />
         <p className="auth-kicker">JobPicky 求职工作台</p>
-        <h1>把岗位事实，放在决定之前。</h1>
-        <p className="auth-context-copy">登录后可以搜索、筛选、保存岗位，并从岗位详情进入官方投递页面。</p>
+        <h1>登录后查找岗位</h1>
+        <p className="auth-context-copy">登录后可以搜索、筛选和收藏岗位，并查看官方投递入口。</p>
         <div className="auth-points">
-          <span><Check size={16} weight="bold" />公开招聘源岗位</span>
-          <span><ShieldCheck size={16} weight="bold" />会话安全保存在当前设备内存</span>
+          <span><Check size={16} weight="bold" />岗位来自公开招聘渠道</span>
+          <span><ShieldCheck size={16} weight="bold" />登录状态只保存在当前设备</span>
         </div>
       </section>
 

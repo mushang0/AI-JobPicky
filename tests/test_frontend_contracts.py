@@ -53,6 +53,7 @@ def list_item() -> JobListItem:
         company_nature="民营企业",
         locations=["上海"],
         source=JobSourceView(id="source-1", name="Moka"),
+        batch="秋招提前批",
         recruitment_type=RecruitmentType.SOCIAL,
         education_requirement="本科",
         salary_min=15_000,
@@ -74,6 +75,7 @@ def test_job_list_and_detail_views_do_not_expose_internal_fact_fields() -> None:
         company_nature=item.company_nature,
         locations=item.locations,
         source=item.source,
+        batch=item.batch,
         recruitment_type=item.recruitment_type,
         education_requirement=item.education_requirement,
         graduation_years=item.graduation_years,
@@ -117,17 +119,17 @@ def test_filter_options_use_explicit_limits_and_normalized_values() -> None:
         cities=["北京", "上海"],
         company_natures=["民营企业"],
         sources=[JobFilterSource(platform="Moka", source_ids=["source-1"])],
+        batches=["秋招提前批"],
         recruitment_types=list(RecruitmentType),
         educations=list(EducationLevel),
         graduation_years=[2026, 2027],
         limits={  # type: ignore[arg-type]
-            "visible_pool_limit": 5000,
             "default_page_size": 30,
             "public_page_size_max": 30,
             "authenticated_page_size_max": 100,
         },
     )
-    assert options.limits.visible_pool_limit == 5000
+    assert options.limits.default_page_size == 30
 
 
 def test_profile_input_is_user_editable_but_snapshot_and_view_keep_server_fields() -> None:
