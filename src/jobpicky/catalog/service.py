@@ -157,6 +157,9 @@ class JobPoolService:
                     }
                 ),
                 sources=_group_filter_sources(pool),
+                batches=sorted(
+                    {batch for job, _ in pool if (batch := _batch_value(job)) is not None}
+                ),
                 recruitment_types=list(RecruitmentType),
                 educations=list(EducationLevel),
                 graduation_years=sorted({year for job, _ in pool for year in job.graduation_years}),
@@ -220,6 +223,7 @@ class JobPoolService:
                 query.city,
                 query.company_nature,
                 query.source_id,
+                query.batch,
                 query.recruitment_type,
                 query.education,
                 query.graduation_year,
@@ -267,6 +271,10 @@ class JobPoolService:
                 return False
         if query.source_id and job.source_id not in query.source_id:
             return False
+        if query.batch:
+            batch = _batch_value(job)
+            if batch is not None and batch not in query.batch:
+                return False
         if query.recruitment_type:
             recruitment_type = normalize_recruitment_type(job.recruitment_type)
             if recruitment_type is not None and recruitment_type not in query.recruitment_type:
@@ -306,6 +314,14 @@ def _group_filter_sources(
     ]
 
 
+def _batch_value(job: JobFact) -> str | None:
+    value = job.metadata.get("batch")
+    if not isinstance(value, str):
+        return None
+    batch = value.strip()
+    return batch or None
+
+
 def _search_terms(query: str | None) -> list[str]:
     if not query:
         return []
@@ -340,6 +356,7 @@ def _to_list_item(
         company_nature=job.company_nature,
         locations=job.locations,
         source=source,
+        batch=_batch_value(job),
         recruitment_type=_recruitment_enum(job.recruitment_type),
         education_requirement=job.education_requirement,
         graduation_years=job.graduation_years,
@@ -361,6 +378,7 @@ def _to_detail_view(job: JobFact, source: JobSourceView, *, is_saved: bool | Non
         company_nature=job.company_nature,
         locations=job.locations,
         source=source,
+        batch=_batch_value(job),
         recruitment_type=_recruitment_enum(job.recruitment_type),
         education_requirement=job.education_requirement,
         graduation_years=job.graduation_years,

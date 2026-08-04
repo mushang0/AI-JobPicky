@@ -36,6 +36,7 @@ function shouldRequireAuth(url: URL, authenticated: boolean): boolean {
     "city",
     "company_nature",
     "source_id",
+    "batch",
     "recruitment_type",
     "education",
     "graduation_year",
@@ -69,6 +70,7 @@ function filterJobs(url: URL, authenticated: boolean): JobListItem[] {
       }
       if (!matches("company_nature", job.company_nature)) return false;
       if (!matches("source_id", job.source.id)) return false;
+      if (!matches("batch", job.batch)) return false;
       if (!matches("recruitment_type", job.recruitment_type)) return false;
       if (!matches("education", job.education_requirement)) return false;
 

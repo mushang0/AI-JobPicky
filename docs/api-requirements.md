@@ -93,6 +93,7 @@ API-001 的响应语义。
 | `city` | `list[str]` | `[]` | 是 | 城市多选 |
 | `company_nature` | `list[str]` | `[]` | 是 | 公司性质多选 |
 | `source_id` | `list[str]` | `[]` | 是 | 岗位来源多选 |
+| `batch` | `list[str]` | `[]` | 是 | 原始招聘批次多选，例如秋招提前批、暑期实习 |
 | `recruitment_type` | `list[str]` | `[]` | 是 | 招聘类型多选 |
 | `education` | `list[str]` | `[]` | 是 | 学历要求多选 |
 | `graduation_year` | `list[int]` | `[]` | 是 | 届次多选 |
@@ -143,6 +144,7 @@ GET /api/v1/jobs?page=1&page_size=30&city=上海&city=北京&company_nature=民�
         "id": "source-1",
         "name": "Moka"
       },
+      "batch": "秋招提前批",
       "recruitment_type": "校招",
       "education_requirement": "本科",
       "graduation_years": [2027],
@@ -172,6 +174,7 @@ GET /api/v1/jobs?page=1&page_size=30&city=上海&city=北京&company_nature=民�
 | `company_nature` | `str \| null` | 公司性质，未知时为 `null` |
 | `locations` | `list[str]` | 工作地点，未知时为空数组 |
 | `source` | `object` | 岗位来源标识和前端显示名称 |
+| `batch` | `str \| null` | 来源表格中的原始招聘批次；未知时为 `null` |
 | `recruitment_type` | `str \| null` | 招聘类型 |
 | `education_requirement` | `str \| null` | 学历要求 |
 | `graduation_years` | `list[int]` | 届次要求；空数组表示未知或不限 |
@@ -617,6 +620,7 @@ GET /api/v1/jobs/{job_id}
     "id": "source-1",
     "name": "Moka"
   },
+  "batch": "秋招提前批",
   "recruitment_type": "校招",
   "education_requirement": "本科",
   "graduation_years": [2027],
@@ -1361,6 +1365,7 @@ GET /api/v1/jobs/filter-options
     {"platform": "北森", "source_ids": ["beisen-online:acme.zhiye.com", "beisen-online:example.zhiye.com"]},
     {"platform": "Moka", "source_ids": ["source-1"]}
   ],
+  "batches": ["春招补录", "秋招提前批", "暑期实习"],
   "recruitment_types": ["校招", "社招", "实习"],
   "educations": ["高中及以下", "专科", "本科", "硕士", "博士"],
   "graduation_years": [2026, 2027, 2028],
@@ -1376,6 +1381,7 @@ GET /api/v1/jobs/filter-options
 - `cities`、`company_natures`、`sources` 和 `graduation_years` 从当前可见岗位池的已知规范化事实中去重生成，
   分别按中文显示值、平台名称和年份升序排序；多个来源 ID 归属于同一平台时只返回一个 `sources` 项，
   并在 `source_ids` 中列出该平台对应的全部来源 ID。
+- `batches` 从当前可见岗位池的 `metadata["batch"]` 原始文本中去重生成并排序，不映射为“校招”等粗粒度招聘类型；岗位卡片和该筛选使用同一字段。
 - `recruitment_types` 和 `educations` 返回首版支持的固定规范值。
 - 未知值不作为筛选选项返回；用户选择任一筛选后，岗位未知字段仍按“未知保留”处理。
 - 不返回每个选项的实时岗位数量，避免为首版增加昂贵的聚合查询。

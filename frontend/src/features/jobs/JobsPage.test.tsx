@@ -23,6 +23,7 @@ describe("JobsPage", () => {
       cities: [],
       company_natures: [],
       sources: [],
+      batches: [],
       recruitment_types: ["校招", "社招", "实习"],
       educations: [],
       graduation_years: [],
@@ -45,6 +46,7 @@ describe("JobsPage", () => {
       cities: ["上海", "杭州"],
       company_natures: ["民营企业"],
       sources: [{ platform: "公开招聘源", source_ids: ["source-1"] }],
+      batches: ["秋招提前批"],
       recruitment_types: ["社招"],
       educations: ["本科"],
       graduation_years: [2027],
@@ -69,6 +71,7 @@ describe("JobsPage", () => {
       cities: [],
       company_natures: [],
       sources: [{ platform: "北森", source_ids: ["beisen-a", "beisen-b"] }],
+      batches: [],
       recruitment_types: [],
       educations: [],
       graduation_years: [],
@@ -85,8 +88,9 @@ describe("JobsPage", () => {
     expect(publishedDate.parentElement).toHaveClass("select-control-wrap");
     expect(screen.queryByText("更多筛选")).not.toBeInTheDocument();
     expect(screen.queryByText("来源")).not.toBeInTheDocument();
+    expect(screen.getByText("招聘批次")).toBeInTheDocument();
     expect(screen.queryByRole("combobox", { name: "每页显示岗位数" })).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "应用筛选" })).toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: "应用筛选" })).toHaveLength(2);
   });
 
   it("keeps detailed filters collapsed until the mobile toggle is opened", async () => {
@@ -95,6 +99,7 @@ describe("JobsPage", () => {
       cities: [],
       company_natures: [],
       sources: [],
+      batches: [],
       recruitment_types: ["社招"],
       educations: ["本科"],
       graduation_years: [2027],

@@ -69,6 +69,41 @@ def test_filter_options_group_sources_by_platform() -> None:
     ]
 
 
+def test_batch_is_exposed_and_filters_raw_batch_without_using_recruitment_type() -> None:
+    pool = [
+        (
+            make_job(
+                id="job-early-campus",
+                recruitment_type="校招",
+                metadata={"batch": "秋招提前批"},
+            ),
+            JobSourceView(id="source-1", name="飞书招聘"),
+        ),
+        (
+            make_job(
+                id="job-summer-intern",
+                recruitment_type="实习",
+                metadata={"batch": "暑期实习"},
+            ),
+            JobSourceView(id="source-1", name="飞书招聘"),
+        ),
+        (
+            make_job(id="job-unknown-batch", recruitment_type="社招"),
+            JobSourceView(id="source-1", name="Moka"),
+        ),
+    ]
+    service = JobPoolService(
+        _VisibleJobStore(pool), _UnusedSavedJobStore(), Settings(environment="test")
+    )
+
+    options = asyncio.run(service.get_filter_options())
+    filtered = asyncio.run(service.list_jobs("user-1", JobListQuery(batch=["秋招提前批"])))
+
+    assert options.batches == ["暑期实习", "秋招提前批"]
+    assert [item.id for item in filtered.items] == ["job-early-campus", "job-unknown-batch"]
+    assert filtered.items[0].batch == "秋招提前批"
+
+
 def test_published_date_filters_use_published_at_and_keep_unknown_separate() -> None:
     now = datetime.now(UTC)
     pool = [

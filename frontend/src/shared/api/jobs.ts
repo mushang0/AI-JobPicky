@@ -16,6 +16,7 @@ export function buildJobsQuery(query: JobQuery = {}): string {
   appendValues(params, "city", query.city);
   appendValues(params, "company_nature", query.company_nature);
   appendValues(params, "source_id", query.source_id);
+  appendValues(params, "batch", query.batch);
   appendValues(params, "recruitment_type", query.recruitment_type);
   appendValues(params, "education", query.education);
   query.graduation_year?.forEach((year) => params.append("graduation_year", String(year)));

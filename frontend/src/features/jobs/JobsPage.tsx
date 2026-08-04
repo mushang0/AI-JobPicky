@@ -16,7 +16,7 @@ interface FilterDraft {
   q: string;
   city: string[];
   companyNature: string[];
-  recruitmentType: string[];
+  batch: string[];
   education: string[];
   graduationYear: string[];
   salaryMin: string;
@@ -28,6 +28,7 @@ const JOBS_PAGE_SIZE = 12;
 const FILTER_PARAM_KEYS = [
   "city",
   "company_nature",
+  "batch",
   "recruitment_type",
   "education",
   "graduation_year",
@@ -46,7 +47,7 @@ function readDraft(params: URLSearchParams): FilterDraft {
     q: params.get("q") ?? "",
     city: params.getAll("city"),
     companyNature: params.getAll("company_nature"),
-    recruitmentType: params.getAll("recruitment_type"),
+    batch: params.getAll("batch"),
     education: params.getAll("education"),
     graduationYear: params.getAll("graduation_year"),
     salaryMin: params.get("salary_min") ?? "",
@@ -75,6 +76,7 @@ function readQuery(params: URLSearchParams): JobQuery {
     q: params.get("q") ?? undefined,
     city: many("city"),
     company_nature: many("company_nature"),
+    batch: many("batch"),
     recruitment_type: many("recruitment_type"),
     education: many("education"),
     graduation_year: graduationYears.length > 0 ? graduationYears : undefined,
@@ -172,7 +174,7 @@ export function JobsPage() {
       ["q", draft.q.trim()],
       ["city", draft.city],
       ["company_nature", draft.companyNature],
-      ["recruitment_type", draft.recruitmentType],
+      ["batch", draft.batch],
       ["education", draft.education],
       ["graduation_year", draft.graduationYear],
       ["salary_min", draft.salaryMin],
@@ -228,7 +230,7 @@ export function JobsPage() {
   const activeFilterCount = [
     draft.city.length,
     draft.companyNature.length,
-    draft.recruitmentType.length,
+    draft.batch.length,
     draft.education.length,
     draft.graduationYear.length,
     draft.publishedDate ? 1 : 0,
@@ -284,7 +286,7 @@ export function JobsPage() {
         </div>
         <div id="job-filter-panel" className={`filter-grid${isFilterPanelOpen ? " is-open" : ""}`}>
           <div className="field-group jobs-city-filter"><span>城市</span><CityPicker label="城市" values={draft.city} onChange={(value) => updateDraft("city", value)} /></div>
-          <FilterDropdown id="job-filter-recruitment-type" label="招聘类型" value={draft.recruitmentType} options={filters?.recruitment_types ?? []} disabled={!filters} onChange={(value) => updateDraft("recruitmentType", value)} />
+          <FilterDropdown id="job-filter-batch" label="招聘批次" value={draft.batch} options={filters?.batches ?? []} disabled={!filters} onChange={(value) => updateDraft("batch", value)} />
           <FilterDropdown id="job-filter-education" label="学历" value={draft.education} options={filters?.educations ?? []} disabled={!filters} onChange={(value) => updateDraft("education", value)} />
           <FilterDropdown id="job-filter-company-nature" label="公司性质" value={draft.companyNature} options={filters?.company_natures ?? []} disabled={!filters} onChange={(value) => updateDraft("companyNature", value)} />
           <SelectField label="发布日期" value={draft.publishedDate} options={[
@@ -300,7 +302,7 @@ export function JobsPage() {
         </div>
         <div className="filter-panel-actions">
           <button className="button button-secondary" type="button" onClick={clearFilters} disabled={!hasFilters}>清除筛选</button>
-          <button className="button button-primary" type="submit"><Funnel size={17} />完成筛选</button>
+          <button className="button button-primary" type="submit"><Funnel size={17} />应用筛选</button>
         </div>
       </form>
 
@@ -376,7 +378,7 @@ function JobCard({ job, isSaving, onToggleSaved }: { job: JobListItem; isSaving:
   return (
     <article className="job-card">
       <div className="job-card-topline">
-        <span className="source-chip">{job.source.name}</span>
+        {job.batch && <span className="batch-chip">{job.batch}</span>}
         <button className={`save-button ${job.is_saved ? "is-saved" : ""}`} type="button" aria-label={job.is_saved ? `取消收藏 ${job.title}` : `收藏 ${job.title}`} aria-pressed={job.is_saved === true} disabled={isSaving} onClick={onToggleSaved}>
           <BookmarkSimple size={19} weight={job.is_saved ? "fill" : "regular"} />
         </button>

@@ -100,6 +100,7 @@ def test_jobs_query_is_expressed_as_repeated_query_parameters() -> None:
         "city",
         "company_nature",
         "source_id",
+        "batch",
         "recruitment_type",
         "education",
         "graduation_year",
