@@ -1,0 +1,18 @@
+[Unit]
+Description=JobPicky Feishu Bitable incremental collector
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=jobpicky
+Group=jobpicky
+WorkingDirectory=/opt/jobpicky
+EnvironmentFile=/etc/jobpicky/feishu.env
+ExecStart=/opt/jobpicky/.venv/bin/python /opt/jobpicky/scripts/feishu.py sync
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/jobpicky /var/cache/jobpicky
+

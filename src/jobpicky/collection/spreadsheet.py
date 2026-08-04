@@ -51,6 +51,8 @@ class SpreadsheetRow:
     apply_links: list[str]
     major_requirement: str | None
     has_written_test: str | None
+    source_record_id: str | None = None
+    source_last_modified_at: datetime | None = None
 
     @property
     def recruitment_type(self) -> str | None:

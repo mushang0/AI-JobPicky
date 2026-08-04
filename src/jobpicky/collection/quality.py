@@ -168,7 +168,11 @@ def build_table_fallback(
         education_requirement=row.education_requirement,
         graduation_years=row.graduation_years,
         deadline_at=row.deadline_at,
-        source_ref=f"table-row:{row.row_number}",
+        source_ref=(
+            f"feishu-record:{row.source_record_id}"
+            if row.source_record_id
+            else f"table-row:{row.row_number}"
+        ),
         metadata=metadata,
     )
 
