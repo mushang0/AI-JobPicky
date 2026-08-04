@@ -1684,6 +1684,101 @@ a:focus-visible {
   align-items: center;
 }
 
+.resume-import-card {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 18px;
+  align-items: center;
+  margin-bottom: 18px;
+  padding: 19px 21px;
+  border: 1px solid rgb(8 184 139 / 0.2);
+  border-radius: 20px;
+  background:
+    linear-gradient(120deg, rgb(166 235 212 / 0.24), rgb(197 220 252 / 0.18)),
+    var(--surface);
+  box-shadow: var(--shadow-soft), inset 0 1px 0 rgb(255 255 255 / 0.72);
+}
+
+.resume-import-visual {
+  display: grid;
+  width: 52px;
+  height: 52px;
+  place-items: center;
+  color: var(--accent-deep);
+  border: 1px solid rgb(8 184 139 / 0.2);
+  border-radius: 16px;
+  background: rgb(255 255 255 / 0.52);
+}
+
+.resume-import-copy {
+  min-width: 0;
+}
+
+.resume-import-copy > span {
+  color: var(--accent-deep);
+  font-size: 0.68rem;
+  font-weight: 750;
+}
+
+.resume-import-copy h2 {
+  margin: 4px 0 3px;
+  color: var(--text);
+  font-size: 1rem;
+  letter-spacing: -0.03em;
+}
+
+.resume-import-copy p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.76rem;
+  line-height: 1.55;
+}
+
+.resume-import-action {
+  display: grid;
+  gap: 6px;
+  justify-items: end;
+}
+
+.resume-import-action small {
+  color: var(--subtle);
+  font-size: 0.64rem;
+}
+
+.resume-import-button {
+  position: relative;
+  min-width: 132px;
+  cursor: pointer;
+}
+
+.resume-import-button:focus-within {
+  box-shadow: var(--shadow-focus);
+}
+
+.resume-import-button.is-disabled {
+  cursor: wait;
+  opacity: 0.62;
+}
+
+.resume-import-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.resume-import-spinner {
+  animation: resume-import-spin 900ms linear infinite;
+}
+
+@keyframes resume-import-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .profile-version-note {
   display: grid;
   gap: 5px;
@@ -3328,6 +3423,21 @@ a:focus-visible {
   .profile-version-note {
     width: 100%;
     text-align: left;
+  }
+
+  .resume-import-card {
+    grid-template-columns: auto minmax(0, 1fr);
+    padding: 17px;
+  }
+
+  .resume-import-action {
+    grid-column: 1 / -1;
+    justify-items: stretch;
+    text-align: center;
+  }
+
+  .resume-import-button {
+    width: 100%;
   }
 
   .profile-section {

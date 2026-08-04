@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 from collections.abc import Callable
@@ -8,8 +9,15 @@ from datetime import UTC, datetime
 from typing import Protocol
 from uuid import uuid4
 
-from ..contracts import ErrorCode, ProfileSaveRequest, ProfileSnapshot
+from ..contracts import ErrorCode, ProfileImportView, ProfileSaveRequest, ProfileSnapshot
 from ..errors import ApplicationError
+from ..ports import ProfileParserPort
+from .resume_files import (
+    PROFILE_IMPORT_MAX_BYTES,
+    PROFILE_IMPORT_MAX_PDF_PAGES,
+    PROFILE_IMPORT_MAX_TEXT_CHARS,
+    extract_resume_text,
+)
 
 _PROFILE_CONTENT_FIELDS = frozenset(
     {
@@ -59,6 +67,7 @@ class ProfileService:
         store: ProfileStore,
         *,
         idempotency_key_max_length: int = 128,
+        parser: ProfileParserPort | None = None,
         now: Callable[[], datetime] | None = None,
         id_factory: Callable[[], str] | None = None,
     ) -> None:
@@ -66,8 +75,13 @@ class ProfileService:
             raise ValueError("idempotency_key_max_length must be positive")
         self._store = store
         self._idempotency_key_max_length = idempotency_key_max_length
+        self._parser = parser
         self._now = now or (lambda: datetime.now(UTC))
         self._id_factory = id_factory or (lambda: str(uuid4()))
+
+    @property
+    def import_max_bytes(self) -> int:
+        return PROFILE_IMPORT_MAX_BYTES
 
     async def get_current(self, user_id: str) -> ProfileSnapshot:
         snapshot = await self._store.find_current(user_id)
@@ -108,6 +122,33 @@ class ProfileService:
                 "idempotency key conflict",
                 status_code=409,
             ) from exc
+
+    async def import_resume(
+        self,
+        user_id: str,
+        filename: str,
+        content_type: str | None,
+        content: bytes,
+    ) -> ProfileImportView:
+        del user_id, content_type
+        extracted = await asyncio.to_thread(
+            extract_resume_text,
+            filename,
+            content,
+            max_bytes=PROFILE_IMPORT_MAX_BYTES,
+            max_pdf_pages=PROFILE_IMPORT_MAX_PDF_PAGES,
+            max_text_chars=PROFILE_IMPORT_MAX_TEXT_CHARS,
+        )
+        if self._parser is None:
+            raise ApplicationError(
+                ErrorCode.DEPENDENCY_UNAVAILABLE,
+                "profile parser is not configured",
+                status_code=503,
+                details={"dependency": "llm", "stage": "PARSE"},
+            )
+        result = await self._parser.parse(extracted.text, None)
+        warnings = list(dict.fromkeys([*extracted.warnings, *result.warnings]))[:20]
+        return result.model_copy(update={"warnings": warnings})
 
     def _validate_idempotency_key(self, key: str) -> None:
         if not 1 <= len(key) <= self._idempotency_key_max_length or any(

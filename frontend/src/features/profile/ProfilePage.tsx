@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Check, FloppyDisk, WarningCircle, X } from "@phosphor-icons/react";
+import { Check, FileText, FloppyDisk, SpinnerGap, UploadSimple, WarningCircle, X } from "@phosphor-icons/react";
 import { Link } from "react-router-dom";
 import { ApiError } from "../../shared/api/client";
 import { getApiErrorMessage } from "../../shared/api/errorMessage";
@@ -24,6 +24,9 @@ const emptyProfile: ProfileSaveRequest = {
   excluded_roles: [],
   extra_request: null,
 };
+
+const supportedResumeExtensions = new Set(["pdf", "docx", "txt", "md"]);
+const maxResumeBytes = 10 * 1024 * 1024;
 
 function profileToForm(profile: ProfileView): ProfileSaveRequest {
   return {
@@ -61,7 +64,9 @@ export function ProfilePage() {
   const [step, setStep] = useState(0);
   const [loadState, setLoadState] = useState<"loading" | "ready" | "error">("loading");
   const [isSaving, setIsSaving] = useState(false);
+  const [isImporting, setIsImporting] = useState(false);
   const [isDirty, setIsDirty] = useState(false);
+  const [importWarnings, setImportWarnings] = useState<string[]>([]);
   const [message, setMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [validationMessage, setValidationMessage] = useState<string | null>(null);
@@ -133,6 +138,7 @@ export function ProfilePage() {
     setMessage(null);
     setErrorMessage(null);
     setValidationMessage(null);
+    setImportWarnings([]);
   }
 
   function cancelEditing() {
@@ -143,6 +149,8 @@ export function ProfilePage() {
       setIsDirty(false);
       setMessage(null);
       setValidationMessage(null);
+      setErrorMessage(null);
+      setImportWarnings([]);
     }
   }
 
@@ -177,11 +185,43 @@ export function ProfilePage() {
       setMode(currentProfile ? "summary" : "edit");
       setStep(0);
       setIsDirty(false);
+      setImportWarnings([]);
       saveKeyRef.current = null;
       setLoadState("ready");
     } catch (error: unknown) {
       setLoadState("error");
       setErrorMessage(error instanceof ApiError ? getApiErrorMessage(error.code, error.message) : "求职画像暂时无法加载，请稍后重试。");
+    }
+  }
+
+  async function handleResumeSelected(file: File) {
+    const extension = file.name.split(".").pop()?.toLowerCase() ?? "";
+    if (!supportedResumeExtensions.has(extension)) {
+      setErrorMessage("暂不支持该文件格式，请上传 PDF、DOCX、TXT 或 Markdown 简历。");
+      return;
+    }
+    if (file.size > maxResumeBytes) {
+      setErrorMessage("简历文件不能超过 10 MiB。");
+      return;
+    }
+
+    setIsImporting(true);
+    setMessage(null);
+    setErrorMessage(null);
+    setValidationMessage(null);
+    try {
+      const imported = await profileApi.importResume(file);
+      setForm({ base_version: profile?.version ?? null, ...imported.draft });
+      setMode("edit");
+      setStep(0);
+      setIsDirty(true);
+      setImportWarnings(imported.warnings);
+      setMessage("简历已解析为画像草稿，请逐项确认后再保存。");
+      saveKeyRef.current = null;
+    } catch (error: unknown) {
+      setErrorMessage(error instanceof ApiError ? getApiErrorMessage(error.code, error.message) : "简历解析失败，请检查文件后重试。");
+    } finally {
+      setIsImporting(false);
     }
   }
 
@@ -207,6 +247,7 @@ export function ProfilePage() {
       setMode("summary");
       setStep(0);
       setIsDirty(false);
+      setImportWarnings([]);
       setMessage("已保存。接下来可以开始寻找合适的岗位。");
       saveKeyRef.current = null;
     } catch (error: unknown) {
@@ -236,9 +277,12 @@ export function ProfilePage() {
         {mode === "summary" && <div className="intro-note"><Check size={20} /><div><strong>画像已准备好</strong><span>可以开始寻找岗位</span></div></div>}
       </section>
 
+      <ResumeImportPanel isImporting={isImporting} onFileSelected={(file) => void handleResumeSelected(file)} />
+      {message && <p className="profile-success" role="status"><Check size={17} />{message}</p>}
+      {errorMessage && <p className="form-error profile-form-error" role="alert">{errorMessage}</p>}
+
       {mode === "summary" ? (
         <>
-          {message && <p className="profile-success" role="status"><Check size={17} />{message}</p>}
           <ProfileSummary form={form} createdAt={profile?.created_at ?? null} warnings={profile?.warnings ?? []} onEdit={beginEditing} />
         </>
       ) : (
@@ -254,9 +298,8 @@ export function ProfilePage() {
           {step === 7 && <ProfileSection title="有什么岗位不考虑？" description="补充明确排除项或长期要求，帮助我们减少无关结果。"><TagInput label="排除岗位" values={form.excluded_roles} placeholder="例如 客服、销售" onChange={(values) => updateField("excluded_roles", values)} /><TextAreaField label="其他长期要求" value={form.extra_request ?? ""} placeholder="例如 不接受长期出差" onChange={(value) => updateField("extra_request", value || null)} /></ProfileSection>}
           {step === 8 && <ProfileSection title="确认你的求职画像" description="确认无误后保存，之后可以开始寻找岗位。"><ProfileSummary form={form} createdAt={null} warnings={[]} onEdit={() => setStep(0)} compact /></ProfileSection>}
 
-          {profile?.warnings.map((warning) => <p className="profile-warning" key={warning}><WarningCircle size={17} />{warning}</p>)}
+          {(importWarnings.length ? importWarnings : profile?.warnings ?? []).map((warning) => <p className="profile-warning" key={warning}><WarningCircle size={17} />{warning}</p>)}
           {validationMessage && <p className="form-error profile-form-error" role="alert">{validationMessage}</p>}
-          {errorMessage && <p className="form-error profile-form-error" role="alert">{errorMessage}</p>}
           <div className="profile-actions profile-wizard-actions">
             <button className="button button-secondary" type="button" onClick={goToPreviousStep}>{step === 0 && profile ? "取消修改" : "上一步"}</button>
             <span className="profile-save-hint">{isDirty ? "内容只会在保存后用于推荐" : "可以随时返回修改"}</span>
@@ -266,6 +309,31 @@ export function ProfilePage() {
       )}
     </div>
   );
+}
+
+function ResumeImportPanel({ isImporting, onFileSelected }: { isImporting: boolean; onFileSelected: (file: File) => void }) {
+  return <section className="resume-import-card" aria-busy={isImporting}>
+    <div className="resume-import-visual" aria-hidden="true"><FileText size={28} weight="duotone" /></div>
+    <div className="resume-import-copy"><span>更快建立画像</span><h2>上传简历，自动生成可校对草稿</h2><p>支持 PDF、DOCX、TXT 和 Markdown。只解析当前文件，不会自动保存或发起推荐。</p></div>
+    <div className="resume-import-action">
+      <label className={`button button-primary resume-import-button${isImporting ? " is-disabled" : ""}`}>
+        <input
+          className="resume-import-input"
+          type="file"
+          accept=".pdf,.docx,.txt,.md"
+          disabled={isImporting}
+          onChange={(event) => {
+            const file = event.currentTarget.files?.[0];
+            event.currentTarget.value = "";
+            if (file) onFileSelected(file);
+          }}
+        />
+        {isImporting ? <SpinnerGap className="resume-import-spinner" size={18} /> : <UploadSimple size={18} />}
+        {isImporting ? "正在解析" : "选择简历"}
+      </label>
+      <small>最大 10 MiB；扫描件和旧版 DOC 暂不支持</small>
+    </div>
+  </section>;
 }
 
 function ProfileSummary({ form, createdAt, warnings, onEdit, compact = false }: { form: ProfileSaveRequest; createdAt: string | null; warnings: string[]; onEdit: () => void; compact?: boolean }) {

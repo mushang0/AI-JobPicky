@@ -2,7 +2,8 @@
 
 JobPicky 是一个以后端能力为主的岗位聚合与个性化推荐系统。它从企业官方招聘入口建立可追溯的岗位事实库，再用确定性硬筛选、关键词与语义召回、结构化模型评估生成可信推荐。
 
-当前仓库处于“公共底座”阶段：已经提供可执行的跨模块数据契约、服务端口、配置、统一错误响应、请求 ID、健康检查与测试基线；数据库底座（PostgreSQL + pgvector、Alembic 迁移与 `job` 表）已就位；采集器、画像解析、检索和推荐工作流将在后续纵向切片中实现。
+当前仓库已提供可执行的跨模块数据契约、用户 API、文件简历画像草稿、岗位检索与推荐闭环，以及 PostgreSQL +
+pgvector、Alembic、统一错误响应和测试基线。
 
 ## 架构
 
@@ -90,7 +91,7 @@ uv run ruff format --check .
 uv run pytest
 ```
 
-### 推荐模型配置
+### 模型配置
 
 语义召回只从本地 Hugging Face 文件加载，不会因模型缺失自动降级为关键词召回；模型路径和 DashScope
 密钥均通过环境变量提供。数据库迁移完成后，显式运行以下命令回填缺失的 512 维岗位向量：
@@ -100,8 +101,9 @@ JOBPICKY_EMBEDDING_MODEL_PATH=/path/to/bge-small-zh-v1.5 \
   python scripts/backfill_job_embeddings.py
 ```
 
-推荐运行需要 `JOBPICKY_LLM_MODEL` 和 `JOBPICKY_DASHSCOPE_API_KEY`。API key 不写入仓库、日志或运行快照；
-未配置模型依赖时，推荐运行会以明确的依赖错误失败。
+推荐运行和 PDF/DOCX/TXT/Markdown 简历画像解析需要 `JOBPICKY_LLM_MODEL` 和
+`JOBPICKY_DASHSCOPE_API_KEY`。API key 不写入仓库、日志或运行快照；未配置模型依赖时，相应调用会以明确的
+依赖错误失败。简历上传只返回可校对草稿，不保存原文件或自动修改正式画像。
 
 评估 Prompt 与模型输入/输出 JSON Schema 位于 `src/jobpicky/infrastructure/prompts/` 和
 `src/jobpicky/infrastructure/schemas/`，修改模型协议时同步升级 `JOBPICKY_MODEL_CONFIG_VERSION`。

@@ -1,5 +1,5 @@
 import { http, HttpResponse, type JsonBodyType } from "msw";
-import { jobDetails, jobFilterOptions, jobFixtures, mockProfile, mockUser, recommendationFixtures } from "./fixtures";
+import { jobDetails, jobFilterOptions, jobFixtures, mockProfile, mockProfileImport, mockUser, recommendationFixtures } from "./fixtures";
 import type {
   CreditSummary,
   JobListItem,
@@ -216,6 +216,15 @@ export const handlers = [
     if (!isAuthenticated(request)) return errorResponse("AUTHENTICATION_REQUIRED", "请登录后继续。", 401);
     if (scenario() === "empty") return errorResponse("PROFILE_NOT_FOUND", "还没有求职画像。", 404);
     return HttpResponse.json(currentProfile ?? mockProfile);
+  }),
+
+  http.post("*/api/v1/user/profile-imports", async ({ request }) => {
+    if (scenario() === "server-error") return errorResponse("DEPENDENCY_UNAVAILABLE", "简历解析服务暂时不可用，请稍后重试。", 503);
+    if (!isAuthenticated(request)) return errorResponse("AUTHENTICATION_REQUIRED", "请登录后继续。", 401);
+    if (scenario() === "validation") return errorResponse("PROFILE_PARSE_FAILED", "求职画像处理失败，请检查输入后重试。", 422);
+    const file = (await request.formData()).get("file");
+    if (!(file instanceof File)) return errorResponse("VALIDATION_ERROR", "请选择简历文件。", 422);
+    return HttpResponse.json(mockProfileImport);
   }),
 
   http.put("*/api/v1/user/profiles/current", async ({ request }) => {

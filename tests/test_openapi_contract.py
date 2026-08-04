@@ -15,6 +15,8 @@ from jobpicky.contracts import (
     JobPoolPage,
     LoginRequest,
     LoginResponse,
+    ProfileImportDraft,
+    ProfileImportView,
     RecommendationAssessmentView,
     RecommendationCardView,
     RecommendationResultView,
@@ -44,6 +46,8 @@ PUBLIC_CONTRACT_MODELS = (
     RecommendationRunAccepted,
     RecommendationRunRequest,
     RecommendationTaskView,
+    ProfileImportDraft,
+    ProfileImportView,
 )
 
 
@@ -68,6 +72,7 @@ def test_openapi_lists_only_real_routes_until_business_handlers_exist() -> None:
         "/api/v1/jobs/{job_id}",
         "/api/v1/system/health",
         "/api/v1/user/credits",
+        "/api/v1/user/profile-imports",
         "/api/v1/user/profiles/current",
         "/api/v1/user/recommendation-runs",
         "/api/v1/user/recommendation-runs/{run_id}",
@@ -114,3 +119,12 @@ def test_jobs_query_is_expressed_as_repeated_query_parameters() -> None:
         "default": 30,
         "title": "Page Size",
     }
+
+
+def test_profile_import_is_a_real_authenticated_multipart_endpoint() -> None:
+    schema = create_app(Settings(environment="test")).openapi()
+    operation = schema["paths"]["/api/v1/user/profile-imports"]["post"]
+
+    assert "multipart/form-data" in operation["requestBody"]["content"]
+    assert operation["security"] == [{"HTTPBearer": []}]
+    assert {"200", "413", "415", "422", "502", "503"}.issubset(operation["responses"])

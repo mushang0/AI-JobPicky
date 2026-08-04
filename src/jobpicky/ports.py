@@ -24,7 +24,7 @@ from .contracts import (
     LoginResponse,
     MatchAssessment,
     Page,
-    ProfileDraft,
+    ProfileImportView,
     ProfileSaveRequest,
     ProfileSnapshot,
     RecommendationCardView,
@@ -98,7 +98,7 @@ class JobEmbeddingStorePort(Protocol):
 
 
 class ProfileParserPort(Protocol):
-    async def parse(self, resume_text: str, extra_request: str | None) -> ProfileDraft: ...
+    async def parse(self, resume_text: str, extra_request: str | None) -> ProfileImportView: ...
 
 
 class ProfileSnapshotReaderPort(Protocol):
@@ -116,6 +116,14 @@ class ProfileApplicationPort(Protocol):
         draft: ProfileSaveRequest,
         idempotency_key: str,
     ) -> ProfileSnapshot: ...
+
+    async def import_resume(
+        self,
+        user_id: str,
+        filename: str,
+        content_type: str | None,
+        content: bytes,
+    ) -> ProfileImportView: ...
 
 
 class SourceApplicationPort(Protocol):

@@ -8,8 +8,9 @@ from jobpicky.api.dependencies import require_user
 from jobpicky.app import create_app
 from jobpicky.config import Settings
 from jobpicky.contracts import AuthUserView, UserRole
+from jobpicky.profiles import ProfileService
 
-from .test_service import MemoryProfileStore, service
+from .test_service import FakeProfileParser, MemoryProfileStore, service
 
 USER = AuthUserView(
     id="user-1",
@@ -41,8 +42,14 @@ def test_profile_routes_require_identity_and_report_missing_profile() -> None:
     anonymous = create_app(Settings(environment="test"))
     with TestClient(anonymous) as client:
         unauthorized = client.get("/api/v1/user/profiles/current")
+        unauthorized_import = client.post(
+            "/api/v1/user/profile-imports",
+            files={"file": ("resume.txt", b"Python backend resume content", "text/plain")},
+        )
     assert unauthorized.status_code == 401
     assert unauthorized.json()["code"] == "AUTHENTICATION_REQUIRED"
+    assert unauthorized_import.status_code == 401
+    assert unauthorized_import.json()["code"] == "AUTHENTICATION_REQUIRED"
 
     with TestClient(app_with_user()) as client:
         missing = client.get("/api/v1/user/profiles/current")
@@ -118,3 +125,33 @@ def test_profile_save_validates_header_server_fields_and_conflicts() -> None:
     assert stale.json()["code"] == "PROFILE_VERSION_CONFLICT"
     assert reused.status_code == 409
     assert reused.json()["code"] == "IDEMPOTENCY_CONFLICT"
+
+
+def test_resume_upload_returns_an_unsaved_profile_draft() -> None:
+    app = app_with_user()
+    store = MemoryProfileStore()
+    app.state.profile_service = ProfileService(store, parser=FakeProfileParser())
+
+    with TestClient(app) as client:
+        imported = client.post(
+            "/api/v1/user/profile-imports",
+            files={
+                "file": (
+                    "resume.txt",
+                    "使用 Python 和 FastAPI 负责后端接口及异步任务开发。".encode(),
+                    "text/plain",
+                )
+            },
+        )
+        current = client.get("/api/v1/user/profiles/current")
+        unsupported = client.post(
+            "/api/v1/user/profile-imports",
+            files={"file": ("resume.doc", b"legacy word resume content", "application/msword")},
+        )
+
+    assert imported.status_code == 200
+    assert imported.json()["draft"]["skills"] == ["Python"]
+    assert "base_version" not in imported.json()["draft"]
+    assert current.status_code == 404
+    assert store.snapshots == {}
+    assert unsupported.status_code == 415

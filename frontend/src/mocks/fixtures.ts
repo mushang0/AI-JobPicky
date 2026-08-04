@@ -3,6 +3,7 @@ import type {
   JobFilterOptions,
   JobListItem,
   ProfileView,
+  ProfileImportResponse,
   RecommendationCardView,
 } from "../shared/api/types";
 
@@ -176,6 +177,22 @@ export const mockProfile: ProfileView = {
   extra_request: "希望团队重视工程质量。",
   warnings: [],
   created_at: "2026-07-25T08:00:00Z",
+};
+
+export const mockProfileImport: ProfileImportResponse = {
+  draft: {
+    target_roles: ["Python 后端工程师"],
+    target_locations: [],
+    recruitment_types: ["社招"],
+    skills: ["Python", "FastAPI", "PostgreSQL"],
+    education: "本科",
+    graduation_year: 2024,
+    expected_salary_min: null,
+    experience_summary: "负责过服务端接口、数据建模和异步任务链路。",
+    excluded_roles: [],
+    extra_request: null,
+  },
+  warnings: ["未从简历中确认目标城市和期望薪资，请补充或校对。"],
 };
 
 export const recommendationFixtures: RecommendationCardView[] = [

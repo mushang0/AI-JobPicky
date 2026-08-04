@@ -23,6 +23,8 @@ from jobpicky.contracts import (
     LoginRequest,
     MatchAssessment,
     ProfileDraft,
+    ProfileImportDraft,
+    ProfileImportView,
     ProfileSaveRequest,
     RecommendationAssessmentView,
     RecommendationCardView,
@@ -176,6 +178,9 @@ def test_profile_required_fields_and_limits_are_checked() -> None:
             skills=["Python"],
             expected_salary_min=1_000_001,
         )
+
+    imported = ProfileImportView(draft=ProfileImportDraft(), warnings=["请补充目标岗位。"])
+    assert imported.draft.target_roles == []
 
 
 def test_recommendation_card_does_not_reuse_internal_retrieval_dto() -> None:

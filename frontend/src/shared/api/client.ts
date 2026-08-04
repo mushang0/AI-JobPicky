@@ -110,8 +110,9 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
   const { body, headers: requestHeaders, idempotencyKey, skipAuthRefresh, skipAuthFailure, ...fetchOptions } = options;
   const headers = new Headers(requestHeaders);
   headers.set("Accept", "application/json");
+  const isFormData = body instanceof FormData;
 
-  if (body !== undefined) {
+  if (body !== undefined && !isFormData) {
     headers.set("Content-Type", "application/json");
   }
 
@@ -125,7 +126,7 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
 
   const response = await fetch(toUrl(path), {
     ...fetchOptions,
-    body: body === undefined ? undefined : JSON.stringify(body),
+    body: body === undefined ? undefined : isFormData ? body : JSON.stringify(body),
     credentials: "include",
     headers,
   });

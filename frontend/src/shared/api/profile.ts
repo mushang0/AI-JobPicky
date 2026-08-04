@@ -1,5 +1,5 @@
 import { request } from "./client";
-import type { ProfileSaveRequest, ProfileView } from "./types";
+import type { ProfileImportResponse, ProfileSaveRequest, ProfileView } from "./types";
 
 export const profileApi = {
   current(): Promise<ProfileView> {
@@ -11,6 +11,15 @@ export const profileApi = {
       method: "PUT",
       body: input,
       idempotencyKey,
+    });
+  },
+
+  importResume(file: File): Promise<ProfileImportResponse> {
+    const body = new FormData();
+    body.append("file", file);
+    return request<ProfileImportResponse>("/api/v1/user/profile-imports", {
+      method: "POST",
+      body,
     });
   },
 };

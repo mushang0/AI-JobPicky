@@ -10,6 +10,7 @@ const messages: Partial<Record<ApiErrorCode, string>> = {
   INSUFFICIENT_CREDITS: "积分余额不足，请先补充积分后再试。",
   PROFILE_NOT_FOUND: "还没有求职画像，请先完善画像。",
   PROFILE_VERSION_CONFLICT: "画像已在其他页面更新，请刷新后重试。",
+  PROFILE_PARSE_FAILED: "简历未能解析，请确认文件包含可复制文本后重试。",
   IDEMPOTENCY_CONFLICT: "请求正在处理，请稍后重试。",
   RECOMMENDATION_FAILED: "推荐任务运行失败，请稍后重试。",
   VALIDATION_ERROR: "请检查表单内容。",

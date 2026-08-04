@@ -115,6 +115,13 @@ def test_new_user_ports_keep_identity_and_resource_ownership_at_the_boundary() -
         "draft",
         "idempotency_key",
     ]
+    assert parameter_names(ProfileApplicationPort, "import_resume") == [
+        "self",
+        "user_id",
+        "filename",
+        "content_type",
+        "content",
+    ]
     assert parameter_names(AuthenticationPort, "get_current_user") == [
         "self",
         "user_id",

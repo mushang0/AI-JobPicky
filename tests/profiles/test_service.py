@@ -7,6 +7,8 @@ import pytest
 
 from jobpicky.contracts import (
     ErrorCode,
+    ProfileImportDraft,
+    ProfileImportView,
     ProfileSaveRequest,
     ProfileSnapshot,
     RecruitmentType,
@@ -46,6 +48,23 @@ class MemoryProfileStore:
             self.snapshots.setdefault(command.user_id, []).append(snapshot)
         self.requests[request_key] = (command.request_hash, snapshot)
         return snapshot
+
+
+class FakeProfileParser:
+    def __init__(self) -> None:
+        self.resume_text: str | None = None
+
+    async def parse(self, resume_text: str, extra_request: str | None) -> ProfileImportView:
+        self.resume_text = resume_text
+        assert extra_request is None
+        return ProfileImportView(
+            draft=ProfileImportDraft(
+                target_roles=["后端工程师"],
+                skills=["Python"],
+                experience_summary="负责后端接口开发。",
+            ),
+            warnings=["请确认目标岗位。"],
+        )
 
 
 def request(
@@ -178,5 +197,25 @@ def test_missing_profile_and_invalid_idempotency_key_are_explicit() -> None:
                 await profiles.save_current("user-1", request(), key)
             assert invalid.value.code == str(ErrorCode.VALIDATION_ERROR)
             assert invalid.value.status_code == 422
+
+    asyncio.run(check())
+
+
+def test_resume_import_returns_a_draft_without_saving_a_profile() -> None:
+    async def check() -> None:
+        store = MemoryProfileStore()
+        parser = FakeProfileParser()
+        profiles = ProfileService(store, parser=parser)
+
+        result = await profiles.import_resume(
+            "user-1",
+            "resume.txt",
+            "text/plain",
+            "使用 Python 和 FastAPI 负责后端接口及异步任务开发。".encode(),
+        )
+
+        assert result.draft.skills == ["Python"]
+        assert parser.resume_text is not None
+        assert store.snapshots == {}
 
     asyncio.run(check())

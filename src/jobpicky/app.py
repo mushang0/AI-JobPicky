@@ -36,6 +36,7 @@ from .infrastructure.embeddings import LocalBGEEmbedding
 from .infrastructure.job_catalog import PostgresJobCatalog
 from .infrastructure.job_pool_store import PostgresJobPoolStore
 from .infrastructure.llm_evaluator import DashScopeJobEvaluator
+from .infrastructure.llm_profile_parser import DashScopeProfileParser
 from .infrastructure.profile_store import PostgresProfileStore
 from .infrastructure.recommendation_store import PostgresRecommendationStore
 from .infrastructure.saved_job_store import PostgresSavedJobStore
@@ -129,6 +130,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.profile_service = ProfileService(
         profile_store,
         idempotency_key_max_length=settings.idempotency_key_max_length,
+        parser=DashScopeProfileParser(
+            provider=settings.llm_provider,
+            model=settings.llm_model,
+            api_key=settings.dashscope_api_key,
+            base_url=settings.llm_base_url,
+            timeout_seconds=settings.llm_timeout_seconds,
+            max_retries=settings.llm_max_retries,
+        ),
     )
     app.state.recommendation_service = RecommendationRunService(
         recommendation_store,

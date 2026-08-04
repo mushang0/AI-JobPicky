@@ -25,7 +25,7 @@
 |---|---|---|
 | 招聘源与采集 `collection` | 来源识别、平台采集、未知来源探索、原始字段标准化 | 决定系统岗位 ID、关闭岗位、执行推荐 |
 | 岗位目录 `catalog` | 岗位事实、身份去重、生命周期，并执行结构化、全文与向量查询 | 调用招聘网站、决定召回策略、生成模型推荐理由 |
-| 用户画像 `profiles` | 当前画像表单、草稿/快照校验与版本；未来可接入简历解析 | 搜索岗位、改变岗位事实 |
+| 用户画像 `profiles` | 当前画像表单、简历导入草稿、草稿/快照校验与版本 | 搜索岗位、改变岗位事实 |
 | 匹配 `matching` | 生成硬筛选与检索条件、融合候选、模型评估 | 保存或编造岗位事实、控制采集 |
 | 编排 `orchestration` | 创建运行、按顺序调用能力、记录进度、失败与恢复 | 承载采集、SQL、检索或模型算法 |
 | 接口 `api` | 鉴权上下文、输入校验、DTO 转换、HTTP 语义 | 业务算法和直接数据库访问 |
@@ -353,8 +353,12 @@ API View，避免把 `fact_version`、召回分或其他内部字段泄露到页
 
 `CurrentProfileView` 是用户接口专用的只读投影，保留画像字段、版本、警告和创建时间，但不返回 `user_id`。
 
-原始简历引用属于受保护字段，不默认进入普通画像响应。PDF 解析和 AI 对话若未来实现，只能产出草稿，不能绕过
-`ProfileSaveRequest` 直接修改正式画像。
+`ProfileImportDraft` 是文件解析专用的宽松草稿：字段与 `ProfileDraft` 相同，但允许 `target_roles`、`skills`
+和 `experience_summary` 暂时为空，因为模型不能为满足正式画像校验而编造信息。`ProfileImportView` 包含
+`draft` 与服务端 `warnings`；用户必须校对并通过 `ProfileSaveRequest` 保存，正式画像约束不变。
+
+原始简历属于受保护输入，不进入普通画像响应或日志。本阶段不持久化原文件；简历解析和未来 AI 对话都只能
+产出草稿，不能绕过 `ProfileSaveRequest` 直接修改正式画像。
 
 ### 4.6.1 前端岗位 View
 
@@ -653,11 +657,11 @@ class ProfileParserPort(Protocol):
         self,
         resume_text: str,
         extra_request: str | None,
-    ) -> ProfileDraft: ...
+    ) -> ProfileImportView: ...
 ```
 
-`ProfileParserPort` 仅为未来导入能力保留；首版用户直接提交画像表单。保存、读取和创建新版本由画像模块的
-应用服务负责。文件解析器只输出文本，不与正式画像契约耦合。
+`ProfileParserPort` 由模型基础设施实现，只接收已提取文本并返回经过结构校验的草稿。文件格式识别与文本提取
+属于画像模块的导入边界，不把 PDF、DOCX 等格式耦合进模型端口。保存、读取和创建新版本仍由画像应用服务负责。
 
 ```python
 class ProfileSnapshotReaderPort(Protocol):
@@ -680,7 +684,18 @@ class ProfileApplicationPort(Protocol):
         draft: ProfileSaveRequest,
         idempotency_key: str,
     ) -> ProfileSnapshot: ...
+
+    async def import_resume(
+        self,
+        user_id: str,
+        filename: str,
+        content_type: str | None,
+        content: bytes,
+    ) -> ProfileImportView: ...
 ```
+
+简历导入为同步、无持久化的首版用例：校验文件后提取文本并调用 `ProfileParserPort`，成功时直接返回草稿。
+只有真实延迟或恢复需求证明必要时才升级为可查询的异步运行，不提前创建导入表或 Worker。
 
 ```python
 class SourceApplicationPort(Protocol):
@@ -906,6 +921,7 @@ class AdminJobQueryPort(Protocol):
 | `GET /api/v1/user/credits` | `CreditsPort.get_summary` | `CreditSummary` | `user_id` |
 | `GET /api/v1/user/profiles/current` | `ProfileApplicationPort.get_current` | `ProfileSnapshot` → `CurrentProfileView` | `user_id` |
 | `PUT /api/v1/user/profiles/current` | `ProfileApplicationPort.save_current` | `ProfileSaveRequest` → `CurrentProfileView` | `user_id` |
+| `POST /api/v1/user/profile-imports` | `ProfileApplicationPort.import_resume` | multipart `file` → `ProfileImportView` | `user_id` |
 | `POST /api/v1/auth/register` | `AuthenticationPort.register` | `RegisterRequest` → `LoginResponse` | 无 |
 | `POST /api/v1/auth/login` | `AuthenticationPort.login` | `LoginRequest` → `LoginResponse` | 无 |
 | `POST /api/v1/auth/refresh` | `AuthenticationPort.refresh` | Cookie → `AccessTokenResponse` | Refresh Cookie |
@@ -943,6 +959,7 @@ class AdminJobQueryPort(Protocol):
 | `GET` | `/api/v1/user/credits` | 查询积分余额和推荐价格 |
 | `GET` | `/api/v1/user/profiles/current` | 查询当前画像 |
 | `PUT` | `/api/v1/user/profiles/current` | 以版本控制保存当前画像 |
+| `POST` | `/api/v1/user/profile-imports` | 上传简历并同步生成可校对画像草稿 |
 | `GET` | `/api/v1/user/saved-jobs` | 查询收藏岗位 |
 | `POST` | `/api/v1/auth/register` | 注册普通用户并初始化积分 |
 | `POST` | `/api/v1/auth/login` | 邮箱密码登录 |
@@ -951,6 +968,7 @@ class AdminJobQueryPort(Protocol):
 | `GET` | `/api/v1/auth/me` | 查询当前登录用户 |
 
 画像保存只接受 `ProfileSaveRequest` 的用户字段和 `base_version`，创建或修改当前画像，不原地改变历史推荐引用的快照。
+简历导入只接受单个受支持文件并返回草稿，不保存文件或画像版本。
 发起推荐的最小输入是可选的 `extra_request`，服务端自动读取当前画像；客户端通过 `Idempotency-Key` 安全重试。
 
 ### 6.3 P0 管理接口
@@ -983,7 +1001,7 @@ GET /api/v1/system/health
 
 ### 6.5 尚未实现的接口
 
-忽略、已投递、重新探索、采集配置编辑、质量面板和审计查询在实现相应能力时再确定契约。虽然收藏、认证、
+忽略、已投递、重新探索、采集配置编辑、质量面板、扫描件 OCR、旧版 DOC 和审计查询在实现相应能力时再确定契约。虽然收藏、认证、
 推荐交互和用户画像的契约已经确认，但本阶段只同步 Schema、端口、配置和 OpenAPI 验证，不创建返回假数据的
 业务路由。所有未实现能力都必须显式失败或保持无路由状态。
 

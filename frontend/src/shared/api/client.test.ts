@@ -54,4 +54,16 @@ describe("API client authentication retry", () => {
     expect(getAccessToken()).toBeNull();
     expect(failureHandler).toHaveBeenCalledOnce();
   });
+
+  it("sends FormData without overriding the browser multipart boundary", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(response(200, { ok: true }));
+    const form = new FormData();
+    form.append("file", new File(["resume"], "resume.txt", { type: "text/plain" }));
+
+    await request("/api/v1/user/profile-imports", { method: "POST", body: form });
+
+    const options = fetchMock.mock.calls[0]?.[1];
+    expect(options?.body).toBe(form);
+    expect(new Headers(options?.headers).has("Content-Type")).toBe(false);
+  });
 });

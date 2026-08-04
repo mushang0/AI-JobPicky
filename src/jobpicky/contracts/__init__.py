@@ -99,6 +99,8 @@ from .normalization import (
 from .profiles import (
     CurrentProfileView,
     ProfileDraft,
+    ProfileImportDraft,
+    ProfileImportView,
     ProfileSaveRequest,
     ProfileSnapshot,
     ProfileUpdateRequest,
@@ -153,6 +155,8 @@ __all__ = [
     "MatchEvidence",
     "Page",
     "ProfileDraft",
+    "ProfileImportDraft",
+    "ProfileImportView",
     "CurrentProfileView",
     "ProfileSaveRequest",
     "ProfileSnapshot",

@@ -16,6 +16,7 @@ export type ApiErrorCode =
   | "FORBIDDEN"
   | "CONFLICT"
   | "DEPENDENCY_UNAVAILABLE"
+  | "PROFILE_PARSE_FAILED"
   | "RECOMMENDATION_FAILED"
   | "INTERNAL_ERROR"
   | string;
@@ -162,6 +163,13 @@ export interface ProfileSaveRequest {
   experience_summary: string | null;
   excluded_roles: string[];
   extra_request: string | null;
+}
+
+export type ProfileImportDraft = Omit<ProfileSaveRequest, "base_version">;
+
+export interface ProfileImportResponse {
+  draft: ProfileImportDraft;
+  warnings: string[];
 }
 
 export type RecommendationFeedback = "LIKE" | "DISLIKE" | null;

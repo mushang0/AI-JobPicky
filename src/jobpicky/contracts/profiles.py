@@ -10,13 +10,15 @@ from .common import ContractModel, NonEmptyStr
 from .normalization import normalize_locations, normalize_recruitment_type, normalize_tags
 
 ProfileTag = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=100)]
+ProfileWarning = Annotated[
+    str,
+    StringConstraints(strip_whitespace=True, min_length=1, max_length=300),
+]
 
 
-class ProfileDraft(ContractModel):
-    """User-editable profile fields; server-owned warnings are not accepted."""
-
+class _ProfileFields(ContractModel):
     target_locations: list[ProfileTag] = Field(default_factory=list, max_length=10)
-    target_roles: list[ProfileTag] = Field(min_length=1, max_length=10)
+    target_roles: list[ProfileTag] = Field(default_factory=list, max_length=10)
     recruitment_types: list[RecruitmentType] = Field(default_factory=list, max_length=3)
     skills: list[ProfileTag] = Field(default_factory=list, max_length=50)
     excluded_roles: list[ProfileTag] = Field(default_factory=list, max_length=20)
@@ -30,6 +32,21 @@ class ProfileDraft(ContractModel):
     @classmethod
     def normalize_tags(cls, value: Any) -> Any:
         return _normalize_profile_value(value)
+
+
+class ProfileImportDraft(_ProfileFields):
+    """Incomplete, model-generated fields that must be reviewed before saving."""
+
+    @model_validator(mode="after")
+    def validate_graduation_year(self) -> ProfileImportDraft:
+        _validate_graduation_year(self.graduation_year)
+        return self
+
+
+class ProfileDraft(_ProfileFields):
+    """User-editable profile fields; server-owned warnings are not accepted."""
+
+    target_roles: list[ProfileTag] = Field(min_length=1, max_length=10)
 
     @model_validator(mode="after")
     def validate_content(self) -> ProfileDraft:
@@ -95,6 +112,11 @@ class CurrentProfileView(ContractModel):
     extra_request: str | None = Field(default=None, max_length=1000)
     warnings: list[NonEmptyStr] = Field(default_factory=list)
     created_at: AwareDatetime
+
+
+class ProfileImportView(ContractModel):
+    draft: ProfileImportDraft
+    warnings: list[ProfileWarning] = Field(default_factory=list, max_length=20)
 
 
 ProfileView = CurrentProfileView
