@@ -50,6 +50,9 @@ def test_feishu_parser_reads_complete_public_detail() -> None:
         "https://duxiaoman.jobs.feishu.cn/051736/position/7649303782597691694/detail",
         "https://tcnrm7b535t2.jobs.feishu.cn/748205/position/7644923888778840339/detail?spread=x",
         "https://micoworld.jobs.feishu.cn/index/position/7641106184007928105/detail",
+        "https://jobs.ecoflow.com/602892/position/7662352504873077011/detail",
+        "https://career.papergames.com/campus/position/7660119389676734761/detail",
+        "https://xiaomi.jobs.f.mioffice.cn/toptalent/position/7665295778067368238/detail",
     ],
 )
 def test_feishu_parser_accepts_real_detail_path_templates(url: str) -> None:

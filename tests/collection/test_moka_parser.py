@@ -28,6 +28,19 @@ def test_moka_parser_reads_server_rendered_job_list() -> None:
     assert metadata["department"] == "研发部"
 
 
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://campus.sonoscape.com/campus-recruitment/sonoscape/94392/#/jobs",
+        "https://campus.fingard.com/campus_apply/baorong/25901/#/jobs",
+    ],
+)
+def test_moka_parser_accepts_verified_custom_domain_routes(url: str) -> None:
+    jobs = parse(url, lambda _url: fixture_html())
+
+    assert jobs[0]["source_job_id"] == "job-open"
+
+
 def test_moka_parser_filters_a_direct_job_from_fragment() -> None:
     jobs = parse(DETAIL_URL, lambda _url: fixture_html())
 

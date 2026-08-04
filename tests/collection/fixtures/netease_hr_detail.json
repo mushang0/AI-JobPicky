@@ -1,0 +1,14 @@
+{
+  "code": 200,
+  "msg": null,
+  "data": {
+    "id": 3001,
+    "name": "后端开发工程师",
+    "reqEducationName": "本科",
+    "workType": "社会招聘",
+    "workPlaceNameList": ["杭州", "上海"],
+    "description": "负责服务端功能开发。",
+    "requirement": "具备良好的工程基础。",
+    "updateTime": "2026-01-02 10:00:00"
+  }
+}

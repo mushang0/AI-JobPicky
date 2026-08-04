@@ -1,0 +1,20 @@
+{
+  "erro_code": "0",
+  "ex_data": {
+    "total": 1,
+    "current": 1,
+    "pages": 1,
+    "size": 50,
+    "success": true,
+    "apply_show_do_list": [
+      {
+        "id": 1001,
+        "name": "数据平台工程师",
+        "base": "杭州",
+        "apply_type_first": "校园招聘",
+        "apply_recruitment_series_name": "云软件校招"
+      }
+    ]
+  },
+  "success": "True"
+}

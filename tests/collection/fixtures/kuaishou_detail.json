@@ -1,0 +1,18 @@
+{
+  "code": 0,
+  "message": "success",
+  "result": {
+    "id": "kuaishou-job-001",
+    "name": "平台研发工程师",
+    "description": "负责招聘平台服务建设。",
+    "positionDemand": "本科及以上，熟悉 Python 或 Go。",
+    "education": "本科及以上",
+    "positionNatureCode": "fulltime",
+    "positionCategoryCode": "J1001",
+    "workLocationDicts": [
+      {"name": "北京", "code": "beijing"}
+    ],
+    "updateTime": 1760000000000,
+    "recruitSubProjectCode": "20271779425607"
+  }
+}

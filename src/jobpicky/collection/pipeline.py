@@ -10,6 +10,7 @@ from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 from jobpicky.contracts import CollectedJob, CollectionBatch
 from jobpicky.contracts.common import JsonObject
 
+from .company_profiles import find_company_profile
 from .link_classification import (
     BEISEN,
     COMPANY_RECRUITMENT_SITE,
@@ -29,6 +30,7 @@ from .link_classification import (
     classify_link,
 )
 from .parsers.beisen import parse as parse_beisen
+from .parsers.company_recruitment import parse as parse_company_recruitment
 from .parsers.email import parse as parse_email
 from .parsers.feishu import parse as parse_feishu
 from .parsers.form import parse as parse_form
@@ -53,7 +55,7 @@ Parser = Callable[[str], Sequence[Mapping[str, object]]]
 # Keep routing visible and boring. Add a parser here only when it is implemented.
 PARSERS: dict[str, Parser] = {
     BEISEN: lambda url: parse_beisen(url),
-    COMPANY_RECRUITMENT_SITE: lambda url: parse_public_web(url, require_description=True),
+    COMPANY_RECRUITMENT_SITE: lambda url: parse_company_recruitment(url),
     COMPANY_WEBSITE: lambda url: parse_public_web(url, allow_announcement=True),
     CUSTOM_RECRUITMENT_SYSTEM: lambda url: parse_public_web(url, allow_announcement=True),
     EMAIL: lambda url: parse_email(url),
@@ -157,6 +159,10 @@ def _metadata(row: SpreadsheetRow, website: Mapping[str, object]) -> JsonObject:
             if value is not None
         }
     )
+    if row.apply_links:
+        profile = find_company_profile(row.apply_links[0], row.company_name)
+        if profile is not None:
+            metadata.update(profile.metadata())
     return metadata
 
 

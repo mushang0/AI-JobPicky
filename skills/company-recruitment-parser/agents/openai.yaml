@@ -1,0 +1,4 @@
+interface:
+  display_name: "Company Recruitment Parser"
+  short_description: "Investigate and adapt public company career sites"
+  default_prompt: "Use $company-recruitment-parser to investigate and adapt a public company recruitment site."

@@ -1,0 +1,21 @@
+{
+  "success": true,
+  "content": {
+    "currentPage": 1,
+    "pageSize": 100,
+    "totalCount": 1,
+    "datas": [
+      {
+        "id": "alibaba-job-001",
+        "name": "平台研发工程师",
+        "categoryType": "freshman",
+        "batchName": "校园招聘",
+        "degree": "本科",
+        "workLocations": ["杭州"],
+        "description": "参与平台功能开发。",
+        "requirement": "具备良好的工程基础。",
+        "modifyTime": "2026-07-02"
+      }
+    ]
+  }
+}

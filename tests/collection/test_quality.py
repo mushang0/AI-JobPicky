@@ -1,7 +1,7 @@
 from datetime import UTC, datetime
 
 from jobpicky.collection import pipeline
-from jobpicky.collection.link_classification import BEISEN, WECHAT
+from jobpicky.collection.link_classification import BEISEN, COMPANY_RECRUITMENT_SITE, WECHAT
 from jobpicky.collection.quality import CollectionQualityPolicy
 from jobpicky.collection.spreadsheet import SpreadsheetRow
 
@@ -55,6 +55,27 @@ def test_known_bad_platform_falls_back_without_calling_parser(monkeypatch) -> No
     assert item.recruitment_type == "校招"
     assert item.metadata["collection_mode"] == "TABLE_FALLBACK"
     assert item.metadata["quality_reasons"] == ["PARSER_POLICY_TABLE_FALLBACK"]
+
+
+def test_company_recruitment_parser_is_attempted_before_fallback(monkeypatch) -> None:
+    called = False
+
+    def parser(_: str) -> list[dict[str, object]]:
+        nonlocal called
+        called = True
+        return [{"source_job_id": "job-1", "title": "真实岗位", "description": "公开 JD"}]
+
+    monkeypatch.setitem(pipeline.PARSERS, COMPANY_RECRUITMENT_SITE, parser)
+    result = pipeline.run_pipeline(
+        "source-1",
+        [make_row("https://jobs.ecoflow.com/602892/position/list")],
+        now=NOW,
+    )
+
+    assert called is True
+    assert result.unsupported == []
+    assert result.batch.items[0].title == "真实岗位"
+    assert result.batch.items[0].metadata["collection_mode"] == "PARSED"
 
 
 def test_bad_parsed_title_falls_back_to_table(monkeypatch) -> None:

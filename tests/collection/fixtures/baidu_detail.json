@@ -1,0 +1,14 @@
+{
+  "status": "ok",
+  "data": {
+    "postId": "baidu-job-001",
+    "name": "平台研发工程师",
+    "education": "本科",
+    "projectType": "校招",
+    "workPlace": "北京",
+    "workContent": "负责平台功能开发与维护。",
+    "serviceCondition": "具备良好的工程基础。",
+    "publishDate": "2026-07-01",
+    "updateDate": "2026-07-02"
+  }
+}
