@@ -118,7 +118,7 @@ export function JobsPage() {
         setFilterErrorMessage(null);
       }
     }).catch(() => {
-      if (active) setFilterErrorMessage("筛选选项暂时无法加载，你仍可以先搜索岗位。");
+      if (active) setFilterErrorMessage("筛选项加载失败，仍可以使用关键词搜索。");
     });
     return () => {
       active = false;
@@ -143,7 +143,7 @@ export function JobsPage() {
     }).catch((error: unknown) => {
       if (!active) return;
       setLoadState("error");
-      setErrorMessage(error instanceof ApiError ? getApiErrorMessage(error.code, error.message) : "岗位暂时无法加载，请稍后重试。");
+      setErrorMessage(error instanceof ApiError ? getApiErrorMessage(error.code, error.message) : "岗位加载失败，请稍后重试。");
     });
 
     return () => {
@@ -241,19 +241,19 @@ export function JobsPage() {
       <section className="page-intro">
         <div>
           <div className="eyebrow"><span className="eyebrow-dot" aria-hidden="true" />岗位池</div>
-          <h1>先看真实岗位，再决定下一步。</h1>
-          <p>岗位来自已整理的招聘渠道。搜索、筛选和收藏会与账号同步。</p>
+          <h1>找岗位</h1>
+          <p>搜索岗位、公司或关键词，再按条件筛选。</p>
         </div>
         <div className="intro-note" aria-label="岗位池说明">
           <Briefcase size={20} />
-          <div><strong>{jobs?.pool_total ?? "..."}</strong><span>可见岗位池</span></div>
+          <div><strong>{jobs?.pool_total ?? "..."}</strong><span>岗位池总数</span></div>
         </div>
       </section>
 
       <section className="jobs-toolbar" aria-label="岗位池状态">
-        <div className="toolbar-copy"><span className="toolbar-label">当前视图</span><strong>{jobs ? `共 ${jobs.total} 个匹配岗位` : "正在读取岗位"}</strong></div>
+        <div className="toolbar-copy"><span className="toolbar-label">匹配岗位</span><strong>{jobs ? `共 ${jobs.total} 个岗位` : "正在加载岗位…"}</strong></div>
         <div className="toolbar-meta">
-          <span>岗位池持续更新</span>
+          <span>数据持续更新</span>
           <span className="toolbar-divider" aria-hidden="true" />
           <span>{status === "authenticated" ? "收藏状态已同步" : "登录后可搜索、筛选和收藏"}</span>
         </div>
@@ -265,7 +265,7 @@ export function JobsPage() {
             <span>搜索岗位或公司</span>
             <span className="search-input-wrap">
               <MagnifyingGlass size={18} aria-hidden="true" />
-              <input value={draft.q} onChange={(event) => updateDraft("q", event.target.value)} placeholder="搜索岗位、公司或关键词，例如：Python、数据平台" />
+              <input value={draft.q} onChange={(event) => updateDraft("q", event.target.value)} placeholder="搜索岗位、公司或关键词" />
             </span>
           </label>
           <div className="job-search-actions">
@@ -307,8 +307,8 @@ export function JobsPage() {
       {filterErrorMessage && <p className="form-error inline-page-error" role="alert">{filterErrorMessage}</p>}
 
       {loadState === "loading" && <JobGridSkeleton />}
-      {loadState === "error" && <StatePanel title="岗位暂时没有准备好" description={errorMessage ?? "请稍后重试。"} actionLabel="重新加载" onAction={() => setRetryKey((current) => current + 1)} />}
-      {loadState === "empty" && <StatePanel title="当前没有匹配岗位" description="没有找到符合当前条件的岗位，可以放宽筛选条件后再试。" actionLabel="清除筛选" onAction={clearFilters} />}
+      {loadState === "error" && <StatePanel title="岗位加载失败" description={errorMessage ?? "请稍后重试。"} actionLabel="重新加载" onAction={() => setRetryKey((current) => current + 1)} />}
+      {loadState === "empty" && <StatePanel title="没有找到岗位" description="没有找到符合条件的岗位。可以减少筛选条件后再试。" actionLabel="清除筛选" onAction={clearFilters} />}
 
       {loadState === "ready" && jobs && (
         <>

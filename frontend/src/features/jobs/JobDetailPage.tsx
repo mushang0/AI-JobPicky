@@ -36,7 +36,7 @@ export function JobDetailPage() {
     }).catch((error: unknown) => {
       if (!active) return;
       setLoadState("error");
-      setErrorMessage(error instanceof ApiError ? getApiErrorMessage(error.code, error.message) : "岗位详情暂时无法加载，请稍后重试。");
+      setErrorMessage(error instanceof ApiError ? getApiErrorMessage(error.code, error.message) : "岗位详情加载失败，请稍后重试。");
     });
     return () => {
       active = false;
@@ -64,7 +64,7 @@ export function JobDetailPage() {
   if (loadState === "loading") return <DetailSkeleton />;
 
   if (loadState === "error" || !job) {
-    return <section className="state-panel detail-state" role="status"><WarningCircle size={28} /><h1>岗位详情暂时不可用</h1><p>{errorMessage ?? "请稍后重试。"}</p><div className="detail-state-actions"><button className="button button-primary" type="button" onClick={() => setRetryKey((current) => current + 1)}>重新加载</button><button className="button button-secondary" type="button" onClick={() => navigate(-1)}>返回岗位池</button></div></section>;
+    return <section className="state-panel detail-state" role="status"><WarningCircle size={28} /><h1>岗位详情加载失败</h1><p>{errorMessage ?? "请稍后重试。"}</p><div className="detail-state-actions"><button className="button button-primary" type="button" onClick={() => setRetryKey((current) => current + 1)}>重新加载</button><button className="button button-secondary" type="button" onClick={() => navigate(-1)}>返回岗位池</button></div></section>;
   }
 
   const isExpired = job.deadline_at !== null && new Date(job.deadline_at).getTime() <= Date.now();
@@ -99,7 +99,7 @@ export function JobDetailPage() {
         <aside className="detail-side-panel">
           <h2>投递入口</h2>
           {cannotApply ? (
-            <p className="closed-note">{isExpired ? "该岗位已过投递截止日期，暂不可投递。" : "该岗位已关闭，暂不可投递。"}</p>
+            <p className="closed-note">{isExpired ? "该岗位已过投递截止日期，无法投递。" : "该岗位已关闭，无法投递。"}</p>
           ) : job.apply_url ? (
             <a className="button button-primary apply-button" href={job.apply_url} target="_blank" rel="noreferrer">前往官方投递<ArrowSquareOut size={17} /></a>
           ) : (

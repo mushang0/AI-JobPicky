@@ -36,7 +36,7 @@ export function AllRecommendationsPage() {
         throw error;
       }),
       creditsApi.summary().catch((error: unknown) => {
-        if (active) setCreditError(error instanceof ApiError ? getApiErrorMessage(error.code, error.message) : "积分暂时无法加载，请稍后重试。");
+        if (active) setCreditError(error instanceof ApiError ? getApiErrorMessage(error.code, error.message) : "积分加载失败，请稍后重试。");
         return null;
       }),
     ]).then(([response, runsResponse, currentProfile, creditResponse]) => {
@@ -71,7 +71,7 @@ export function AllRecommendationsPage() {
     }).catch((error: unknown) => {
       if (!active) return;
       setState("error");
-      setErrorMessage(error instanceof ApiError ? getApiErrorMessage(error.code, error.message) : "推荐列表暂时无法加载，请稍后重试。");
+      setErrorMessage(error instanceof ApiError ? getApiErrorMessage(error.code, error.message) : "推荐岗位加载失败，请稍后重试。");
     });
     return () => { active = false; };
   }, [page, sort, retryKey]);
@@ -87,7 +87,7 @@ export function AllRecommendationsPage() {
       const response = await recommendationsApi.feedback(item.recommendation_id, feedback);
       setItems((current) => current.map((entry) => entry.recommendation_id === item.recommendation_id ? { ...entry, feedback: response.feedback } : entry));
     } catch (error: unknown) {
-      setErrorMessage(error instanceof ApiError ? getApiErrorMessage(error.code, error.message) : "反馈暂时无法保存，请稍后重试。");
+      setErrorMessage(error instanceof ApiError ? getApiErrorMessage(error.code, error.message) : "反馈保存失败，请稍后重试。");
     }
   }
 
@@ -96,7 +96,7 @@ export function AllRecommendationsPage() {
       const response = item.is_saved ? await jobsApi.unsave(item.job.id) : await jobsApi.save(item.job.id);
       setItems((current) => current.map((entry) => entry.recommendation_id === item.recommendation_id ? { ...entry, is_saved: response.is_saved } : entry));
     } catch (error: unknown) {
-      setErrorMessage(error instanceof ApiError ? getApiErrorMessage(error.code, error.message) : "收藏状态暂时无法保存，请稍后重试。");
+      setErrorMessage(error instanceof ApiError ? getApiErrorMessage(error.code, error.message) : "收藏状态保存失败，请稍后重试。");
     }
   }
 
@@ -112,19 +112,19 @@ export function AllRecommendationsPage() {
   return (
     <div className="recommendations-page">
       <section className="page-intro recommendations-intro">
-        <div><div className="eyebrow"><Sparkle size={16} />全部推荐</div><h1>把合适的岗位留在这里。</h1><p>先看匹配理由，再打开岗位详情了解发布日期、截止时间和投递入口。</p></div>
+        <div><div className="eyebrow"><Sparkle size={16} />推荐岗位</div><h1>推荐岗位</h1><p>查看匹配岗位、推荐理由和投递信息。</p></div>
       </section>
       <section className="recommendation-toolbar"><div className="credit-summary"><Coins size={20} /><span>当前积分</span><strong>{credits?.balance ?? "..."}</strong><small>单次推荐 {credits?.recommendation_cost ?? "..."}</small></div><label className="sort-field"><span>排序</span><span className="sort-select-wrap"><select value={sort} onChange={(event) => changeSort(event.target.value as typeof sort)}><option value="recommended_at_desc">最新推荐</option><option value="match_score_desc">匹配度最高</option></select><CaretDown className="sort-select-arrow" size={15} aria-hidden="true" /></span></label></section>
       {errorMessage && <p className="form-error inline-page-error" role="alert">{errorMessage}</p>}
       {creditError && <p className="form-error inline-page-error" role="alert">{creditError}</p>}
       {state === "loading" && <RecommendationSkeleton />}
-      {state === "error" && <StatePanel title="推荐列表暂时不可用" description={errorMessage ?? "请稍后重试。"} actionLabel="重新加载" onAction={() => setRetryKey((current) => current + 1)} />}
-      {state === "no-profile" && <StatePanel title="先告诉我们想找什么工作" description="完成求职画像后，我们才能按你的方向寻找岗位。" actionLabel="创建求职画像" onAction={() => undefined} link="/profile" />}
-      {state === "no-runs" && <StatePanel title="还没有开始找岗位" description="你的求职画像已经准备好，现在可以开始第一次寻找。" actionLabel="开始推荐" onAction={() => undefined} link="/recommendation-runs/new" />}
-      {state === "running" && <StatePanel title="正在寻找适合你的岗位" description="这次寻找完成后，结果会出现在这里。" actionLabel="查看当前任务" onAction={() => undefined} link={activeRunId ? `/recommendation-runs/${activeRunId}` : "/recommendation-runs"} />}
-      {state === "no-match" && <StatePanel title="这次暂时没有找到合适岗位" description="可以调整求职画像或补充本次要求，再试一次。" actionLabel="再次寻找岗位" onAction={() => undefined} link="/recommendation-runs/new" />}
-      {state === "failed" && <StatePanel title="上一次寻找没有完成" description="可以查看任务详情了解原因，或重新开始一次寻找。" actionLabel="重新开始" onAction={() => undefined} link="/recommendation-runs/new" />}
-      {state === "ready" && <><section className="recommendation-grid" aria-label="全部推荐">{items.map((item) => <RecommendationCard key={item.recommendation_id} item={item} onFeedback={(feedback) => void updateFeedback(item, feedback)} onToggleSaved={() => void toggleSaved(item)} onDelete={() => void removeRecommendation(item)} />)}</section><Pagination page={page} totalPages={totalPages} onChange={(next) => { setPage(next); setSearchParams({ sort, page: String(next) }); }} /></>}
+      {state === "error" && <StatePanel title="推荐岗位加载失败" description={errorMessage ?? "请稍后重试。"} actionLabel="重新加载" onAction={() => setRetryKey((current) => current + 1)} />}
+      {state === "no-profile" && <StatePanel title="先填写求职画像" description="先填写目标岗位，才能开始推荐。" actionLabel="填写求职画像" onAction={() => undefined} link="/profile" />}
+      {state === "no-runs" && <StatePanel title="还没有推荐记录" description="开始一次推荐后，结果会显示在这里。" actionLabel="开始推荐" onAction={() => undefined} link="/recommendation-runs/new" />}
+      {state === "running" && <StatePanel title="正在生成推荐" description="推荐完成后，结果会显示在这里。" actionLabel="查看当前任务" onAction={() => undefined} link={activeRunId ? `/recommendation-runs/${activeRunId}` : "/recommendation-runs"} />}
+      {state === "no-match" && <StatePanel title="没有匹配岗位" description="调整求职画像或补充本次要求后再试。" actionLabel="再次推荐" onAction={() => undefined} link="/recommendation-runs/new" />}
+      {state === "failed" && <StatePanel title="推荐失败" description="查看任务详情了解原因，或重新开始。" actionLabel="重新开始" onAction={() => undefined} link="/recommendation-runs/new" />}
+      {state === "ready" && <><section className="recommendation-grid" aria-label="推荐岗位列表">{items.map((item) => <RecommendationCard key={item.recommendation_id} item={item} onFeedback={(feedback) => void updateFeedback(item, feedback)} onToggleSaved={() => void toggleSaved(item)} onDelete={() => void removeRecommendation(item)} />)}</section><Pagination page={page} totalPages={totalPages} onChange={(next) => { setPage(next); setSearchParams({ sort, page: String(next) }); }} /></>}
     </div>
   );
 }
@@ -151,13 +151,13 @@ export function RecommendationRunsPage() {
     }).catch((error: unknown) => {
       if (active) {
         setState("error");
-        setErrorMessage(error instanceof ApiError ? getApiErrorMessage(error.code, error.message) : "推荐任务暂时无法加载，请稍后重试。");
+      setErrorMessage(error instanceof ApiError ? getApiErrorMessage(error.code, error.message) : "推荐记录加载失败，请稍后重试。");
       }
     });
     return () => { active = false; };
   }, [retryKey]);
 
-  return <div className="recommendation-runs-page"><section className="page-intro recommendations-intro"><div><div className="eyebrow"><ListChecks size={16} />推荐任务</div><h1>查看每一次岗位寻找。</h1><p>从这里开始新的寻找，也可以回看之前的结果。</p></div></section>{state === "loading" && <RecommendationSkeleton />}{state === "error" && <StatePanel title="推荐任务暂时不可用" description={errorMessage ?? "请稍后重试。"} actionLabel="重新加载" onAction={() => setRetryKey((current) => current + 1)} />}{state === "ready" && <><StartRecommendationCard hasProfile={hasProfile === true} /><section className="run-list" aria-label="推荐任务列表">{runs.length ? runs.map((run) => <RunRow key={run.run_id} run={run} />) : <div className="run-list-empty"><span>还没有历史记录</span><p>开始一次寻找后，结果会保存在这里。</p></div>}</section></>}</div>;
+  return <div className="recommendation-runs-page"><section className="page-intro recommendations-intro"><div><div className="eyebrow"><ListChecks size={16} />推荐记录</div><h1>推荐记录</h1><p>创建新的推荐，或查看之前的结果。</p></div></section>{state === "loading" && <RecommendationSkeleton />}{state === "error" && <StatePanel title="推荐记录加载失败" description={errorMessage ?? "请稍后重试。"} actionLabel="重新加载" onAction={() => setRetryKey((current) => current + 1)} />}{state === "ready" && <><StartRecommendationCard hasProfile={hasProfile === true} /><section className="run-list" aria-label="推荐记录列表">{runs.length ? runs.map((run) => <RunRow key={run.run_id} run={run} />) : <div className="run-list-empty"><span>还没有推荐记录</span><p>开始一次推荐后，结果会显示在这里。</p></div>}</section></>}</div>;
 }
 
 export function NewRecommendationPage() {
@@ -177,7 +177,7 @@ export function NewRecommendationPage() {
         setCreditsError(null);
       }).catch((error: unknown) => {
         setCredits(null);
-        setCreditsError(error instanceof ApiError ? getApiErrorMessage(error.code, error.message) : "积分暂时无法加载，请稍后重试。");
+        setCreditsError(error instanceof ApiError ? getApiErrorMessage(error.code, error.message) : "积分加载失败，请稍后重试。");
       }),
       profileApi.current().then(() => {
         setProfileState("present");
@@ -188,7 +188,7 @@ export function NewRecommendationPage() {
           return;
         }
         setProfileState("error");
-        setProfileError(error instanceof ApiError ? getApiErrorMessage(error.code, error.message) : "求职画像暂时无法确认，请稍后重试。");
+        setProfileError(error instanceof ApiError ? getApiErrorMessage(error.code, error.message) : "求职画像加载失败，请稍后重试。");
       }),
     ]).catch(() => undefined);
   }, []);
@@ -204,7 +204,7 @@ export function NewRecommendationPage() {
       const accepted = await recommendationsApi.create({ extra_request: extraRequest.trim() || null }, key);
       navigate(`/recommendation-runs/${accepted.run_id}`);
     } catch (error: unknown) {
-      setErrorMessage(error instanceof ApiError ? getApiErrorMessage(error.code, error.message) : "推荐任务创建失败，请稍后重试。");
+        setErrorMessage(error instanceof ApiError ? getApiErrorMessage(error.code, error.message) : "推荐创建失败，请稍后重试。");
     } finally {
       setIsSubmitting(false);
     }
@@ -212,29 +212,29 @@ export function NewRecommendationPage() {
 
   return (
     <div className="new-recommendation-page">
-      <Link className="back-link" to="/recommendation-runs"><ArrowLeft size={16} /><span>返回推荐任务</span></Link>
+      <Link className="back-link" to="/recommendation-runs"><ArrowLeft size={16} /><span>返回推荐记录</span></Link>
       <section className="new-recommendation-panel">
         <div className="new-recommendation-heading">
           <div className="auth-icon"><Sparkle size={24} /></div>
           <div>
             <div className="eyebrow">新建推荐</div>
-            <h1>根据你的方向寻找岗位。</h1>
-            <p>我们会使用当前求职画像；下面的补充要求只影响这一次寻找。</p>
+            <h1>开始推荐</h1>
+            <p>根据当前求职画像生成推荐。补充要求只影响本次推荐。</p>
           </div>
           <div className="recommendation-flow" aria-label="推荐流程">
-            <span className="recommendation-flow-label">推荐会依次处理</span>
-            <div><span className="recommendation-flow-step">01</span><span>理解你的求职方向</span></div>
-            <div><span className="recommendation-flow-step">02</span><span>寻找相关岗位</span></div>
-            <div><span className="recommendation-flow-step">03</span><span>比较经历与岗位要求</span></div>
+            <span className="recommendation-flow-label">推荐流程</span>
+            <div><span className="recommendation-flow-step">01</span><span>读取求职画像</span></div>
+            <div><span className="recommendation-flow-step">02</span><span>筛选相关岗位</span></div>
+            <div><span className="recommendation-flow-step">03</span><span>比较岗位要求</span></div>
           </div>
         </div>
         <div className="new-recommendation-form-column">
           <div className="recommendation-cost"><Coins size={19} /><span>本次消耗</span><strong>{credits?.recommendation_cost ?? "..."}</strong><small>当前余额 {credits?.balance ?? "..."}</small></div>
           <form className="new-recommendation-form" onSubmit={handleSubmit}>
-            <label className="field-group"><span>本次补充要求 <em>可选</em></span><textarea value={extraRequest} placeholder="例如：本次优先推荐 Python 后端岗位" maxLength={1000} onChange={(event) => { setExtraRequest(event.target.value); keyRef.current = null; }} /><small>最多 1000 个字符，将仅影响这一次推荐。</small></label>
+            <label className="field-group"><span>本次补充要求 <em>可选</em></span><textarea value={extraRequest} placeholder="例如：本次优先推荐 Python 后端岗位" maxLength={1000} onChange={(event) => { setExtraRequest(event.target.value); keyRef.current = null; }} /><small>最多 1000 个字符，只影响本次推荐。</small></label>
             {creditsError && <p className="form-error" role="alert">{creditsError}</p>}
             {profileError && <p className="form-error" role="alert">{profileError}</p>}
-            {profileState === "missing" && <div className="profile-required-panel"><strong>先完成求职画像</strong><p>告诉我们目标岗位、城市和经历后，才能开始寻找。</p><Link className="inline-action" to="/profile">去创建求职画像<ArrowRight size={16} /></Link></div>}
+            {profileState === "missing" && <div className="profile-required-panel"><strong>先填写求职画像</strong><p>先填写目标岗位，才能开始推荐。</p><Link className="inline-action" to="/profile">填写求职画像<ArrowRight size={16} /></Link></div>}
             {errorMessage && <p className="form-error" role="alert">{errorMessage}</p>}
             <button className="button button-primary" type="submit" disabled={isSubmitting || profileState !== "present"}><Sparkle size={18} />{isSubmitting ? "准备中" : "开始推荐"}</button>
           </form>
@@ -289,7 +289,7 @@ export function RecommendationRunDetailPage() {
       } catch (error: unknown) {
         if (!active) return;
         setState("error");
-        setErrorMessage(error instanceof ApiError ? getApiErrorMessage(error.code, error.message) : "推荐任务状态暂时无法加载，请稍后重试。");
+        setErrorMessage(error instanceof ApiError ? getApiErrorMessage(error.code, error.message) : "推荐状态加载失败，请稍后重试。");
         if (timer) window.clearInterval(timer);
       }
     };
@@ -304,7 +304,7 @@ export function RecommendationRunDetailPage() {
       const response = await recommendationsApi.feedback(item.recommendation_id, feedback);
       setResults((current) => current.map((entry) => entry.recommendation_id === item.recommendation_id ? { ...entry, feedback: response.feedback } : entry));
     } catch (error: unknown) {
-      setErrorMessage(error instanceof ApiError ? getApiErrorMessage(error.code, error.message) : "反馈暂时无法保存，请稍后重试。");
+      setErrorMessage(error instanceof ApiError ? getApiErrorMessage(error.code, error.message) : "反馈保存失败，请稍后重试。");
     }
   }
 
@@ -313,7 +313,7 @@ export function RecommendationRunDetailPage() {
       const response = item.is_saved ? await jobsApi.unsave(item.job.id) : await jobsApi.save(item.job.id);
       setResults((current) => current.map((entry) => entry.recommendation_id === item.recommendation_id ? { ...entry, is_saved: response.is_saved } : entry));
     } catch (error: unknown) {
-      setErrorMessage(error instanceof ApiError ? getApiErrorMessage(error.code, error.message) : "收藏状态暂时无法保存，请稍后重试。");
+      setErrorMessage(error instanceof ApiError ? getApiErrorMessage(error.code, error.message) : "收藏状态保存失败，请稍后重试。");
     }
   }
 
@@ -328,9 +328,9 @@ export function RecommendationRunDetailPage() {
 
   const displayedProgress = useDisplayedProgress(task);
   if (state === "loading") return <RecommendationSkeleton />;
-  if (state === "error" || !task) return <StatePanel title="推荐任务暂时不可用" description={errorMessage ?? "请稍后重试。"} actionLabel="返回推荐任务" onAction={() => undefined} link="/recommendation-runs" />;
+  if (state === "error" || !task) return <StatePanel title="推荐详情加载失败" description={errorMessage ?? "请稍后重试。"} actionLabel="返回推荐记录" onAction={() => undefined} link="/recommendation-runs" />;
   const running = task.status === "PENDING" || task.status === "RUNNING";
-  return <div className="run-detail-page"><Link className="back-link" to="/recommendation-runs">返回推荐任务</Link><section className="run-detail-header"><div><div className="eyebrow"><Clock size={16} />推荐任务</div><h1>{formatRecommendationStatus(task.status)}</h1><p>创建于 {formatDate(task.created_at)}</p></div><div className={`run-status-badge run-status-${task.status.toLowerCase()}`}>{formatRecommendationStatus(task.status)}</div></section>{errorMessage && <p className="form-error inline-page-error" role="alert">{errorMessage}</p>}<section className="run-progress-panel"><div className="run-progress-copy"><div><span>现在正在做什么</span><strong>{formatRecommendationStep(task.current_step)}</strong></div><strong>{displayedProgress}%</strong></div><div className="run-progress-track" role="progressbar" aria-label="推荐进度" aria-valuemin={0} aria-valuemax={100} aria-valuenow={displayedProgress}><span className="run-progress-fill" style={{ transform: `scaleX(${displayedProgress / 100})` }} /></div>{running && <><div className="run-progress-hint">{formatProgressEstimate(displayedProgress)}</div><div className="run-search-visual" role="status" aria-live="polite"><div className="run-search-header"><span><MagnifyingGlass size={17} />正在综合你的求职画像</span><span className="run-search-status"><span className="run-live-dot" aria-hidden="true" />实时寻找</span></div><div className="run-search-pills">{(profileHighlights.length ? profileHighlights : ["综合用户画像"]).map((highlight) => <span key={highlight}>{highlight}</span>)}</div><div className="run-activity"><MagnifyingGlass size={16} /><span>正在把方向、技能和经历放在一起查看</span></div></div></>}<div className="run-counts"><span>从 {totalJobs ?? "..."} 个岗位中推荐</span><span>已推荐 {task.counts.recommended}</span></div></section>{task.status === "FAILED" && <section className="run-failure-panel" role="alert"><WarningCircle size={21} /><div><strong>推荐任务失败，这次寻找没有完成</strong><p>{task.error?.message ?? "服务暂时不可用，请稍后重试。"}</p>{task.credits.refunded && <span>本次积分已退回</span>}<Link className="inline-action" to="/recommendation-runs/new">重新开始<ArrowRight size={16} /></Link></div></section>}{task.status === "SUCCEEDED" && <section className="run-result-section"><div className="section-heading"><div><h2>本次推荐结果</h2><p>点击岗位名称查看岗位详情。</p></div></div>{results.length ? <div className="recommendation-grid">{results.map((item) => <RecommendationCard key={item.recommendation_id} item={item} onFeedback={(feedback) => void updateFeedback(item, feedback)} onToggleSaved={() => void toggleSaved(item)} onDelete={() => void removeRecommendation(item)} />)}</div> : <div className="inline-empty"><CheckCircle size={24} /><strong>这次暂时没有找到合适岗位</strong><p>可以调整求职画像或补充本次要求，再试一次。</p><div className="inline-empty-actions"><Link className="button button-secondary" to="/profile">调整画像</Link><Link className="button button-primary" to="/recommendation-runs/new">再次寻找</Link></div></div>}</section>}</div>;
+  return <div className="run-detail-page"><Link className="back-link" to="/recommendation-runs">返回推荐记录</Link><section className="run-detail-header"><div><div className="eyebrow"><Clock size={16} />推荐任务</div><h1>{formatRecommendationStatus(task.status)}</h1><p>创建于 {formatDate(task.created_at)}</p></div><div className={`run-status-badge run-status-${task.status.toLowerCase()}`}>{formatRecommendationStatus(task.status)}</div></section>{errorMessage && <p className="form-error inline-page-error" role="alert">{errorMessage}</p>}<section className="run-progress-panel"><div className="run-progress-copy"><div><span>当前步骤</span><strong>{formatRecommendationStep(task.current_step)}</strong></div><strong>{displayedProgress}%</strong></div><div className="run-progress-track" role="progressbar" aria-label="推荐进度" aria-valuemin={0} aria-valuemax={100} aria-valuenow={displayedProgress}><span className="run-progress-fill" style={{ transform: `scaleX(${displayedProgress / 100})` }} /></div>{running && <><div className="run-progress-hint">{formatProgressEstimate(displayedProgress)}</div><div className="run-search-visual" role="status" aria-live="polite"><div className="run-search-header"><span><MagnifyingGlass size={17} />正在筛选匹配岗位</span><span className="run-search-status"><span className="run-live-dot" aria-hidden="true" />进行中</span></div><div className="run-search-pills">{(profileHighlights.length ? profileHighlights : ["综合条件"]).map((highlight) => <span key={highlight}>{highlight}</span>)}</div><div className="run-activity"><MagnifyingGlass size={16} /><span>正在比较岗位要求</span></div></div></>}<div className="run-counts"><span>从 {totalJobs ?? "..."} 个岗位中筛选</span><span>已推荐 {task.counts.recommended}</span></div></section>{task.status === "FAILED" && <section className="run-failure-panel" role="alert"><WarningCircle size={21} /><div><strong>推荐失败</strong><p>{task.error?.message ?? "服务不可用，请稍后重试。"}</p>{task.credits.refunded && <span>本次积分已退回</span>}<Link className="inline-action" to="/recommendation-runs/new">重新开始<ArrowRight size={16} /></Link></div></section>}{task.status === "SUCCEEDED" && <section className="run-result-section"><div className="section-heading"><div><h2>本次推荐结果</h2><p>点击岗位名称查看岗位详情。</p></div></div>{results.length ? <div className="recommendation-grid">{results.map((item) => <RecommendationCard key={item.recommendation_id} item={item} onFeedback={(feedback) => void updateFeedback(item, feedback)} onToggleSaved={() => void toggleSaved(item)} onDelete={() => void removeRecommendation(item)} />)}</div> : <div className="inline-empty"><CheckCircle size={24} /><strong>没有匹配岗位</strong><p>调整求职画像或补充本次要求后再试。</p><div className="inline-empty-actions"><Link className="button button-secondary" to="/profile">修改画像</Link><Link className="button button-primary" to="/recommendation-runs/new">再次推荐</Link></div></div>}</section>}</div>;
 }
 
 function RunRow({ run }: { run: RecommendationTaskView }) {
@@ -338,7 +338,7 @@ function RunRow({ run }: { run: RecommendationTaskView }) {
 }
 
 function StartRecommendationCard({ hasProfile }: { hasProfile: boolean }) {
-  return <section className="run-start-card"><div className="run-start-card-copy"><span className="profile-empty-kicker">下一步</span><h2>{hasProfile ? "准备好开始下一次寻找了吗？" : "先告诉我们想找什么工作"}</h2><p>{hasProfile ? "根据你的求职画像寻找新的岗位。" : "完成求职画像后，我们才能按你的方向寻找岗位。"}</p></div><Link className="button button-primary" to={hasProfile ? "/recommendation-runs/new" : "/profile"}>{hasProfile ? "开始推荐" : "创建求职画像"}<ArrowRight size={17} /></Link></section>;
+  return <section className="run-start-card"><div className="run-start-card-copy"><span className="profile-empty-kicker">开始推荐</span><h2>{hasProfile ? "创建新的推荐" : "先填写求职画像"}</h2><p>{hasProfile ? "根据当前求职画像生成推荐。" : "先填写目标岗位，才能开始推荐。"}</p></div><Link className="button button-primary" to={hasProfile ? "/recommendation-runs/new" : "/profile"}>{hasProfile ? "开始推荐" : "填写求职画像"}<ArrowRight size={17} /></Link></section>;
 }
 
 function Pagination({ page, totalPages, onChange }: { page: number; totalPages: number; onChange: (page: number) => void }) {
@@ -412,7 +412,7 @@ function buildProfileHighlights(profile: ProfileView): string[] {
     .slice(0, 5)
     .map((value) => `经历 ${value}`);
   const values = [
-    "综合用户画像",
+    "综合条件",
     ...profile.target_roles.map((value) => `方向 ${value}`),
     ...profile.target_locations.map((value) => `地点 ${value}`),
     ...profile.recruitment_types,

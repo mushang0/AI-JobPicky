@@ -35,7 +35,7 @@ describe("JobsPage", () => {
       </MemoryRouter>,
     );
 
-    expect(await screen.findByText("当前没有匹配岗位")).toBeInTheDocument();
+    expect(await screen.findByText("没有找到岗位")).toBeInTheDocument();
     expect(screen.queryByText("Python 后端工程师")).not.toBeInTheDocument();
   });
 
@@ -107,7 +107,7 @@ describe("JobsPage", () => {
       </MemoryRouter>,
     );
 
-    await screen.findByText("当前没有匹配岗位");
+    await screen.findByText("没有找到岗位");
     const toggle = screen.getByRole("button", { name: "筛选" });
     const panel = document.getElementById("job-filter-panel");
     expect(panel).not.toBeNull();
