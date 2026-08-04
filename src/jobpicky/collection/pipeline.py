@@ -152,6 +152,10 @@ def _metadata(row: SpreadsheetRow, website: Mapping[str, object]) -> JsonObject:
                 "announcement_url": row.announcement_url,
                 "major_requirement": row.major_requirement,
                 "has_written_test": row.has_written_test,
+                "feishu_record_id": row.source_record_id,
+                "feishu_last_modified_at": (
+                    row.source_last_modified_at.isoformat() if row.source_last_modified_at else None
+                ),
                 "sheet_updated_at": row.updated_at.isoformat() if row.updated_at else None,
                 "table_job_summary": row.job_directions,
                 "table_row_number": row.row_number,
@@ -228,7 +232,12 @@ def merge_job_fields(
         graduation_years=graduation_years,
         published_at=published_at if isinstance(published_at, datetime) else None,
         deadline_at=deadline_at if isinstance(deadline_at, datetime) else row.deadline_at,
-        source_ref=_string(website, "source_ref") or f"table-row:{row.row_number}",
+        source_ref=_string(website, "source_ref")
+        or (
+            f"feishu-record:{row.source_record_id}"
+            if row.source_record_id
+            else f"table-row:{row.row_number}"
+        ),
         metadata={
             **_metadata(row, website),
             "collection_mode": collection_mode,

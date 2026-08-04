@@ -1,0 +1,11 @@
+[Unit]
+Description=Run JobPicky Feishu collector daily
+
+[Timer]
+OnCalendar=*-*-* 03:15:00
+Persistent=true
+RandomizedDelaySec=15m
+Unit=jobpicky-feishu.service
+
+[Install]
+WantedBy=timers.target
