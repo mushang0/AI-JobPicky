@@ -1,0 +1,13 @@
+{
+  "code": 200,
+  "msg": null,
+  "data": {
+    "id": 2001,
+    "positionName": "客户端开发工程师",
+    "projectId": 102,
+    "workPlaceName": "杭州",
+    "positionDescription": "参与客户端功能开发。",
+    "positionRequirement": "具备良好的工程基础。",
+    "projectName": "校园招聘"
+  }
+}

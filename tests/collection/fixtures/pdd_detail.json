@@ -1,0 +1,15 @@
+{
+  "success": true,
+  "errorCode": "0",
+  "errorMsg": null,
+  "result": {
+    "id": "pdd-job-001",
+    "name": "平台研发工程师",
+    "workLocationName": "上海",
+    "recruitTypeName": "校招",
+    "releaseTime": 1760000000000,
+    "jobDuty": "参与平台服务开发。",
+    "serveRequirement": "具备良好的工程基础。",
+    "bonus": ""
+  }
+}

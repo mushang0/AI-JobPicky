@@ -168,6 +168,41 @@ uv run python scripts/verify_parser_pipeline.py \
 - 前端懒加载但没有公开 GET 详情、需要登录/验证码/WAF、或 Moka 等返回加密详情的站点保持失败，
   不把列表摘要、宣传页或浏览器渲染结果冒充稳定 JD。浏览器只用于调查页面链路，批处理仍使用确定性
   HTTP/API 解析。理想汽车、Sicarrier、长亭科技已验证可分别获得岗位和 JD。
+- 已增加公司画像目录 `src/jobpicky/collection/company_profiles.py`：先按规范化公司组和招聘平台
+  归类，再选择平台适配器；共享平台不按公司复制解析器。当前已验证七个高价值公共接口来源族，另有一个
+  已验证的 Phenom 嵌入数据来源族：
+  - 阿里巴巴 `campus-talent.alibaba.com`：`POST /position/search` 按 `pageIndex` 分页，入口页面提供公开
+    CSRF 引导 token；解析器只在内存中保留匿名 cookie/token，调用 `POST /position/detail` 补齐缺失 JD，保留
+    `batchId` 与 `filterParams`，不把无效筛选静默降级成全量列表。
+  - 百度 `talent.baidu.com`：`POST /httservice/getPostListNew` 按 `curPage` 分页（每页上限 10），
+    `GET /httservice/getPostDetail?postId=...&recruitType=...` 获取公开 JD；保留 `recruitType`、`projectType`
+    和搜索词筛选，不能把 SSR 的首屏 10 条误当成全量。
+  - 腾讯 `join.qq.com`：`POST /api/v1/position/searchPosition` 获取列表，`GET
+    /api/v1/jobDetails/getJobDetailsByPostId?postId=...` 获取公开 JD，使用 `postId` 作为稳定来源 ID。
+  - 同花顺 `campus.10jqka.com.cn`：`GET /api/v3/school_recruitment/apply/apply_list` 分页，
+    `GET /api/v3/school_recruitment/apply/apply_detail?id=...` 获取 `intro` 与 `requirement`；空数组
+    过滤参数不能发送，否则会把公开列表误判为空。
+  - 拼多多 `careers.pddglobalhr.com`：`POST /api/careers/api/recruit/position/list` 与
+    `POST /api/careers/api/recruit/position/detail`；带 `positionId` 的直达链接只解析目标岗位，不扩展为
+    公司全量列表。
+  - 网易校园 `campus.163.com` / `campus.game.163.com`：从入口 query 的 `id` 取得项目，调用
+    `GET /api/campuspc/position/getJobList`；列表已带 JD 时不额外放大详情请求，缺 JD 才调用公开详情接口。
+  - 网易社会招聘 `hr.163.com/job-detail.html?id=...`：调用公开 `GET /api/hr163/position/query?id=...`，
+    详情链接保持单岗位范围，不把社会招聘直链扩展成列表。
+  - 快手 `campus.kuaishou.cn/recruit/campus`：解析 hash 路由中的 `recruitSubProjectCodes`、岗位标签和筛选，
+    调用公开 `POST /recruit/campus/e/api/v1/open/positions/simple` 分页；列表缺 JD 时调用
+    `GET /recruit/campus/e/api/v1/open/positions/find?id=...`，直达 `#/campus/job-info/<id>` 只返回目标岗位。
+  - Phenom/BCG `careers.bcg.com`：岗位详情页公开嵌入 `phApp.ddo.jobDetail.data.job`，使用稳定 `jobId`、
+    HTML JD、申请链接和职位元数据；当前只承诺直接详情页，不把通用搜索页误判成完整列表。
+  - 自定义域名飞书招聘 `xiaomi.jobs.f.mioffice.cn`、`jobs.ecoflow.com`、`career.papergames.com`：复用飞书的
+    `position/<id>/detail` API、`website-path` 头和渲染列表导航；自定义域名不代表另一套接口，先比对
+    portal path 和 API 响应再归类。商汤域名当前因 TLS 连接不可复现，仍保持失败边界。
+  - 自定义域名 Moka `campus.sonoscape.com`、`campus.fingard.com`：复用服务端 `#init-data` 岗位清单，
+    直达 fragment 仍按岗位 ID 精确筛选；平台详情接口加密，描述为空时保留明确边界，不把列表标题当 JD。
+  七个 API 来源族共用受限标准库 HTTP 传输层：响应上限 8 MiB、请求超时 20 秒，详情并发最多 8 个；超过边界、
+  缺少 JD 或接口状态异常时明确失败，不把列表标题当作岗位事实。Fixture 和回归分别在
+  `tests/collection/fixtures/{alibaba,baidu,tencent,jqka,pdd,netease,kuaishou}_*.json`、
+  `tests/collection/fixtures/phenom_job.html` 和对应的 `tests/collection/test_*_parser.py`。
 - Fixture：`tests/collection/fixtures/public_job_page.html`；回归：
   `tests/collection/test_public_web_parser.py`、`tests/collection/test_link_classification.py`。
 

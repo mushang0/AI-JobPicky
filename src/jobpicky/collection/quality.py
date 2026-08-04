@@ -9,7 +9,7 @@ from typing import Literal
 from jobpicky.contracts import CollectedJob
 from jobpicky.contracts.common import JsonObject
 
-from .link_classification import COMPANY_RECRUITMENT_SITE, COMPANY_WEBSITE, WECHAT
+from .link_classification import COMPANY_WEBSITE, WECHAT
 from .spreadsheet import SpreadsheetRow
 
 CollectionDecision = Literal["ACCEPT_PARSED", "FALLBACK_TO_TABLE", "SKIP_STALE"]
@@ -25,9 +25,7 @@ _GENERIC_TITLES = {"职位", "职位详情", "招聘", "招聘岗位", "岗位�
 class CollectionQualityPolicy:
     """Small, conservative policy for deciding whether parsed facts are usable."""
 
-    table_fallback_link_types: frozenset[str] = frozenset(
-        {WECHAT, COMPANY_WEBSITE, COMPANY_RECRUITMENT_SITE}
-    )
+    table_fallback_link_types: frozenset[str] = frozenset({WECHAT, COMPANY_WEBSITE})
     published_stale_days_by_type: Mapping[str, int] = field(
         default_factory=lambda: {"实习": 180, "校招": 365, "社招": 365}
     )

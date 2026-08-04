@@ -1,0 +1,9 @@
+{
+  "status": 0,
+  "data": {
+    "postId": "post-001",
+    "desc": "负责服务端功能开发与维护。",
+    "request": "熟悉一种主流编程语言。",
+    "workCityList": ["北京", "上海"]
+  }
+}
