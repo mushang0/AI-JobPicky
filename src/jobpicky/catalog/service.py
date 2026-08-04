@@ -40,8 +40,17 @@ from .query_terms import extract_terms
 _SPACE_RE = re.compile(r"\s+")
 
 
+def _job_sort_key(job: JobFact) -> tuple[bool, float, float, str]:
+    return (
+        job.published_at is None,
+        -(job.published_at.timestamp() if job.published_at else 0.0),
+        -job.last_confirmed_at.timestamp(),
+        job.id,
+    )
+
+
 class JobPoolStore(Protocol):
-    async def list_visible(self, limit: int) -> list[tuple[JobFact, JobSourceView]]: ...
+    async def list_visible(self) -> list[tuple[JobFact, JobSourceView]]: ...
 
     async def get_job(self, job_id: str) -> tuple[JobFact, JobSourceView] | None: ...
 
@@ -80,7 +89,7 @@ class JobPoolService:
 
     async def list_jobs(self, user_id: str | None, query: JobListQuery) -> JobPoolPage:
         self._authorize_pool_query(user_id, query)
-        pool = await self._jobs.list_visible(self._settings.visible_pool_limit)
+        pool = await self._jobs.list_visible()
         filtered = [(job, source) for job, source in pool if self._matches(job, query)]
         terms = _search_terms(query.q)
         if terms:
@@ -89,12 +98,10 @@ class JobPoolService:
                 for job, source in filtered
             ]
             ranked = [item for item in ranked if item[0] > 0]
-            ranked.sort(
-                key=lambda item: (-item[0], -item[1].last_confirmed_at.timestamp(), item[1].id)
-            )
+            ranked.sort(key=lambda item: (-item[0], *_job_sort_key(item[1])))
             filtered = [(job, source) for _, job, source in ranked]
         else:
-            filtered.sort(key=lambda item: (-item[0].last_confirmed_at.timestamp(), item[0].id))
+            filtered.sort(key=lambda item: _job_sort_key(item[0]))
 
         start = (query.page - 1) * query.page_size
         page_items = filtered[start : start + query.page_size]
@@ -139,7 +146,7 @@ class JobPoolService:
             cached = self._filter_cache
             if cached is not None and cached.expires_at > now:
                 return cached.value
-            pool = await self._jobs.list_visible(self._settings.visible_pool_limit)
+            pool = await self._jobs.list_visible()
             value = JobFilterOptions(
                 cities=sorted(
                     {
@@ -164,7 +171,6 @@ class JobPoolService:
                 educations=list(EducationLevel),
                 graduation_years=sorted({year for job, _ in pool for year in job.graduation_years}),
                 limits=FilterOptionsLimits(
-                    visible_pool_limit=self._settings.visible_pool_limit,
                     default_page_size=self._settings.job_pool_default_page_size,
                     public_page_size_max=self._settings.job_pool_public_page_size_max,
                     authenticated_page_size_max=(

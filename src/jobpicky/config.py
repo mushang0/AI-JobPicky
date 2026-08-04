@@ -32,7 +32,6 @@ class Settings:
     evaluation_batch_size: int = 10
     model_config_version: str = "recommendation-v1"
 
-    visible_pool_limit: int = 5000
     job_pool_default_page_size: int = 30
     job_pool_public_page_size_max: int = 30
     job_pool_authenticated_page_size_max: int = 100
@@ -124,10 +123,6 @@ class Settings:
             "JOBPICKY_MODEL_CONFIG_VERSION", defaults.model_config_version
         ).strip()
 
-        visible_pool_limit = _read_positive_int(
-            values.get("JOBPICKY_VISIBLE_POOL_LIMIT", str(defaults.visible_pool_limit)),
-            "JOBPICKY_VISIBLE_POOL_LIMIT",
-        )
         job_pool_default_page_size = _read_positive_int(
             values.get(
                 "JOBPICKY_JOB_POOL_DEFAULT_PAGE_SIZE", str(defaults.job_pool_default_page_size)
@@ -370,7 +365,6 @@ class Settings:
             llm_max_retries=llm_max_retries,
             evaluation_batch_size=evaluation_batch_size,
             model_config_version=model_config_version,
-            visible_pool_limit=visible_pool_limit,
             job_pool_default_page_size=job_pool_default_page_size,
             job_pool_public_page_size_max=job_pool_public_page_size_max,
             job_pool_authenticated_page_size_max=job_pool_authenticated_page_size_max,

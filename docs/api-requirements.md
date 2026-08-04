@@ -53,15 +53,11 @@ GET /api/v1/jobs
 ### 2.3 可见岗位池
 
 1. 数据库中的岗位默认全部开放，不向用户提供岗位状态筛选。
-2. 后端设置整个可见岗位池的数量上限 `visible_pool_limit`。
-3. 岗位按 `last_confirmed_at DESC, id ASC` 确定稳定顺序，截取最新的 N 个岗位形成可见岗位池；
-   N 为 `visible_pool_limit`。
-4. 搜索、筛选和分页只在该可见岗位池内执行。
-5. `pool_total` 是应用上限后的可见岗位数，即数据库岗位数与 `visible_pool_limit` 的较小值。
-6. `total` 是当前登录用户应用搜索和筛选后，在可见岗位池内命中的岗位数。
-
-开发阶段 `visible_pool_limit=5000`。它是后端配置，不提供首版管理端修改接口；未来只调整配置，不改变
-API-001 的响应语义。
+2. 岗位按 `published_at DESC NULLS LAST, last_confirmed_at DESC, id ASC` 确定稳定顺序；没有发布日期的岗位排在
+   已知发布日期的岗位之后。
+3. 搜索、筛选和分页在全部开放岗位内执行。
+4. `pool_total` 是数据库中 `status=OPEN` 的岗位总数，不受固定数量上限影响。
+5. `total` 是当前登录用户应用搜索和筛选后命中的岗位数。
 
 ### 2.4 访问控制
 
@@ -113,8 +109,8 @@ GET /api/v1/jobs?page=1&page_size=30&city=上海&city=北京&company_nature=民�
 - 搜索前先去除首尾空白并进行大小写无关的文本规范化。
 - 对岗位名称、公司名称、工作地点和 JD 正文进行部分匹配。
 - 多个搜索词命中任意一个即可进入结果；命中词更多的岗位排序更靠前。
-- 有搜索词时按相关度降序，再按 `last_confirmed_at DESC, id ASC` 保证稳定顺序。
-- 没有搜索词时按 `last_confirmed_at DESC, id ASC` 排序。
+- 有搜索词时按相关度降序，再按 `published_at DESC NULLS LAST, last_confirmed_at DESC, id ASC` 保证稳定顺序。
+- 没有搜索词时按 `published_at DESC NULLS LAST, last_confirmed_at DESC, id ASC` 排序。
 - 首版不使用大模型搜索、语义搜索或拼写纠错。
 
 ### 2.7 筛选语义
@@ -212,15 +208,14 @@ GET /api/v1/jobs?page=1&page_size=30&city=上海&city=北京&company_nature=民�
 - 收藏和取消收藏：API-009；
 - 收藏列表：API-019；
 - 岗位详情：API-011；
-- 登录与身份传递：API-014～API-018；
-- `visible_pool_limit` 首版只通过后端配置管理，不增加管理接口。
+- 登录与身份传递：API-014～API-018。
 
 ### 2.12 验收场景
 
 1. 匿名用户不带搜索和筛选请求第一页，获得不超过公开预览上限的岗位，且 `is_saved=null`。
 2. 匿名用户请求第二页、搜索、筛选或超大 `page_size`，得到 `401 AUTHENTICATION_REQUIRED`。
 3. 登录用户能够翻页、调整合法 `page_size`、搜索和组合筛选，并得到真实 `is_saved`。
-4. 数据库岗位数超过 `visible_pool_limit` 时，只取 `last_confirmed_at` 最新的 N 个岗位进入可见池。
+4. 数据库岗位数超过 5000 时，仍能返回超过 5000 的 `pool_total`，并按 `published_at` 从新到旧展示。
 5. 开启任一筛选时，缺少该字段的岗位仍被保留，已知且不匹配的岗位被排除。
 6. 搜索或筛选无命中时返回成功空页，不伪造岗位。
 
@@ -602,7 +597,7 @@ GET /api/v1/jobs/{job_id}
 
 - 岗位池、推荐卡片和收藏列表复用该接口。
 - 该接口允许匿名访问，使用可选 Bearer 身份；公开岗位来自公开招聘源，列表登录限制不用于阻止稳定详情链接。
-- 详情不受 `visible_pool_limit` 限制。数据库中仍保留的开放、关闭或待确认岗位都可查询，并明确返回
+- 详情不受岗位池列表数量限制。数据库中仍保留的开放、关闭或待确认岗位都可查询，并明确返回
   `status`；关闭岗位的前端投递按钮必须禁用或提示岗位已关闭。
 - 匿名时 `is_saved=null`，登录时返回当前用户真实收藏状态。
 - 推荐卡片中的 AI 评估归推荐记录所有，不写入岗位详情事实，也不由本接口返回。
@@ -1339,7 +1334,7 @@ Authorization: Bearer <access_token>
 }
 ```
 
-- 收藏列表不受 `visible_pool_limit` 限制。
+- 收藏列表不受岗位池列表数量限制。
 - 已关闭或待确认岗位仍保留在收藏列表，通过 `job.status` 明确展示，不静默删除用户收藏。
 - 列表岗位卡片不返回完整 JD；点击后通过 API-011 查询详情。
 - `is_saved` 在本接口中恒为 `true`。
@@ -1352,7 +1347,7 @@ Authorization: Bearer <access_token>
 GET /api/v1/jobs/filter-options
 ```
 
-该接口允许匿名访问，不返回用户数据。它提供 API-001 所需的统一规范化选项和当前岗位池限制，避免前端
+该接口允许匿名访问，不返回用户数据。它提供 API-001 所需的统一规范化选项和当前岗位池数据，避免前端
 维护另一套字典。
 
 成功响应：
@@ -1370,7 +1365,6 @@ GET /api/v1/jobs/filter-options
   "educations": ["高中及以下", "专科", "本科", "硕士", "博士"],
   "graduation_years": [2026, 2027, 2028],
   "limits": {
-    "visible_pool_limit": 5000,
     "default_page_size": 30,
     "public_page_size_max": 30,
     "authenticated_page_size_max": 100
@@ -1469,7 +1463,6 @@ GET /api/v1/jobs/filter-options
 
 | 配置 | 开发默认值 | 说明 |
 |---|---:|---|
-| `visible_pool_limit` | `5000` | API-001 可见岗位池上限 |
 | 岗位池默认页大小 | `30` | 匿名和登录用户默认值 |
 | 岗位池匿名页大小上限 | `30` | 匿名仍只能请求第 1 页 |
 | 岗位池登录页大小上限 | `100` | 登录用户可调整 |

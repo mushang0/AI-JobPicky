@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { BookmarkSimple, Briefcase, CaretDown, CaretLeft, CaretRight, Check, Funnel, MagnifyingGlass, WarningCircle, X } from "@phosphor-icons/react";
+import { BookmarkSimple, CaretDown, CaretLeft, CaretRight, Check, Funnel, MagnifyingGlass, WarningCircle, X } from "@phosphor-icons/react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "../../adapters/web/AuthProvider";
 import { ApiError } from "../../shared/api/client";
@@ -246,14 +246,14 @@ export function JobsPage() {
           <h1>找岗位</h1>
           <p>搜索岗位、公司或关键词，再按条件筛选。</p>
         </div>
-        <div className="intro-note" aria-label="岗位池说明">
-          <Briefcase size={20} />
-          <div><strong>{jobs?.pool_total ?? "..."}</strong><span>岗位池总数</span></div>
-        </div>
       </section>
 
-      <section className="jobs-toolbar" aria-label="岗位池状态">
-        <div className="toolbar-copy"><span className="toolbar-label">匹配岗位</span><strong>{jobs ? `共 ${jobs.total} 个岗位` : "正在加载岗位…"}</strong></div>
+      <section className="jobs-toolbar" aria-label="岗位数量">
+        <div className="toolbar-stats">
+          <div className="toolbar-stat"><span className="toolbar-label">岗位池</span><strong>{jobs ? jobs.pool_total.toLocaleString("zh-CN") : "..."}</strong></div>
+          <span className="toolbar-divider" aria-hidden="true" />
+          <div className="toolbar-stat"><span className="toolbar-label">当前视图</span><strong>{jobs ? jobs.total.toLocaleString("zh-CN") : "..."}</strong></div>
+        </div>
         <div className="toolbar-meta">
           <span>数据持续更新</span>
           <span className="toolbar-divider" aria-hidden="true" />

@@ -124,13 +124,12 @@ def test_filter_options_use_explicit_limits_and_normalized_values() -> None:
         educations=list(EducationLevel),
         graduation_years=[2026, 2027],
         limits={  # type: ignore[arg-type]
-            "visible_pool_limit": 5000,
             "default_page_size": 30,
             "public_page_size_max": 30,
             "authenticated_page_size_max": 100,
         },
     )
-    assert options.limits.visible_pool_limit == 5000
+    assert options.limits.default_page_size == 30
 
 
 def test_profile_input_is_user_editable_but_snapshot_and_view_keep_server_fields() -> None:

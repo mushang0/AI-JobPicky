@@ -343,17 +343,22 @@ a:focus-visible {
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  min-height: 70px;
+  min-height: 64px;
   padding: 14px 18px;
   border-radius: 19px;
 }
 
-.toolbar-copy,
+.toolbar-stats,
 .toolbar-meta {
   gap: 10px;
 }
 
-.toolbar-copy {
+.toolbar-stats {
+  display: flex;
+  align-items: center;
+}
+
+.toolbar-stat {
   display: grid;
   gap: 3px;
 }
@@ -365,9 +370,10 @@ a:focus-visible {
   text-transform: uppercase;
 }
 
-.toolbar-copy strong {
+.toolbar-stat strong {
   color: var(--text);
-  font-size: 0.92rem;
+  font-size: 1.02rem;
+  font-variant-numeric: tabular-nums;
 }
 
 .toolbar-meta {
@@ -912,12 +918,29 @@ a:focus-visible {
   }
 
   .jobs-toolbar {
-    align-items: flex-start;
-    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+    min-height: 0;
+    padding: 12px 14px;
+  }
+
+  .toolbar-stats {
+    flex: 1;
+    justify-content: space-between;
+    min-width: 0;
+  }
+
+  .toolbar-stat {
+    min-width: 0;
+  }
+
+  .toolbar-stat strong {
+    font-size: 0.95rem;
+    white-space: nowrap;
   }
 
   .toolbar-meta {
-    flex-wrap: wrap;
+    display: none;
   }
 
   .job-grid {

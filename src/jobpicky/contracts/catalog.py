@@ -292,7 +292,6 @@ class JobPoolPage(ContractModel):
 
 
 class FilterOptionsLimits(ContractModel):
-    visible_pool_limit: int = Field(ge=1)
     default_page_size: int = Field(ge=1, le=100)
     public_page_size_max: int = Field(ge=1, le=100)
     authenticated_page_size_max: int = Field(ge=1, le=100)

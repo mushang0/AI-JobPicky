@@ -15,8 +15,8 @@ class _VisibleJobStore:
     def __init__(self, pool: list[tuple[JobFact, JobSourceView]]) -> None:
         self.pool = pool
 
-    async def list_visible(self, limit: int) -> list[tuple[JobFact, JobSourceView]]:
-        return self.pool[:limit]
+    async def list_visible(self) -> list[tuple[JobFact, JobSourceView]]:
+        return self.pool
 
     async def get_job(self, job_id: str) -> tuple[JobFact, JobSourceView] | None:
         return next(((job, source) for job, source in self.pool if job.id == job_id), None)
@@ -126,3 +126,60 @@ def test_published_date_filters_use_published_at_and_keep_unknown_separate() -> 
 
     assert [item.id for item in recent.items] == ["recent"]
     assert [item.id for item in unknown.items] == ["unknown"]
+
+
+def test_job_pool_uses_all_jobs_and_sorts_by_published_at() -> None:
+    now = datetime.now(UTC)
+    pool = [
+        (
+            make_job(
+                id="older",
+                published_at=now - timedelta(days=2),
+                last_confirmed_at=now,
+            ),
+            JobSourceView(id="a", name="平台"),
+        ),
+        (
+            make_job(
+                id="newer",
+                published_at=now - timedelta(days=1),
+                last_confirmed_at=now - timedelta(days=1),
+            ),
+            JobSourceView(id="b", name="平台"),
+        ),
+        (
+            make_job(id="unknown", published_at=None, last_confirmed_at=now),
+            JobSourceView(id="c", name="平台"),
+        ),
+    ]
+    service = JobPoolService(
+        _VisibleJobStore(pool), _UnusedSavedJobStore(), Settings(environment="test")
+    )
+
+    page = asyncio.run(service.list_jobs("user-1", JobListQuery(page_size=1)))
+
+    assert [item.id for item in page.items] == ["newer"]
+    assert page.pool_total == 3
+
+
+def test_job_pool_is_not_capped_at_five_thousand_jobs() -> None:
+    now = datetime.now(UTC)
+    pool = [
+        (
+            make_job(
+                id=f"job-{index}",
+                published_at=now - timedelta(minutes=index),
+            ),
+            JobSourceView(id="source-1", name="平台"),
+        )
+        for index in range(5001)
+    ]
+    service = JobPoolService(
+        _VisibleJobStore(pool), _UnusedSavedJobStore(), Settings(environment="test")
+    )
+
+    page = asyncio.run(service.list_jobs("user-1", JobListQuery(page_size=1)))
+
+    assert page.pool_total == 5001
+    assert page.total == 5001
+    assert page.items[0].id == "job-0"

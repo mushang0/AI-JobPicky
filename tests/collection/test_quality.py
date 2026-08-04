@@ -3,7 +3,7 @@ from datetime import UTC, datetime
 
 from jobpicky.collection import pipeline
 from jobpicky.collection.link_classification import BEISEN, COMPANY_RECRUITMENT_SITE, WECHAT
-from jobpicky.collection.quality import CollectionQualityPolicy
+from jobpicky.collection.quality import CollectionQualityPolicy, split_table_job_titles
 from jobpicky.collection.spreadsheet import SpreadsheetRow
 
 
@@ -50,7 +50,12 @@ def test_known_bad_platform_falls_back_without_calling_parser(monkeypatch) -> No
     assert result.skipped == []
     assert [item.title for item in result.batch.items] == ["后端工程师", "前端工程师"]
     assert len({item.source_job_id for item in result.batch.items}) == 2
-    assert all(item.description == "后端工程师、前端工程师" for item in result.batch.items)
+    assert all(item.description is None for item in result.batch.items)
+    assert all(item.metadata["batch"] == "秋招专场" for item in result.batch.items)
+    assert all(
+        item.metadata["table_job_summary"] == "后端工程师、前端工程师"
+        for item in result.batch.items
+    )
     assert all(
         item.apply_url == "https://mp.weixin.qq.com/s/article-1" for item in result.batch.items
     )
@@ -121,6 +126,24 @@ def test_multi_job_parser_title_falls_back_to_distinct_table_jobs(monkeypatch) -
     )
 
 
+def test_space_separated_parser_title_falls_back_to_distinct_table_jobs(monkeypatch) -> None:
+    monkeypatch.setitem(
+        pipeline.PARSERS,
+        BEISEN,
+        lambda _: [{"title": "后端工程师 前端工程师", "description": "页面正文"}],
+    )
+    result = pipeline.run_pipeline(
+        "source-1",
+        [make_row("https://acme.zhiye.com/campus/jobs")],
+        now=NOW,
+    )
+
+    assert [item.title for item in result.batch.items] == ["后端工程师", "前端工程师"]
+    assert all(
+        item.metadata["quality_reasons"] == ["MULTI_JOB_TITLE"] for item in result.batch.items
+    )
+
+
 def test_unsafe_delimited_parser_title_is_not_accepted(monkeypatch) -> None:
     monkeypatch.setitem(
         pipeline.PARSERS,
@@ -149,6 +172,41 @@ def test_unsafe_table_fallback_is_rejected() -> None:
     assert result.batch.items == []
     assert result.batch.complete is False
     assert result.unsupported[0].reason.startswith("table fallback failed")
+
+
+def test_table_title_split_supports_categories_and_keeps_parenthetical_text() -> None:
+    assert split_table_job_titles("研发技术类 工业设计类 设备技术类 品质技术类 信息技术类") == [
+        "研发技术类",
+        "工业设计类",
+        "设备技术类",
+        "品质技术类",
+        "信息技术类",
+    ]
+
+    assert split_table_job_titles("博士后研究员（研究方向：人工智能；机器人）") == [
+        "博士后研究员（研究方向：人工智能；机器人）"
+    ]
+    assert split_table_job_titles(
+        "博士后研究员（基础设施领域：公路/桥梁；智能建造领域：工程装备智能化）"
+    ) == ["博士后研究员（基础设施领域：公路/桥梁；智能建造领域：工程装备智能化）"]
+
+    assert split_table_job_titles("AI 应用工程师") == ["AI 应用工程师"]
+    assert split_table_job_titles("AI工具开发 intern AI咨询实习生 数字化创新实习生") == [
+        "AI工具开发 intern",
+        "AI咨询实习生",
+        "数字化创新实习生",
+    ]
+    assert split_table_job_titles("AI 与高性能计算类 硬件类 软件类 机器人和智能驾驶类") == [
+        "AI 与高性能计算类",
+        "硬件类",
+        "软件类",
+        "机器人和智能驾驶类",
+    ]
+    assert split_table_job_titles("管培生岗位：品牌推广 市场营销 研发技术") == [
+        "品牌推广",
+        "市场营销",
+        "研发技术",
+    ]
 
 
 def test_page_titles_and_announcements_fall_back_to_table(monkeypatch) -> None:

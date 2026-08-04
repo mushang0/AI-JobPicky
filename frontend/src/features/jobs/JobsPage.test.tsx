@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { JobsPage } from "./JobsPage";
 import { jobsApi } from "../../shared/api/jobs";
@@ -27,7 +27,7 @@ describe("JobsPage", () => {
       recruitment_types: ["校招", "社招", "实习"],
       educations: [],
       graduation_years: [],
-      limits: { visible_pool_limit: 5000, default_page_size: 30, public_page_size_max: 30, authenticated_page_size_max: 100 },
+      limits: { default_page_size: 30, public_page_size_max: 30, authenticated_page_size_max: 100 },
     });
 
     render(
@@ -38,6 +38,10 @@ describe("JobsPage", () => {
 
     expect(await screen.findByText("没有找到岗位")).toBeInTheDocument();
     expect(screen.queryByText("Python 后端工程师")).not.toBeInTheDocument();
+    const summary = screen.getByRole("region", { name: "岗位数量" });
+    expect(within(summary).getByText("岗位池")).toBeInTheDocument();
+    expect(within(summary).getByText("当前视图")).toBeInTheDocument();
+    expect(screen.queryByText("岗位池总数")).not.toBeInTheDocument();
   });
 
   it("opens the city picker from province to city", async () => {
@@ -50,7 +54,7 @@ describe("JobsPage", () => {
       recruitment_types: ["社招"],
       educations: ["本科"],
       graduation_years: [2027],
-      limits: { visible_pool_limit: 5000, default_page_size: 30, public_page_size_max: 30, authenticated_page_size_max: 100 },
+      limits: { default_page_size: 30, public_page_size_max: 30, authenticated_page_size_max: 100 },
     });
 
     render(
@@ -75,7 +79,7 @@ describe("JobsPage", () => {
       recruitment_types: [],
       educations: [],
       graduation_years: [],
-      limits: { visible_pool_limit: 5000, default_page_size: 30, public_page_size_max: 30, authenticated_page_size_max: 100 },
+      limits: { default_page_size: 30, public_page_size_max: 30, authenticated_page_size_max: 100 },
     });
 
     render(
@@ -103,7 +107,7 @@ describe("JobsPage", () => {
       recruitment_types: ["社招"],
       educations: ["本科"],
       graduation_years: [2027],
-      limits: { visible_pool_limit: 5000, default_page_size: 30, public_page_size_max: 30, authenticated_page_size_max: 100 },
+      limits: { default_page_size: 30, public_page_size_max: 30, authenticated_page_size_max: 100 },
     });
 
     render(

@@ -139,7 +139,6 @@ export const jobFilterOptions: JobFilterOptions = {
   educations: ["高中及以下", "专科", "本科", "硕士", "博士"],
   graduation_years: [2027, 2028],
   limits: {
-    visible_pool_limit: 5000,
     default_page_size: 30,
     public_page_size_max: 30,
     authenticated_page_size_max: 100,

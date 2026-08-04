@@ -52,7 +52,6 @@ class PostgresJobPoolStore:
 
     async def list_visible(
         self,
-        limit: int,
     ) -> list[tuple[JobFact, JobSourceView]]:
         rows = await self._job_rows(
             sa.select(JOB_TABLE, JOB_SOURCE_TABLE.c.display_name.label("source_name"))
@@ -62,8 +61,11 @@ class PostgresJobPoolStore:
                 )
             )
             .where(JOB_TABLE.c.status == "OPEN")
-            .order_by(JOB_TABLE.c.last_confirmed_at.desc(), JOB_TABLE.c.id.asc())
-            .limit(limit)
+            .order_by(
+                JOB_TABLE.c.published_at.desc().nulls_last(),
+                JOB_TABLE.c.last_confirmed_at.desc(),
+                JOB_TABLE.c.id.asc(),
+            )
         )
         return [(row_to_job_fact(row), row_to_source_view(row)) for row in rows]
 

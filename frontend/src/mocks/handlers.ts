@@ -49,7 +49,7 @@ function shouldRequireAuth(url: URL, authenticated: boolean): boolean {
 }
 
 function filterJobs(url: URL, authenticated: boolean): JobListItem[] {
-  return jobFixtures
+  const filtered = jobFixtures
     .map((job) => ({ ...job, is_saved: authenticated ? savedJobIds.has(job.id) : null }))
     .filter((job) => {
       const q = url.searchParams.get("q")?.trim().toLowerCase();
@@ -91,6 +91,16 @@ function filterJobs(url: URL, authenticated: boolean): JobListItem[] {
       }
       return true;
     });
+
+  return filtered.sort((left, right) => {
+    if (left.published_at === null && right.published_at !== null) return 1;
+    if (left.published_at !== null && right.published_at === null) return -1;
+    if (left.published_at !== null && right.published_at !== null) {
+      const publishedDifference = new Date(right.published_at).getTime() - new Date(left.published_at).getTime();
+      if (publishedDifference !== 0) return publishedDifference;
+    }
+    return left.id.localeCompare(right.id);
+  });
 }
 
 const recommendationRun: RecommendationTaskView = {

@@ -25,7 +25,6 @@ def test_settings_reject_unknown_log_level() -> None:
 def test_frontend_limits_and_credit_defaults_are_configured() -> None:
     settings = Settings.from_env({})
 
-    assert settings.visible_pool_limit == 5000
     assert settings.job_pool_default_page_size == 30
     assert settings.job_pool_public_page_size_max == 30
     assert settings.job_pool_authenticated_page_size_max == 100

@@ -86,7 +86,6 @@ export interface JobFilterOptions {
   educations: string[];
   graduation_years: number[];
   limits: {
-    visible_pool_limit: number;
     default_page_size: number;
     public_page_size_max: number;
     authenticated_page_size_max: number;
