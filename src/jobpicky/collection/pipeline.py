@@ -45,7 +45,7 @@ from .parsers.zhaopin import parse as parse_zhaopin
 from .quality import (
     CollectionQualityPolicy,
     assess_parsed_jobs,
-    build_table_fallback,
+    build_table_fallbacks,
     preflight_quality,
 )
 from .spreadsheet import SpreadsheetRow
@@ -265,17 +265,12 @@ def run_pipeline(
         url: str,
         link_type: str,
         reason_codes: Sequence[str],
-    ) -> None:
+    ) -> bool:
         try:
-            items.append(
-                build_table_fallback(
-                    source_id,
-                    row,
-                    url,
-                    link_type,
-                    reason_codes=reason_codes,
-                )
+            items.extend(
+                build_table_fallbacks(source_id, row, url, link_type, reason_codes=reason_codes)
             )
+            return True
         except Exception as exc:  # noqa: BLE001 - retain the row/link failure
             unsupported.append(
                 UnsupportedLink(
@@ -285,6 +280,24 @@ def run_pipeline(
                     reason=f"table fallback failed: {type(exc).__name__}: {exc}",
                     company_name=row.company_name,
                 )
+            )
+            return False
+
+    def note_fallback(
+        row: SpreadsheetRow,
+        url: str,
+        link_type: str,
+        reason_codes: Sequence[str],
+    ) -> None:
+        if add_fallback(row, url, link_type, reason_codes):
+            warnings.append(
+                f"row {row.row_number}, {link_type}, {url}: table fallback, "
+                f"{', '.join(reason_codes)}"
+            )
+        else:
+            warnings.append(
+                f"row {row.row_number}, {link_type}, {url}: table fallback rejected, "
+                f"{', '.join(reason_codes)}"
             )
 
     for row in rows:
@@ -310,11 +323,7 @@ def run_pipeline(
                         f"{', '.join(preflight.reason_codes)}"
                     )
                 else:
-                    add_fallback(row, url, link_type, preflight.reason_codes)
-                    warnings.append(
-                        f"row {row.row_number}, {link_type}, {url}: table fallback, "
-                        f"{', '.join(preflight.reason_codes)}"
-                    )
+                    note_fallback(row, url, link_type, preflight.reason_codes)
                 continue
 
             parser = PARSERS.get(link_type)
@@ -328,7 +337,7 @@ def run_pipeline(
                         company_name=row.company_name,
                     )
                 )
-                add_fallback(row, url, link_type, ("NO_PARSER",))
+                note_fallback(row, url, link_type, ("NO_PARSER",))
                 continue
             try:
                 website_jobs = parser(url)
@@ -342,7 +351,7 @@ def run_pipeline(
                         company_name=row.company_name,
                     )
                 )
-                add_fallback(row, url, link_type, ("PARSER_FAILED",))
+                note_fallback(row, url, link_type, ("PARSER_FAILED",))
                 continue
             if not website_jobs:
                 unsupported.append(
@@ -354,7 +363,7 @@ def run_pipeline(
                         company_name=row.company_name,
                     )
                 )
-                add_fallback(row, url, link_type, ("PARSER_EMPTY",))
+                note_fallback(row, url, link_type, ("PARSER_EMPTY",))
                 continue
 
             decision = assess_parsed_jobs(
@@ -380,11 +389,7 @@ def run_pipeline(
                 )
                 continue
             if decision.decision == "FALLBACK_TO_TABLE":
-                add_fallback(row, url, link_type, decision.reason_codes)
-                warnings.append(
-                    f"row {row.row_number}, {link_type}, {url}: table fallback, "
-                    f"{', '.join(decision.reason_codes)}"
-                )
+                note_fallback(row, url, link_type, decision.reason_codes)
                 continue
 
             prepared: list[tuple[CollectedJob, str | None]] = []
@@ -414,7 +419,7 @@ def run_pipeline(
                         company_name=row.company_name,
                     )
                 )
-                add_fallback(row, url, link_type, ("JOB_FIELDS_INVALID",))
+                note_fallback(row, url, link_type, ("JOB_FIELDS_INVALID",))
                 continue
             for item, job_key in prepared:
                 items.append(item)

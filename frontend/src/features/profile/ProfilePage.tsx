@@ -56,11 +56,27 @@ const wizardSteps = [
   "确认画像",
 ];
 
+type EditableProfileField =
+  | "target_roles"
+  | "target_locations"
+  | "recruitment_types"
+  | "education"
+  | "skills"
+  | "experience_summary"
+  | "expected_salary_min"
+  | "excluded_roles"
+  | "extra_request";
+
+type ProfileFieldUpdater = <K extends keyof ProfileSaveRequest>(
+  field: K,
+  value: ProfileSaveRequest[K],
+) => void;
+
 export function ProfilePage() {
   const [form, setForm] = useState<ProfileSaveRequest>(emptyProfile);
   const [filters, setFilters] = useState<JobFilterOptions | null>(null);
   const [profile, setProfile] = useState<ProfileView | null>(null);
-  const [mode, setMode] = useState<"summary" | "edit">("edit");
+  const [mode, setMode] = useState<"summary" | "wizard" | "direct">("wizard");
   const [step, setStep] = useState(0);
   const [loadState, setLoadState] = useState<"loading" | "ready" | "error">("loading");
   const [isSaving, setIsSaving] = useState(false);
@@ -88,7 +104,7 @@ export function ProfilePage() {
       setFilters(filterOptions);
       setProfile(currentProfile);
       setForm(currentProfile ? profileToForm(currentProfile) : { ...emptyProfile });
-      setMode(currentProfile ? "summary" : "edit");
+      setMode(currentProfile ? "summary" : "wizard");
       setStep(0);
       setLoadState("ready");
     }).catch((error: unknown) => {
@@ -132,7 +148,7 @@ export function ProfilePage() {
   function beginEditing() {
     if (!profile) return;
     setForm(profileToForm(profile));
-    setMode("edit");
+    setMode("direct");
     setStep(0);
     setIsDirty(false);
     setMessage(null);
@@ -182,7 +198,7 @@ export function ProfilePage() {
       });
       setProfile(currentProfile);
       setForm(currentProfile ? profileToForm(currentProfile) : { ...emptyProfile });
-      setMode(currentProfile ? "summary" : "edit");
+      setMode(currentProfile ? "summary" : "wizard");
       setStep(0);
       setIsDirty(false);
       setImportWarnings([]);
@@ -212,7 +228,7 @@ export function ProfilePage() {
     try {
       const imported = await profileApi.importResume(file);
       setForm({ base_version: profile?.version ?? null, ...imported.draft });
-      setMode("edit");
+      setMode("wizard");
       setStep(0);
       setIsDirty(true);
       setImportWarnings(imported.warnings);
@@ -272,7 +288,7 @@ export function ProfilePage() {
         <div>
           <div className="eyebrow"><span className="eyebrow-dot" aria-hidden="true" />我的求职画像</div>
           <h1>{mode === "summary" ? "这是你正在寻找的工作。" : profile ? "调整你的求职方向。" : "告诉我们你想找什么工作。"}</h1>
-          <p>{mode === "summary" ? "我们会根据这些信息寻找岗位，你可以随时修改。" : "按步骤填写即可，暂时不确定的内容可以先跳过。"}</p>
+          <p>{mode === "summary" ? "我们会根据这些信息寻找岗位，你可以随时修改。" : mode === "direct" ? "选择想修改的内容，保存后即可生效。" : "按步骤填写即可，暂时不确定的内容可以先跳过。"}</p>
         </div>
         {mode === "summary" && <div className="intro-note"><Check size={20} /><div><strong>画像已准备好</strong><span>可以开始寻找岗位</span></div></div>}
       </section>
@@ -285,6 +301,20 @@ export function ProfilePage() {
         <>
           <ProfileSummary form={form} createdAt={profile?.created_at ?? null} warnings={profile?.warnings ?? []} onEdit={beginEditing} />
         </>
+      ) : mode === "direct" ? (
+        <DirectProfileEditor
+          form={form}
+          filters={filters}
+          graduationYears={graduationYears}
+          updateField={updateField}
+          toggleListValue={toggleListValue}
+          onSubmit={handleSubmit}
+          onCancel={cancelEditing}
+          isDirty={isDirty}
+          isSaving={isSaving}
+          warnings={importWarnings.length ? importWarnings : profile?.warnings ?? []}
+          validationMessage={validationMessage}
+        />
       ) : (
         <form className="profile-form profile-wizard" onSubmit={handleSubmit}>
           <div className="profile-wizard-progress"><div><span>第 {step + 1} 步，共 {wizardSteps.length} 步</span><strong>{wizardSteps[step]}</strong></div><div className="profile-wizard-progress-track" aria-hidden="true"><span style={{ width: `${((step + 1) / wizardSteps.length) * 100}%` }} /></div></div>
@@ -334,6 +364,170 @@ function ResumeImportPanel({ isImporting, onFileSelected }: { isImporting: boole
       <small>最大 10 MiB；扫描件和旧版 DOC 暂不支持</small>
     </div>
   </section>;
+}
+
+const directFieldDefinitions: ReadonlyArray<{
+  key: EditableProfileField;
+  label: string;
+  description: string;
+}> = [
+  { key: "target_roles", label: "目标岗位", description: "决定推荐的主要方向" },
+  { key: "target_locations", label: "目标城市", description: "调整工作地点偏好" },
+  { key: "recruitment_types", label: "招聘类型", description: "校招、社招或实习" },
+  { key: "education", label: "学历与毕业时间", description: "用于执行明确的学历和届次条件" },
+  { key: "skills", label: "掌握技能", description: "补充岗位匹配依据" },
+  { key: "experience_summary", label: "项目与经历", description: "更新经历和项目摘要" },
+  { key: "expected_salary_min", label: "薪资期望", description: "调整税前月薪下限" },
+  { key: "excluded_roles", label: "排除岗位", description: "减少明确不考虑的方向" },
+  { key: "extra_request", label: "其他长期要求", description: "补充长期求职要求" },
+];
+
+function directFieldValue(field: EditableProfileField, form: ProfileSaveRequest): string {
+  switch (field) {
+    case "target_roles":
+      return form.target_roles.join("、") || "暂未填写";
+    case "target_locations":
+      return form.target_locations.join("、") || "不限";
+    case "recruitment_types":
+      return form.recruitment_types.join("、") || "不限";
+    case "education":
+      return [form.education, form.graduation_year ? `${form.graduation_year} 年毕业` : null]
+        .filter(Boolean)
+        .join("，") || "暂未填写";
+    case "skills":
+      return form.skills.join("、") || "暂未填写";
+    case "experience_summary":
+      return form.experience_summary || "暂未填写";
+    case "expected_salary_min":
+      return form.expected_salary_min === null
+        ? "暂未填写"
+        : `${form.expected_salary_min.toLocaleString("zh-CN")} 元/月起`;
+    case "excluded_roles":
+      return form.excluded_roles.join("、") || "暂未填写";
+    case "extra_request":
+      return form.extra_request || "暂未填写";
+  }
+}
+
+function DirectProfileEditor({
+  form,
+  filters,
+  graduationYears,
+  updateField,
+  toggleListValue,
+  onSubmit,
+  onCancel,
+  isDirty,
+  isSaving,
+  warnings,
+  validationMessage,
+}: {
+  form: ProfileSaveRequest;
+  filters: JobFilterOptions | null;
+  graduationYears: number[];
+  updateField: ProfileFieldUpdater;
+  toggleListValue: (field: "target_locations" | "recruitment_types", value: string) => void;
+  onSubmit: (event: React.FormEvent<HTMLFormElement>) => void;
+  onCancel: () => void;
+  isDirty: boolean;
+  isSaving: boolean;
+  warnings: string[];
+  validationMessage: string | null;
+}) {
+  const [activeField, setActiveField] = useState<EditableProfileField | null>(null);
+  const activeDefinition = directFieldDefinitions.find((item) => item.key === activeField) ?? null;
+
+  return (
+    <form className="profile-form profile-direct-editor" onSubmit={onSubmit}>
+      <section className="profile-direct-selection">
+        <div className="profile-direct-heading">
+          <div>
+            <span className="profile-summary-kicker">快速修改</span>
+            <h2>选择要修改的内容</h2>
+            <p>只打开需要调整的字段，不必重新走完整向导。</p>
+          </div>
+        </div>
+        <div className="profile-edit-options">
+          {directFieldDefinitions.map((item) => (
+            <button
+              className={`profile-edit-option${activeField === item.key ? " is-active" : ""}`}
+              type="button"
+              key={item.key}
+              onClick={() => setActiveField(item.key)}
+            >
+              <span className="profile-edit-option-copy">
+                <strong>{item.label}</strong>
+                <small>{item.description}</small>
+              </span>
+              <span className="profile-edit-option-value">{directFieldValue(item.key, form)}</span>
+              <span className="profile-edit-option-action">{activeField === item.key ? "正在修改" : "修改"}</span>
+            </button>
+          ))}
+        </div>
+      </section>
+
+      {activeDefinition && (
+        <ProfileSection title={`修改${activeDefinition.label}`} description={activeDefinition.description}>
+          {renderDirectFieldEditor(activeDefinition.key, {
+            form,
+            filters,
+            graduationYears,
+            updateField,
+            toggleListValue,
+          })}
+        </ProfileSection>
+      )}
+
+      {warnings.map((warning) => <p className="profile-warning" key={warning}><WarningCircle size={17} />{warning}</p>)}
+      {validationMessage && <p className="form-error profile-form-error" role="alert">{validationMessage}</p>}
+      <div className="profile-actions profile-direct-actions">
+        <button className="button button-secondary" type="button" onClick={onCancel}>取消修改</button>
+        <span className="profile-save-hint">{isDirty ? "内容只会在保存后用于推荐" : "选择字段后即可开始修改"}</span>
+        <button className="button button-primary" type="submit" disabled={isSaving}><FloppyDisk size={17} />{isSaving ? "保存中" : "保存修改"}</button>
+      </div>
+    </form>
+  );
+}
+
+function renderDirectFieldEditor(
+  field: EditableProfileField,
+  {
+    form,
+    filters,
+    graduationYears,
+    updateField,
+    toggleListValue,
+  }: {
+    form: ProfileSaveRequest;
+    filters: JobFilterOptions | null;
+    graduationYears: number[];
+    updateField: ProfileFieldUpdater;
+    toggleListValue: (field: "target_locations" | "recruitment_types", value: string) => void;
+  },
+) {
+  switch (field) {
+    case "target_roles":
+      return <TagInput label="目标岗位" values={form.target_roles} placeholder="例如 后端工程师" onChange={(values) => updateField("target_roles", values)} />;
+    case "target_locations":
+      return <div className="field-group city-picker-field"><span>目标城市</span><CityPicker label="目标城市" values={form.target_locations} onChange={(values) => updateField("target_locations", values)} /></div>;
+    case "recruitment_types":
+      return <ChoiceField label="招聘类型" options={filters?.recruitment_types ?? []} values={form.recruitment_types} onToggle={(value) => toggleListValue("recruitment_types", value)} emptyText="可以多选，也可以先跳过" />;
+    case "education":
+      return <>
+        <label className="field-group"><span>最高学历</span><select value={form.education ?? ""} onChange={(event) => updateField("education", event.target.value || null)}><option value="">暂不填写</option>{(filters?.educations ?? []).map((option) => <option key={option} value={option}>{option}</option>)}</select></label>
+        <label className="field-group"><span>毕业年份</span><select value={form.graduation_year ?? ""} onChange={(event) => updateField("graduation_year", event.target.value ? Number(event.target.value) : null)}><option value="">暂不填写</option>{graduationYears.map((year) => <option key={year} value={year}>{year}</option>)}</select></label>
+      </>;
+    case "skills":
+      return <TagInput label="掌握技能" values={form.skills} placeholder="例如 Python、FastAPI" onChange={(values) => updateField("skills", values)} />;
+    case "experience_summary":
+      return <TextAreaField label="项目与经历" value={form.experience_summary ?? ""} placeholder="例如：负责服务端接口、数据建模和异步任务链路" onChange={(value) => updateField("experience_summary", value || null)} />;
+    case "expected_salary_min":
+      return <NumberField label="期望税前月薪下限" value={form.expected_salary_min} placeholder="元/月，可不填" onChange={(value) => updateField("expected_salary_min", value)} />;
+    case "excluded_roles":
+      return <TagInput label="排除岗位" values={form.excluded_roles} placeholder="例如 客服、销售" onChange={(values) => updateField("excluded_roles", values)} />;
+    case "extra_request":
+      return <TextAreaField label="其他长期要求" value={form.extra_request ?? ""} placeholder="例如 不接受长期出差" onChange={(value) => updateField("extra_request", value || null)} />;
+  }
 }
 
 function ProfileSummary({ form, createdAt, warnings, onEdit, compact = false }: { form: ProfileSaveRequest; createdAt: string | null; warnings: string[]; onEdit: () => void; compact?: boolean }) {

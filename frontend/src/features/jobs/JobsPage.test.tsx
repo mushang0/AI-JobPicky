@@ -88,4 +88,38 @@ describe("JobsPage", () => {
     expect(screen.queryByRole("combobox", { name: "每页显示岗位数" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "应用筛选" })).toBeInTheDocument();
   });
+
+  it("keeps detailed filters collapsed until the mobile toggle is opened", async () => {
+    mockedJobsApi.list.mockResolvedValue({ items: [], total: 0, page: 1, page_size: 30, pool_total: 0 });
+    mockedJobsApi.filterOptions.mockResolvedValue({
+      cities: [],
+      company_natures: [],
+      sources: [],
+      recruitment_types: ["社招"],
+      educations: ["本科"],
+      graduation_years: [2027],
+      limits: { visible_pool_limit: 5000, default_page_size: 30, public_page_size_max: 30, authenticated_page_size_max: 100 },
+    });
+
+    render(
+      <MemoryRouter>
+        <JobsPage />
+      </MemoryRouter>,
+    );
+
+    await screen.findByText("当前没有匹配岗位");
+    const toggle = screen.getByRole("button", { name: "筛选" });
+    const panel = document.getElementById("job-filter-panel");
+    expect(panel).not.toBeNull();
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+    expect(panel).not.toHaveClass("is-open");
+
+    fireEvent.click(toggle);
+    expect(toggle).toHaveAttribute("aria-expanded", "true");
+    expect(panel).toHaveClass("is-open");
+
+    fireEvent.click(toggle);
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+    expect(panel).not.toHaveClass("is-open");
+  });
 });

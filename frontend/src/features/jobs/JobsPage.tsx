@@ -25,6 +25,21 @@ interface FilterDraft {
 }
 
 const JOBS_PAGE_SIZE = 12;
+const FILTER_PARAM_KEYS = [
+  "city",
+  "company_nature",
+  "recruitment_type",
+  "education",
+  "graduation_year",
+  "salary_min",
+  "salary_max",
+  "published_within_days",
+  "published_at_unknown",
+] as const;
+
+function hasFilterParams(params: URLSearchParams): boolean {
+  return FILTER_PARAM_KEYS.some((key) => params.getAll(key).some(Boolean));
+}
 
 function readDraft(params: URLSearchParams): FilterDraft {
   return {
@@ -88,6 +103,7 @@ export function JobsPage() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [savingJobId, setSavingJobId] = useState<string | null>(null);
   const [retryKey, setRetryKey] = useState(0);
+  const [isFilterPanelOpen, setIsFilterPanelOpen] = useState(() => hasFilterParams(searchParams));
 
   useEffect(() => {
     const nextDraft = readDraft(searchParams);
@@ -180,6 +196,7 @@ export function JobsPage() {
 
   function clearFilters() {
     setSearchParams({ page: "1" });
+    setIsFilterPanelOpen(false);
   }
 
   function goToPage(page: number) {
@@ -208,6 +225,16 @@ export function JobsPage() {
 
   const totalPages = jobs ? Math.max(1, Math.ceil(jobs.total / jobs.page_size)) : 1;
   const hasFilters = Array.from(searchParams.keys()).some((key) => !["page", "page_size", "source_id"].includes(key));
+  const activeFilterCount = [
+    draft.city.length,
+    draft.companyNature.length,
+    draft.recruitmentType.length,
+    draft.education.length,
+    draft.graduationYear.length,
+    draft.publishedDate ? 1 : 0,
+    draft.salaryMin ? 1 : 0,
+    draft.salaryMax ? 1 : 0,
+  ].reduce((total, count) => total + count, 0);
 
   return (
     <div className="jobs-page">
@@ -243,10 +270,19 @@ export function JobsPage() {
           </label>
           <div className="job-search-actions">
             {hasFilters && <button className="button button-secondary" type="button" onClick={clearFilters}><X size={16} />清除筛选</button>}
-            <button className="button button-primary" type="submit"><Funnel size={17} />应用筛选</button>
+            <button
+              className="button button-secondary mobile-filter-toggle"
+              type="button"
+              aria-expanded={isFilterPanelOpen}
+              aria-controls="job-filter-panel"
+              onClick={() => setIsFilterPanelOpen((current) => !current)}
+            >
+              <Funnel size={17} />筛选{activeFilterCount > 0 && <span className="filter-count">{activeFilterCount}</span>}
+            </button>
+            <button className="button button-primary desktop-filter-submit" type="submit"><Funnel size={17} />应用筛选</button>
           </div>
         </div>
-        <div className="filter-grid">
+        <div id="job-filter-panel" className={`filter-grid${isFilterPanelOpen ? " is-open" : ""}`}>
           <div className="field-group jobs-city-filter"><span>城市</span><CityPicker label="城市" values={draft.city} onChange={(value) => updateDraft("city", value)} /></div>
           <FilterDropdown id="job-filter-recruitment-type" label="招聘类型" value={draft.recruitmentType} options={filters?.recruitment_types ?? []} disabled={!filters} onChange={(value) => updateDraft("recruitmentType", value)} />
           <FilterDropdown id="job-filter-education" label="学历" value={draft.education} options={filters?.educations ?? []} disabled={!filters} onChange={(value) => updateDraft("education", value)} />
@@ -261,6 +297,10 @@ export function JobsPage() {
           <FilterDropdown id="job-filter-graduation-year" label="届次" value={draft.graduationYear} options={(filters?.graduation_years ?? []).map(String)} disabled={!filters} onChange={(value) => updateDraft("graduationYear", value)} />
           <label className="field-group"><span>最低薪资</span><input type="number" min="0" inputMode="numeric" value={draft.salaryMin} onChange={(event) => updateDraft("salaryMin", event.target.value)} placeholder="元/月" /></label>
           <label className="field-group"><span>最高薪资</span><input type="number" min="0" inputMode="numeric" value={draft.salaryMax} onChange={(event) => updateDraft("salaryMax", event.target.value)} placeholder="元/月" /></label>
+        </div>
+        <div className="filter-panel-actions">
+          <button className="button button-secondary" type="button" onClick={clearFilters} disabled={!hasFilters}>清除筛选</button>
+          <button className="button button-primary" type="submit"><Funnel size={17} />完成筛选</button>
         </div>
       </form>
 

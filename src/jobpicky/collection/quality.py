@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
@@ -19,6 +20,41 @@ _GENERIC_TITLE_RE = re.compile(
     re.IGNORECASE,
 )
 _GENERIC_TITLES = {"职位", "职位详情", "招聘", "招聘岗位", "岗位详情", "校招岗位"}
+_JOB_TITLE_SEPARATOR_RE = re.compile(r"[;；、，,|\n]+")
+_ROLE_TITLE_END_RE = re.compile(
+    r"(工程师|经理|专员|助理|分析师|研究员|设计师|开发|算法|测试|运维|运营|销售|采购|财务|人事|行政|产品|质量|工艺|生产|项目|商务|管培生|实习生|技术员|技师|架构师|顾问|主管|总监|教师|医生|护士|会计|法务|审计|翻译|编辑|策划|后端|前端|研发|制造|设备|安全|岗位|岗位类|类|岗|师|员|生)$"
+)
+_SIMPLE_ROLE_TITLES = frozenset(
+    {
+        "AI",
+        "IT",
+        "HR",
+        "后端",
+        "前端",
+        "产品",
+        "运营",
+        "财务",
+        "法务",
+        "采购",
+        "销售",
+        "质量",
+        "研发",
+        "测试",
+        "算法",
+        "硬件",
+        "软件",
+        "市场",
+        "人力",
+        "行政",
+        "项目",
+        "商务",
+        "安全",
+        "设计",
+        "开发",
+        "实习",
+    }
+)
+_MAX_TABLE_TITLE_CHARS = 80
 
 
 @dataclass(frozen=True)
@@ -80,6 +116,48 @@ def _title_is_generic(title: object, company_name: str | None) -> bool:
     return bool(company_name and normalized.casefold() == company_name.replace(" ", "").casefold())
 
 
+def _looks_like_job_title_fragment(title: str) -> bool:
+    without_parenthetical = re.sub(r"[（(][^（）()]*[）)]$", "", title).strip()
+    return without_parenthetical in _SIMPLE_ROLE_TITLES or bool(
+        _ROLE_TITLE_END_RE.search(without_parenthetical)
+    )
+
+
+def split_table_job_titles(
+    job_directions: str | None, company_name: str | None = None
+) -> list[str]:
+    """Return distinct, short job titles from the table's job field.
+
+    A table fallback is only safe when its job field is already a delimited list.
+    Long or generic fragments are rejected instead of being stored as a misleading
+    all-jobs title.
+    """
+
+    if not isinstance(job_directions, str) or not job_directions.strip():
+        return []
+    titles: list[str] = []
+    for raw_title in _JOB_TITLE_SEPARATOR_RE.split(job_directions):
+        title = re.sub(r"^[\d一二三四五六七八九十]+[.)、]\s*", "", raw_title).strip()
+        if not title or len(title) > _MAX_TABLE_TITLE_CHARS:
+            return []
+        if _title_is_generic(title, company_name):
+            return []
+        if not _looks_like_job_title_fragment(title):
+            return []
+        if title not in titles:
+            titles.append(title)
+    return titles
+
+
+def _fallback_source_job_id(row: SpreadsheetRow, title: str) -> str:
+    source_record = (
+        f"record:{row.source_record_id}" if row.source_record_id else f"row:{row.row_number}"
+    )
+    title_key = re.sub(r"\s+", "", title).casefold()
+    digest = hashlib.sha256(title_key.encode("utf-8")).hexdigest()[:16]
+    return f"table-fallback:{source_record}:{digest}"
+
+
 def _published_jobs_are_stale(
     row: SpreadsheetRow,
     parsed_jobs: Sequence[Mapping[str, object]],
@@ -118,6 +196,10 @@ def assess_parsed_jobs(
             record_kind = metadata.get("record_kind")
             if isinstance(record_kind, str) and record_kind.endswith("_announcement"):
                 reasons.append("ANNOUNCEMENT_NOT_JOB")
+        parsed_title = job.get("title")
+        if isinstance(parsed_title, str) and _JOB_TITLE_SEPARATOR_RE.search(parsed_title):
+            table_titles = split_table_job_titles(parsed_title, row.company_name)
+            reasons.append("MULTI_JOB_TITLE" if len(table_titles) > 1 else "UNSAFE_JOB_TITLE")
         if _title_is_generic(job.get("title"), row.company_name):
             reasons.append("GENERIC_OR_MISSING_TITLE")
         parsed_type = job.get("recruitment_type")
@@ -136,6 +218,58 @@ def assess_parsed_jobs(
     return QualityDecision("ACCEPT_PARSED", tuple(dict.fromkeys(reasons)))
 
 
+def build_table_fallbacks(
+    source_id: str,
+    row: SpreadsheetRow,
+    source_url: str,
+    link_type: str,
+    *,
+    reason_codes: Sequence[str],
+) -> list[CollectedJob]:
+    if not row.company_name:
+        raise ValueError("spreadsheet row has no company name")
+    titles = split_table_job_titles(row.job_directions, row.company_name)
+    if not titles:
+        raise ValueError("spreadsheet row job directions cannot be split into safe job titles")
+    http_url = source_url if source_url.startswith(("http://", "https://")) else None
+    source_ref = (
+        f"feishu-record:{row.source_record_id}"
+        if row.source_record_id
+        else f"table-row:{row.row_number}"
+    )
+    jobs: list[CollectedJob] = []
+    for title in titles:
+        metadata: JsonObject = {
+            "collection_mode": "TABLE_FALLBACK",
+            "quality_reasons": list(dict.fromkeys(reason_codes)),
+            "fallback_link_type": link_type,
+            "fallback_source_url": source_url,
+            "table_row_number": row.row_number,
+            "table_job_summary": row.job_directions,
+            "table_job_title": title,
+        }
+        jobs.append(
+            CollectedJob(
+                source_id=source_id,
+                source_job_id=_fallback_source_job_id(row, title),
+                company_name=row.company_name,
+                company_nature=row.company_nature,
+                title=title,
+                locations=row.locations,
+                description=row.job_directions,
+                detail_url=http_url,
+                apply_url=http_url,
+                recruitment_type=row.recruitment_type,
+                education_requirement=row.education_requirement,
+                graduation_years=row.graduation_years,
+                deadline_at=row.deadline_at,
+                source_ref=source_ref,
+                metadata=metadata,
+            )
+        )
+    return jobs
+
+
 def build_table_fallback(
     source_id: str,
     row: SpreadsheetRow,
@@ -144,37 +278,18 @@ def build_table_fallback(
     *,
     reason_codes: Sequence[str],
 ) -> CollectedJob:
-    if not row.company_name:
-        raise ValueError("spreadsheet row has no company name")
-    title = row.job_directions or row.company_name
-    http_url = source_url if source_url.startswith(("http://", "https://")) else None
-    metadata: JsonObject = {
-        "collection_mode": "TABLE_FALLBACK",
-        "quality_reasons": list(dict.fromkeys(reason_codes)),
-        "fallback_link_type": link_type,
-        "fallback_source_url": source_url,
-        "table_row_number": row.row_number,
-    }
-    return CollectedJob(
-        source_id=source_id,
-        company_name=row.company_name,
-        company_nature=row.company_nature,
-        title=title,
-        locations=row.locations,
-        description=row.job_directions,
-        detail_url=http_url,
-        apply_url=http_url,
-        recruitment_type=row.recruitment_type,
-        education_requirement=row.education_requirement,
-        graduation_years=row.graduation_years,
-        deadline_at=row.deadline_at,
-        source_ref=(
-            f"feishu-record:{row.source_record_id}"
-            if row.source_record_id
-            else f"table-row:{row.row_number}"
-        ),
-        metadata=metadata,
+    """Build a single fallback for callers that already know the row is singular."""
+
+    jobs = build_table_fallbacks(
+        source_id,
+        row,
+        source_url,
+        link_type,
+        reason_codes=reason_codes,
     )
+    if len(jobs) != 1:
+        raise ValueError("table row contains multiple job titles; use build_table_fallbacks")
+    return jobs[0]
 
 
 __all__ = [
@@ -183,5 +298,7 @@ __all__ = [
     "QualityDecision",
     "assess_parsed_jobs",
     "build_table_fallback",
+    "build_table_fallbacks",
     "preflight_quality",
+    "split_table_job_titles",
 ]

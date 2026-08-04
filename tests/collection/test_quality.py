@@ -1,3 +1,4 @@
+from dataclasses import replace
 from datetime import UTC, datetime
 
 from jobpicky.collection import pipeline
@@ -47,14 +48,18 @@ def test_known_bad_platform_falls_back_without_calling_parser(monkeypatch) -> No
 
     assert called is False
     assert result.skipped == []
-    assert len(result.batch.items) == 1
-    item = result.batch.items[0]
-    assert item.title == "后端工程师、前端工程师"
-    assert item.description == item.title
-    assert item.apply_url == "https://mp.weixin.qq.com/s/article-1"
-    assert item.recruitment_type == "校招"
-    assert item.metadata["collection_mode"] == "TABLE_FALLBACK"
-    assert item.metadata["quality_reasons"] == ["PARSER_POLICY_TABLE_FALLBACK"]
+    assert [item.title for item in result.batch.items] == ["后端工程师", "前端工程师"]
+    assert len({item.source_job_id for item in result.batch.items}) == 2
+    assert all(item.description == "后端工程师、前端工程师" for item in result.batch.items)
+    assert all(
+        item.apply_url == "https://mp.weixin.qq.com/s/article-1" for item in result.batch.items
+    )
+    assert all(item.recruitment_type == "校招" for item in result.batch.items)
+    assert all(item.metadata["collection_mode"] == "TABLE_FALLBACK" for item in result.batch.items)
+    assert all(
+        item.metadata["quality_reasons"] == ["PARSER_POLICY_TABLE_FALLBACK"]
+        for item in result.batch.items
+    )
 
 
 def test_company_recruitment_parser_is_attempted_before_fallback(monkeypatch) -> None:
@@ -90,9 +95,60 @@ def test_bad_parsed_title_falls_back_to_table(monkeypatch) -> None:
         now=NOW,
     )
 
-    assert len(result.batch.items) == 1
-    assert result.batch.items[0].title == "后端工程师、前端工程师"
-    assert result.batch.items[0].metadata["quality_reasons"] == ["GENERIC_OR_MISSING_TITLE"]
+    assert [item.title for item in result.batch.items] == ["后端工程师", "前端工程师"]
+    assert all(
+        item.metadata["quality_reasons"] == ["GENERIC_OR_MISSING_TITLE"]
+        for item in result.batch.items
+    )
+
+
+def test_multi_job_parser_title_falls_back_to_distinct_table_jobs(monkeypatch) -> None:
+    monkeypatch.setitem(
+        pipeline.PARSERS,
+        BEISEN,
+        lambda _: [{"title": "后端工程师、前端工程师", "description": "页面正文"}],
+    )
+    result = pipeline.run_pipeline(
+        "source-1",
+        [make_row("https://acme.zhiye.com/campus/jobs")],
+        now=NOW,
+    )
+
+    assert [item.title for item in result.batch.items] == ["后端工程师", "前端工程师"]
+    assert all(item.metadata["collection_mode"] == "TABLE_FALLBACK" for item in result.batch.items)
+    assert all(
+        item.metadata["quality_reasons"] == ["MULTI_JOB_TITLE"] for item in result.batch.items
+    )
+
+
+def test_unsafe_delimited_parser_title_is_not_accepted(monkeypatch) -> None:
+    monkeypatch.setitem(
+        pipeline.PARSERS,
+        BEISEN,
+        lambda _: [{"title": "岗位名称及任职要求，全部招聘岗位信息", "description": "页面正文"}],
+    )
+    result = pipeline.run_pipeline(
+        "source-1",
+        [make_row("https://acme.zhiye.com/campus/jobs")],
+        now=NOW,
+    )
+
+    assert [item.title for item in result.batch.items] == ["后端工程师", "前端工程师"]
+    assert all(
+        item.metadata["quality_reasons"] == ["UNSAFE_JOB_TITLE"] for item in result.batch.items
+    )
+
+
+def test_unsafe_table_fallback_is_rejected() -> None:
+    row = make_row("https://mp.weixin.qq.com/s/article-1")
+    row = replace(
+        row, job_directions="岗位名称及任职要求详见公告正文，请点击链接查看全部招聘岗位信息"
+    )
+    result = pipeline.run_pipeline("source-1", [row], now=NOW)
+
+    assert result.batch.items == []
+    assert result.batch.complete is False
+    assert result.unsupported[0].reason.startswith("table fallback failed")
 
 
 def test_page_titles_and_announcements_fall_back_to_table(monkeypatch) -> None:

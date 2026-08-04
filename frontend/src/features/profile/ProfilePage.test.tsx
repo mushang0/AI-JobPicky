@@ -63,4 +63,22 @@ describe("ProfilePage resume import", () => {
     expect(mockedProfileApi.importResume).toHaveBeenCalledOnce();
     expect(mockedProfileApi.save).not.toHaveBeenCalled();
   });
+
+  it("opens a direct editor for an existing profile instead of restarting the wizard", async () => {
+    render(
+      <MemoryRouter>
+        <ProfilePage />
+      </MemoryRouter>,
+    );
+
+    await screen.findByText("这是你正在寻找的工作。");
+    fireEvent.click(screen.getByRole("button", { name: "修改画像" }));
+
+    expect(screen.getByText("选择要修改的内容")).toBeInTheDocument();
+    expect(screen.queryByText("第 1 步，共 9 步")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "下一步" })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /薪资期望/ }));
+    expect(screen.getByRole("spinbutton", { name: "期望税前月薪下限" })).toHaveValue(18000);
+  });
 });
