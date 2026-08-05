@@ -101,9 +101,10 @@ JOBPICKY_EMBEDDING_MODEL_PATH=/path/to/bge-small-zh-v1.5 \
   python scripts/backfill_job_embeddings.py
 ```
 
-推荐运行和 PDF/DOCX/TXT/Markdown 简历画像解析需要 `JOBPICKY_LLM_MODEL` 和
-`JOBPICKY_DASHSCOPE_API_KEY`。API key 不写入仓库、日志或运行快照；未配置模型依赖时，相应调用会以明确的
-依赖错误失败。简历上传只返回可校对草稿，不保存原文件或自动修改正式画像。
+推荐运行和 DOCX/TXT/Markdown 简历画像解析需要 `JOBPICKY_LLM_MODEL` 和
+`JOBPICKY_DASHSCOPE_API_KEY`；PDF 简历使用同一个已配置的、支持视觉输入的推荐模型，最多处理 4 页。PDF 会在请求内按页渲染为
+临时图片后发送给模型，图片和原文件都不会持久化。API key 不写入仓库、日志或运行快照；未配置模型依赖时，相应调用会以明确的依赖错误失败。简历上传只
+返回可校对草稿，不自动修改正式画像。
 
 评估 Prompt 与模型输入/输出 JSON Schema 位于 `src/jobpicky/infrastructure/prompts/` 和
 `src/jobpicky/infrastructure/schemas/`，修改模型协议时同步升级 `JOBPICKY_MODEL_CONFIG_VERSION`。

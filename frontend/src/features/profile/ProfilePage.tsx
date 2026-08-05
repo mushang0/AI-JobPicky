@@ -232,10 +232,18 @@ export function ProfilePage() {
       setStep(0);
       setIsDirty(true);
       setImportWarnings(imported.warnings);
-      setMessage("简历已解析，请确认填写内容后保存。");
+      setMessage("简历已生成画像草稿，请确认内容后保存。");
       saveKeyRef.current = null;
     } catch (error: unknown) {
-      setErrorMessage(error instanceof ApiError ? getApiErrorMessage(error.code, error.message) : "简历解析失败，请检查文件后重试。");
+      if (
+        error instanceof ApiError
+        && error.code === "PROFILE_PARSE_FAILED"
+        && error.details.max_pdf_pages === 4
+      ) {
+        setErrorMessage("PDF 简历最多支持 4 页，请压缩或拆分后重试。");
+      } else {
+        setErrorMessage(error instanceof ApiError ? getApiErrorMessage(error.code, error.message) : "简历解析失败，请确认文件内容清晰完整后重试。");
+      }
     } finally {
       setIsImporting(false);
     }
@@ -344,7 +352,7 @@ export function ProfilePage() {
 function ResumeImportPanel({ isImporting, onFileSelected }: { isImporting: boolean; onFileSelected: (file: File) => void }) {
   return <section className="resume-import-card" aria-busy={isImporting}>
     <div className="resume-import-visual" aria-hidden="true"><FileText size={28} weight="duotone" /></div>
-    <div className="resume-import-copy"><span>用简历快速填写</span><h2>上传简历，自动填写求职信息</h2><p>先生成草稿，确认后再保存。</p></div>
+    <div className="resume-import-copy"><span>用简历快速填写</span><h2>上传简历，AI 生成求职画像</h2><p>快速生成求职画像</p></div>
     <div className="resume-import-action">
       <label className={`button button-primary resume-import-button${isImporting ? " is-disabled" : ""}`}>
         <input
@@ -359,9 +367,9 @@ function ResumeImportPanel({ isImporting, onFileSelected }: { isImporting: boole
           }}
         />
         {isImporting ? <SpinnerGap className="resume-import-spinner" size={18} /> : <UploadSimple size={18} />}
-        {isImporting ? "正在解析" : "选择简历"}
+        {isImporting ? "AI 识别中" : "选择简历"}
       </label>
-      <small>最大 10 MiB；扫描件和旧版 DOC 暂不支持</small>
+      <small>支持 PDF、DOCX、TXT、Markdown；PDF 最多 4 页；原文件不会保存</small>
     </div>
   </section>;
 }

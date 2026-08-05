@@ -1,5 +1,8 @@
 # 简历上传生成画像草稿计划
 
+> 状态：已完成的初始文本导入基线。PDF 页面视觉解析扩展见
+> [011-multimodal-pdf-profile-import.md](011-multimodal-pdf-profile-import.md)。
+
 ## 目标
 
 在现有“我的求职画像”入口增加简历上传：登录用户上传 PDF、DOCX、TXT 或 Markdown 后，由现有大模型配置

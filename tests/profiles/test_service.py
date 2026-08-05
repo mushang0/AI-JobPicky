@@ -1,8 +1,12 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Sequence
 from datetime import UTC, datetime
+from pathlib import Path
+from tempfile import TemporaryDirectory
 
+import pypdfium2 as pdfium
 import pytest
 
 from jobpicky.contracts import (
@@ -20,6 +24,7 @@ from jobpicky.profiles import (
     ProfileService,
     plan_profile_save,
 )
+from jobpicky.profiles.resume_files import PROFILE_IMPORT_MAX_PDF_PAGES
 
 NOW = datetime(2026, 8, 1, tzinfo=UTC)
 
@@ -53,10 +58,24 @@ class MemoryProfileStore:
 class FakeProfileParser:
     def __init__(self) -> None:
         self.resume_text: str | None = None
+        self.image_pages: tuple[bytes, ...] | None = None
 
     async def parse(self, resume_text: str, extra_request: str | None) -> ProfileImportView:
         self.resume_text = resume_text
         assert extra_request is None
+        return self._result()
+
+    async def parse_images(
+        self,
+        image_pages: Sequence[bytes],
+        extra_request: str | None,
+    ) -> ProfileImportView:
+        self.image_pages = tuple(image_pages)
+        assert extra_request is None
+        return self._result()
+
+    @staticmethod
+    def _result() -> ProfileImportView:
         return ProfileImportView(
             draft=ProfileImportDraft(
                 target_roles=["后端工程师"],
@@ -216,6 +235,58 @@ def test_resume_import_returns_a_draft_without_saving_a_profile() -> None:
 
         assert result.draft.skills == ["Python"]
         assert parser.resume_text is not None
+        assert store.snapshots == {}
+
+    asyncio.run(check())
+
+
+def test_pdf_resume_import_renders_pages_for_the_multimodal_parser() -> None:
+    async def check() -> None:
+        store = MemoryProfileStore()
+        parser = FakeProfileParser()
+        profiles = ProfileService(store, parser=parser)
+
+        document = pdfium.PdfDocument.new()
+        document.new_page(width=612, height=792)
+        with TemporaryDirectory() as directory:
+            path = Path(directory) / "resume.pdf"
+            document.save(path)
+            content = path.read_bytes()
+        document.close()
+
+        result = await profiles.import_resume("user-1", "resume.pdf", "application/pdf", content)
+
+        assert result.draft.skills == ["Python"]
+        assert parser.resume_text is None
+        assert parser.image_pages is not None
+        assert len(parser.image_pages) == 1
+        assert parser.image_pages[0].startswith(b"\x89PNG\r\n\x1a\n")
+        assert store.snapshots == {}
+
+    asyncio.run(check())
+
+
+def test_pdf_resume_import_rejects_more_than_four_pages_before_model_call() -> None:
+    async def check() -> None:
+        store = MemoryProfileStore()
+        parser = FakeProfileParser()
+        profiles = ProfileService(store, parser=parser)
+
+        document = pdfium.PdfDocument.new()
+        for _ in range(PROFILE_IMPORT_MAX_PDF_PAGES + 1):
+            document.new_page(width=612, height=792)
+        with TemporaryDirectory() as directory:
+            path = Path(directory) / "resume.pdf"
+            document.save(path)
+            content = path.read_bytes()
+        document.close()
+
+        with pytest.raises(ApplicationError) as rejected:
+            await profiles.import_resume("user-1", "resume.pdf", "application/pdf", content)
+
+        assert rejected.value.code == str(ErrorCode.PROFILE_PARSE_FAILED)
+        assert rejected.value.details["max_pdf_pages"] == 4
+        assert parser.image_pages is None
         assert store.snapshots == {}
 
     asyncio.run(check())

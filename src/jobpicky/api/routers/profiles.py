@@ -56,6 +56,10 @@ async def save_current_profile(
     "/profile-imports",
     response_model=ProfileImportView,
     responses={
+        422: {
+            "model": ErrorBody,
+            "description": "Resume cannot be rendered or exceeds the PDF page limit",
+        },
         413: {"model": ErrorBody, "description": "Resume file is too large"},
         415: {"model": ErrorBody, "description": "Resume format is unsupported"},
         502: {"model": ErrorBody, "description": "Model output is invalid"},
@@ -65,7 +69,7 @@ async def save_current_profile(
 async def import_resume(
     file: Annotated[
         UploadFile,
-        File(description="PDF, DOCX, TXT, or Markdown resume; maximum 10 MiB"),
+        File(description="PDF (maximum 4 pages), DOCX, TXT, or Markdown resume; maximum 10 MiB"),
     ],
     user: RequiredUser,
     service: ProfileServiceDependency,

@@ -1,6 +1,7 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { jobFilterOptions, mockProfile } from "../../mocks/fixtures";
+import { ApiError } from "../../shared/api/client";
 import { jobsApi } from "../../shared/api/jobs";
 import { profileApi } from "../../shared/api/profile";
 import { ProfilePage } from "./ProfilePage";
@@ -51,13 +52,14 @@ describe("ProfilePage resume import", () => {
     );
 
     await screen.findByRole("heading", { name: "我的求职画像", level: 1 });
+    expect(screen.getByText("快速生成求职画像")).toBeInTheDocument();
     const input = container.querySelector<HTMLInputElement>('input[type="file"]');
     expect(input).not.toBeNull();
     fireEvent.change(input!, {
       target: { files: [new File(["resume text"], "resume.txt", { type: "text/plain" })] },
     });
 
-    expect(await screen.findByText("简历已解析，请确认填写内容后保存。")).toBeInTheDocument();
+    expect(await screen.findByText("简历已生成画像草稿，请确认内容后保存。")).toBeInTheDocument();
     expect(screen.getByText("数据平台工程师")).toBeInTheDocument();
     expect(screen.getByText("未从简历中确认期望薪资，请补充或校对。")).toBeInTheDocument();
     expect(mockedProfileApi.importResume).toHaveBeenCalledOnce();
@@ -80,5 +82,29 @@ describe("ProfilePage resume import", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /薪资期望/ }));
     expect(screen.getByRole("spinbutton", { name: "期望税前月薪下限" })).toHaveValue(18000);
+  });
+
+  it("explains the PDF page limit when the server rejects an oversized PDF", async () => {
+    mockedProfileApi.importResume.mockRejectedValueOnce(
+      new ApiError(422, {
+        code: "PROFILE_PARSE_FAILED",
+        message: "PDF exceeds page limit",
+        details: { max_pdf_pages: 4 },
+      }),
+    );
+    const { container } = render(
+      <MemoryRouter>
+        <ProfilePage />
+      </MemoryRouter>,
+    );
+
+    await screen.findByRole("heading", { name: "我的求职画像", level: 1 });
+    const input = container.querySelector<HTMLInputElement>('input[type="file"]');
+    expect(input).not.toBeNull();
+    fireEvent.change(input!, {
+      target: { files: [new File(["pdf"], "resume.pdf", { type: "application/pdf" })] },
+    });
+
+    expect(await screen.findByText("PDF 简历最多支持 4 页，请压缩或拆分后重试。")).toBeInTheDocument();
   });
 });

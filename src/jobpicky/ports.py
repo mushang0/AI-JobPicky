@@ -100,6 +100,12 @@ class JobEmbeddingStorePort(Protocol):
 class ProfileParserPort(Protocol):
     async def parse(self, resume_text: str, extra_request: str | None) -> ProfileImportView: ...
 
+    async def parse_images(
+        self,
+        image_pages: Sequence[bytes],
+        extra_request: str | None,
+    ) -> ProfileImportView: ...
+
 
 class ProfileSnapshotReaderPort(Protocol):
     async def get_snapshot(self, user_id: str, profile_id: str) -> ProfileSnapshot: ...

@@ -17,6 +17,8 @@ from .resume_files import (
     PROFILE_IMPORT_MAX_PDF_PAGES,
     PROFILE_IMPORT_MAX_TEXT_CHARS,
     extract_resume_text,
+    render_pdf_pages,
+    resume_extension,
 )
 
 _PROFILE_CONTENT_FIELDS = frozenset(
@@ -131,14 +133,25 @@ class ProfileService:
         content: bytes,
     ) -> ProfileImportView:
         del user_id, content_type
-        extracted = await asyncio.to_thread(
-            extract_resume_text,
-            filename,
-            content,
-            max_bytes=PROFILE_IMPORT_MAX_BYTES,
-            max_pdf_pages=PROFILE_IMPORT_MAX_PDF_PAGES,
-            max_text_chars=PROFILE_IMPORT_MAX_TEXT_CHARS,
-        )
+        is_pdf = resume_extension(filename) == ".pdf"
+        if is_pdf:
+            rendered = await asyncio.to_thread(
+                render_pdf_pages,
+                filename,
+                content,
+                max_bytes=PROFILE_IMPORT_MAX_BYTES,
+                max_pdf_pages=PROFILE_IMPORT_MAX_PDF_PAGES,
+            )
+            source_warnings = rendered.warnings
+        else:
+            extracted = await asyncio.to_thread(
+                extract_resume_text,
+                filename,
+                content,
+                max_bytes=PROFILE_IMPORT_MAX_BYTES,
+                max_text_chars=PROFILE_IMPORT_MAX_TEXT_CHARS,
+            )
+            source_warnings = extracted.warnings
         if self._parser is None:
             raise ApplicationError(
                 ErrorCode.DEPENDENCY_UNAVAILABLE,
@@ -146,8 +159,11 @@ class ProfileService:
                 status_code=503,
                 details={"dependency": "llm", "stage": "PARSE"},
             )
-        result = await self._parser.parse(extracted.text, None)
-        warnings = list(dict.fromkeys([*extracted.warnings, *result.warnings]))[:20]
+        if is_pdf:
+            result = await self._parser.parse_images(rendered.image_pages, None)
+        else:
+            result = await self._parser.parse(extracted.text, None)
+        warnings = list(dict.fromkeys([*source_warnings, *result.warnings]))[:20]
         return result.model_copy(update={"warnings": warnings})
 
     def _validate_idempotency_key(self, key: str) -> None:

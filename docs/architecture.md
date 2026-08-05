@@ -658,10 +658,17 @@ class ProfileParserPort(Protocol):
         resume_text: str,
         extra_request: str | None,
     ) -> ProfileImportView: ...
+
+    async def parse_images(
+        self,
+        image_pages: Sequence[bytes],
+        extra_request: str | None,
+    ) -> ProfileImportView: ...
 ```
 
-`ProfileParserPort` 由模型基础设施实现，只接收已提取文本并返回经过结构校验的草稿。文件格式识别与文本提取
-属于画像模块的导入边界，不把 PDF、DOCX 等格式耦合进模型端口。保存、读取和创建新版本仍由画像应用服务负责。
+`ProfileParserPort` 由模型基础设施实现，接收画像模块准备好的正文或临时 PNG 页面图片，并返回经过结构校验的草稿。
+文件格式识别、DOCX/TXT/Markdown 文本提取和 PDF 页面渲染属于画像模块的导入边界；图片页以进程内字节序列跨过模型端口，
+不把临时文件路径或 PDF 格式细节耦合进模型端口。保存、读取和创建新版本仍由画像应用服务负责。
 
 ```python
 class ProfileSnapshotReaderPort(Protocol):
@@ -694,7 +701,8 @@ class ProfileApplicationPort(Protocol):
     ) -> ProfileImportView: ...
 ```
 
-简历导入为同步、无持久化的首版用例：校验文件后提取文本并调用 `ProfileParserPort`，成功时直接返回草稿。
+简历导入为同步、无持久化的首版用例：校验文件后，PDF 渲染为临时页面图片、其他格式提取正文，再调用
+`ProfileParserPort`，成功时直接返回草稿。
 只有真实延迟或恢复需求证明必要时才升级为可查询的异步运行，不提前创建导入表或 Worker。
 
 ```python
@@ -1002,7 +1010,7 @@ GET /api/v1/system/health
 
 ### 6.5 尚未实现的接口
 
-忽略、已投递、重新探索、采集配置编辑、质量面板、扫描件 OCR、旧版 DOC 和审计查询在实现相应能力时再确定契约。虽然收藏、认证、
+忽略、已投递、重新探索、采集配置编辑、质量面板、旧版 DOC 和审计查询在实现相应能力时再确定契约。虽然收藏、认证、
 推荐交互和用户画像的契约已经确认，但本阶段只同步 Schema、端口、配置和 OpenAPI 验证，不创建返回假数据的
 业务路由。所有未实现能力都必须显式失败或保持无路由状态。
 
@@ -1081,6 +1089,7 @@ LangChain 可用于模型适配与结构化输出，LangGraph 可用于显式状
 ## 9. 安全、隐私与外部系统
 
 - 原始简历与联系方式按敏感数据处理；仅在解析所需范围内读取，并支持后续替换或清除。
+- PDF 渲染产生的中间图片与原始简历具有相同敏感级别，只在当前请求生命周期内存在，不写入持久化存储或日志。
 - 日志记录引用、摘要、计数和错误码，不记录完整简历、Cookie、Token、API Key 或完整模型敏感输入。
 - 采集配置的公开部分与秘密凭据分开存储；普通管理响应也不返回秘密。
 - 对外请求必须有超时、有限重试、合理 User-Agent、并发和频率限制。
