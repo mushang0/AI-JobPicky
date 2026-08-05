@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+from typing import Any
 
 import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
@@ -339,7 +340,7 @@ def _company_ranked_query(query: JobListQuery) -> sa.Select[tuple[object, ...]]:
     ).where(*_where_conditions(query))
 
 
-def _order_by(query: JobListQuery) -> list[sa.ColumnElement[object]]:
+def _order_by(query: JobListQuery) -> list[sa.ColumnElement[Any]]:
     terms = _search_terms(query.q)
     if not terms:
         return [
