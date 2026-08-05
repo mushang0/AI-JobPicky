@@ -20,6 +20,12 @@ describe("jobs API helpers", () => {
     expect(query).toContain("batch=%E7%A7%8B%E6%8B%9B%E6%8F%90%E5%89%8D%E6%89%B9");
   });
 
+  it("keeps company navigation in the same query contract", () => {
+    expect(buildJobsQuery({ company_group_id: "feishu:rec-1" })).toContain(
+      "company_group_id=feishu%3Arec-1",
+    );
+  });
+
   it("keeps missing salary explicit instead of inventing a value", () => {
     expect(formatSalaryRange(null, null, null)).toBe("薪资待确认");
     expect(formatSalaryRange(18000, 28000, 13)).toBe("18,000-28,000 元/月，13 薪");

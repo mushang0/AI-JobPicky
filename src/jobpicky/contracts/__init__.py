@@ -1,4 +1,6 @@
 from .catalog import (
+    CompanyListItem,
+    CompanyPoolPage,
     EducationLevel,
     FilterExclusion,
     FilterOptionsLimits,
@@ -95,6 +97,7 @@ from .normalization import (
     normalize_search_text,
     normalize_tags,
     normalize_text,
+    split_batch_values,
 )
 from .profiles import (
     CurrentProfileView,
@@ -110,6 +113,8 @@ from .profiles import (
 
 __all__ = [
     "Candidate",
+    "CompanyListItem",
+    "CompanyPoolPage",
     "ConstraintStatus",
     "COMPANY_NATURE_VALUES",
     "CollectedJob",
@@ -203,6 +208,7 @@ __all__ = [
     "normalize_locations",
     "normalize_recruitment_type",
     "normalize_search_text",
+    "split_batch_values",
     "normalize_tags",
     "normalize_text",
     "validate_assessments",

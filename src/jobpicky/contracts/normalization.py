@@ -19,6 +19,7 @@ EDUCATION_VALUES = ("高中及以下", "专科", "本科", "硕士", "博士")
 
 _SPACE_RE = re.compile(r"\s+")
 _LOCATION_SEPARATOR_RE = re.compile(r"[,，、;/；|]+")
+_BATCH_SEPARATOR_RE = re.compile(r"[,，、;/；|\n\r]+")
 _UNKNOWN_VALUES = {"", "-", "--", "/", "不详", "未知", "待定"}
 _CAMPUS_RECRUITMENT_MARKERS = (
     "校招",
@@ -81,6 +82,13 @@ def normalize_tags(values: Iterable[str]) -> list[str]:
             seen.add(key)
             result.append(normalized)
     return result
+
+
+def split_batch_values(value: str | None) -> list[str]:
+    """Split a raw recruitment-batch cell into distinct display values."""
+    if value is None:
+        return []
+    return normalize_tags(_BATCH_SEPARATOR_RE.split(unicodedata.normalize("NFKC", value)))
 
 
 def normalize_city(value: str | None) -> str | None:
@@ -197,6 +205,7 @@ __all__ = [
     "normalize_locations",
     "normalize_recruitment_type",
     "normalize_search_text",
+    "split_batch_values",
     "normalize_tags",
     "normalize_text",
 ]

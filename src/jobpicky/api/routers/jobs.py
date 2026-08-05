@@ -5,6 +5,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Query, Response
 
 from ...contracts import (
+    CompanyPoolPage,
     EducationLevel,
     JobDetailView,
     JobFilterOptions,
@@ -33,6 +34,7 @@ def job_list_query(
     salary_max: Annotated[NonNegativeInt | None, Query()] = None,
     published_within_days: Annotated[int | None, Query(ge=1, le=3650)] = None,
     published_at_unknown: Annotated[bool, Query()] = False,
+    company_group_id: Annotated[NonEmptyStr | None, Query(max_length=200)] = None,
 ) -> JobListQuery:
     return JobListQuery(
         page=page,
@@ -49,6 +51,7 @@ def job_list_query(
         salary_max=salary_max,
         published_within_days=published_within_days,
         published_at_unknown=published_at_unknown,
+        company_group_id=company_group_id,
     )
 
 
@@ -68,6 +71,15 @@ async def list_jobs(
     service: JobPoolServiceDependency,
 ) -> JobPoolPage:
     return await service.list_jobs(user.id if user else None, query)
+
+
+@router.get("/companies", response_model=CompanyPoolPage)
+async def list_companies(
+    query: Annotated[JobListQuery, Depends(job_list_query)],
+    user: OptionalUser,
+    service: JobPoolServiceDependency,
+) -> CompanyPoolPage:
+    return await service.list_companies(user.id if user else None, query)
 
 
 @router.get("/{job_id}", response_model=JobDetailView)

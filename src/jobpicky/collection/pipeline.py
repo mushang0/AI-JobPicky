@@ -7,7 +7,7 @@ from datetime import datetime
 from typing import cast
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
-from jobpicky.contracts import CollectedJob, CollectionBatch
+from jobpicky.contracts import CollectedJob, CollectionBatch, normalize_recruitment_type
 from jobpicky.contracts.common import JsonObject
 
 from .company_profiles import find_company_profile
@@ -213,6 +213,7 @@ def merge_job_fields(
         isinstance(record_kind, str) and record_kind.endswith("_announcement")
     ):
         apply_url = detail_url
+    website_recruitment_type = _string(website, "recruitment_type")
     return CollectedJob(
         source_id=source_id,
         source_job_id=_string(website, "source_job_id"),
@@ -223,7 +224,11 @@ def merge_job_fields(
         description=_string(website, "description") or row.job_directions,
         detail_url=detail_url,
         apply_url=apply_url,
-        recruitment_type=row.recruitment_type or _string(website, "recruitment_type"),
+        recruitment_type=(
+            normalize_recruitment_type(website_recruitment_type)
+            if website_recruitment_type is not None
+            else row.recruitment_type
+        ),
         education_requirement=_string(website, "education_requirement")
         or row.education_requirement,
         salary_min=salary_min if isinstance(salary_min, int) else None,

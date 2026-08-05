@@ -10,6 +10,7 @@ vi.mock("../../adapters/web/AuthProvider", () => ({
 vi.mock("../../shared/api/jobs", () => ({
   jobsApi: {
     list: vi.fn(),
+    companies: vi.fn(),
     filterOptions: vi.fn(),
   },
 }));
@@ -130,5 +131,47 @@ describe("JobsPage", () => {
     fireEvent.click(toggle);
     expect(toggle).toHaveAttribute("aria-expanded", "false");
     expect(panel).not.toHaveClass("is-open");
+  });
+
+  it("switches to the company view and links to grouped jobs", async () => {
+    mockedJobsApi.list.mockResolvedValue({ items: [], total: 0, page: 1, page_size: 12, pool_total: 0 });
+    mockedJobsApi.companies.mockResolvedValue({
+      items: [{
+        group_id: "feishu:rec-1",
+        company_name: "同一公司",
+        company_nature: "民营企业",
+        job_titles: ["后端工程师", "算法工程师"],
+        job_count: 2,
+        latest_published_at: "2026-08-01T08:00:00Z",
+      }],
+      total: 1,
+      page: 1,
+      page_size: 12,
+      pool_total: 1,
+    });
+    mockedJobsApi.filterOptions.mockResolvedValue({
+      cities: [],
+      company_natures: [],
+      sources: [],
+      batches: [],
+      recruitment_types: [],
+      educations: [],
+      graduation_years: [],
+      limits: { default_page_size: 12, public_page_size_max: 30, authenticated_page_size_max: 100 },
+    });
+
+    render(
+      <MemoryRouter initialEntries={["/jobs?view=company"]}>
+        <JobsPage />
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByText("同一公司")).toBeInTheDocument();
+    expect(screen.getByText("后端工程师")).toBeInTheDocument();
+    expect(screen.getByText("算法工程师")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /同一公司/ })).toHaveAttribute(
+      "href",
+      expect.stringContaining("company_group_id=feishu%3Arec-1"),
+    );
   });
 });

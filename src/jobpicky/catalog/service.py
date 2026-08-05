@@ -10,6 +10,8 @@ from typing import Protocol
 
 from ..config import Settings
 from ..contracts import (
+    CompanyListItem,
+    CompanyPoolPage,
     EducationLevel,
     ErrorCode,
     FilterOptionsLimits,
@@ -32,6 +34,7 @@ from ..contracts.normalization import (
     normalize_company_nature,
     normalize_education,
     normalize_recruitment_type,
+    split_batch_values,
 )
 from ..errors import ApplicationError
 from ..infrastructure.saved_job_store import SavedJobRecord
@@ -89,6 +92,19 @@ class JobPoolService:
 
     async def list_jobs(self, user_id: str | None, query: JobListQuery) -> JobPoolPage:
         self._authorize_pool_query(user_id, query)
+        optimized = getattr(self._jobs, "list_page", None)
+        if callable(optimized):
+            page_items, total, pool_total = await optimized(
+                query, self._settings.job_description_preview_length
+            )
+            return await self._build_job_page(
+                user_id,
+                query,
+                page_items,
+                total=total,
+                pool_total=pool_total,
+            )
+
         pool = await self._jobs.list_visible()
         filtered = [(job, source) for job, source in pool if self._matches(job, query)]
         terms = _search_terms(query.q)
@@ -105,6 +121,23 @@ class JobPoolService:
 
         start = (query.page - 1) * query.page_size
         page_items = filtered[start : start + query.page_size]
+        return await self._build_job_page(
+            user_id,
+            query,
+            page_items,
+            total=len(filtered),
+            pool_total=len(pool),
+        )
+
+    async def _build_job_page(
+        self,
+        user_id: str | None,
+        query: JobListQuery,
+        page_items: list[tuple[JobFact, JobSourceView]],
+        *,
+        total: int,
+        pool_total: int,
+    ) -> JobPoolPage:
         saved_ids = (
             await self._saved_jobs.get_saved_ids(user_id, [job.id for job, _ in page_items])
             if user_id
@@ -120,10 +153,64 @@ class JobPoolService:
                 )
                 for job, source in page_items
             ],
-            total=len(filtered),
+            total=total,
             page=query.page,
             page_size=query.page_size,
-            pool_total=len(pool),
+            pool_total=pool_total,
+        )
+
+    async def list_companies(self, user_id: str | None, query: JobListQuery) -> CompanyPoolPage:
+        self._authorize_pool_query(user_id, query)
+        optimized = getattr(self._jobs, "list_companies", None)
+        if callable(optimized):
+            return await optimized(query)
+
+        pool = await self._jobs.list_visible()
+        matching = [(job, source) for job, source in pool if self._matches(job, query)]
+        terms = _search_terms(query.q)
+        if terms:
+            matching = [
+                item for item in matching if any(term in _haystack(item[0]) for term in terms)
+            ]
+            matching.sort(
+                key=lambda item: (
+                    -sum(term in _haystack(item[0]) for term in terms),
+                    *_job_sort_key(item[0]),
+                )
+            )
+        else:
+            matching.sort(key=lambda item: _job_sort_key(item[0]))
+
+        groups: dict[str, list[JobFact]] = {}
+        for job, _ in matching:
+            groups.setdefault(_company_group_key(job), []).append(job)
+        ordered_groups = sorted(
+            groups.items(),
+            key=lambda item: _job_sort_key(item[1][0]),
+        )
+        pool_groups: set[str] = set()
+        for job, _ in pool:
+            pool_groups.add(_company_group_key(job))
+        start = (query.page - 1) * query.page_size
+        items = [
+            CompanyListItem(
+                group_id=group_id,
+                company_name=jobs[0].company_name,
+                company_nature=next(
+                    (job.company_nature for job in jobs if job.company_nature), None
+                ),
+                job_titles=[job.title for job in jobs[:3]],
+                job_count=len(jobs),
+                latest_published_at=jobs[0].published_at,
+            )
+            for group_id, jobs in ordered_groups[start : start + query.page_size]
+        ]
+        return CompanyPoolPage(
+            items=items,
+            total=len(ordered_groups),
+            page=query.page,
+            page_size=query.page_size,
+            pool_total=len(pool_groups),
         )
 
     async def get_job(self, user_id: str | None, job_id: str) -> JobDetailView:
@@ -146,6 +233,16 @@ class JobPoolService:
             cached = self._filter_cache
             if cached is not None and cached.expires_at > now:
                 return cached.value
+            limits = FilterOptionsLimits(
+                default_page_size=self._settings.job_pool_default_page_size,
+                public_page_size_max=self._settings.job_pool_public_page_size_max,
+                authenticated_page_size_max=self._settings.job_pool_authenticated_page_size_max,
+            )
+            optimized = getattr(self._jobs, "get_filter_options", None)
+            if callable(optimized):
+                value = await optimized(limits)
+                self._filter_cache = _FilterCache(expires_at=now + 300, value=value)
+                return value
             pool = await self._jobs.list_visible()
             value = JobFilterOptions(
                 cities=sorted(
@@ -164,19 +261,11 @@ class JobPoolService:
                     }
                 ),
                 sources=_group_filter_sources(pool),
-                batches=sorted(
-                    {batch for job, _ in pool if (batch := _batch_value(job)) is not None}
-                ),
+                batches=sorted({batch for job, _ in pool for batch in _batch_values(job)}),
                 recruitment_types=list(RecruitmentType),
                 educations=list(EducationLevel),
                 graduation_years=sorted({year for job, _ in pool for year in job.graduation_years}),
-                limits=FilterOptionsLimits(
-                    default_page_size=self._settings.job_pool_default_page_size,
-                    public_page_size_max=self._settings.job_pool_public_page_size_max,
-                    authenticated_page_size_max=(
-                        self._settings.job_pool_authenticated_page_size_max
-                    ),
-                ),
+                limits=limits,
             )
             self._filter_cache = _FilterCache(expires_at=now + 300, value=value)
             return value
@@ -277,9 +366,11 @@ class JobPoolService:
                 return False
         if query.source_id and job.source_id not in query.source_id:
             return False
+        if query.company_group_id and _company_group_key(job) != query.company_group_id:
+            return False
         if query.batch:
-            batch = _batch_value(job)
-            if batch is not None and batch not in query.batch:
+            batches = _batch_values(job)
+            if batches and not set(batches).intersection(query.batch):
                 return False
         if query.recruitment_type:
             recruitment_type = normalize_recruitment_type(job.recruitment_type)
@@ -326,6 +417,22 @@ def _batch_value(job: JobFact) -> str | None:
         return None
     batch = value.strip()
     return batch or None
+
+
+def _batch_values(job: JobFact) -> list[str]:
+    return split_batch_values(_batch_value(job))
+
+
+def _company_group_key(job: JobFact) -> str:
+    record_id = job.metadata.get("feishu_record_id")
+    if isinstance(record_id, str) and record_id.strip():
+        return f"feishu:{record_id.strip()}"
+    row_number = job.metadata.get("table_row_number")
+    if isinstance(row_number, (int, float)) or (
+        isinstance(row_number, str) and row_number.strip().isdigit()
+    ):
+        return f"row:{job.source_id}:{str(row_number).strip()}"
+    return f"job:{job.id}"
 
 
 def _search_terms(query: str | None) -> list[str]:

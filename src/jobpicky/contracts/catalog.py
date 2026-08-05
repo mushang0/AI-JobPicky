@@ -123,6 +123,7 @@ class JobListQuery(ContractModel):
     salary_max: NonNegativeInt | None = None
     published_within_days: int | None = Field(default=None, ge=1, le=3650)
     published_at_unknown: bool = False
+    company_group_id: NonEmptyStr | None = Field(default=None, max_length=200)
 
     @model_validator(mode="before")
     @classmethod
@@ -281,6 +282,23 @@ class SavedJobItem(JobListItem):
 class SavedJobView(ContractModel):
     saved_at: AwareDatetime
     job: SavedJobItem
+
+
+class CompanyListItem(ContractModel):
+    group_id: NonEmptyStr
+    company_name: NonEmptyStr
+    company_nature: NonEmptyStr | None = None
+    job_titles: list[NonEmptyStr] = Field(default_factory=list, max_length=3)
+    job_count: NonNegativeInt
+    latest_published_at: AwareDatetime | None = None
+
+
+class CompanyPoolPage(ContractModel):
+    items: list[CompanyListItem]
+    total: NonNegativeInt
+    page: int = Field(ge=1)
+    page_size: int = Field(ge=1, le=100)
+    pool_total: NonNegativeInt
 
 
 class JobPoolPage(ContractModel):

@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { BookmarkSimple, CaretDown, CaretLeft, CaretRight, Check, Funnel, MagnifyingGlass, WarningCircle, X } from "@phosphor-icons/react";
+import { BookmarkSimple, Buildings, CaretDown, CaretLeft, CaretRight, Check, Funnel, MagnifyingGlass, WarningCircle, X } from "@phosphor-icons/react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "../../adapters/web/AuthProvider";
 import { ApiError } from "../../shared/api/client";
 import { getApiErrorMessage } from "../../shared/api/errorMessage";
 import { jobsApi } from "../../shared/api/jobs";
-import type { JobFilterOptions, JobListItem, JobQuery, JobsPageResponse } from "../../shared/api/types";
+import type { CompanyListItem, CompanyPoolPageResponse, JobFilterOptions, JobListItem, JobQuery, JobsPageResponse } from "../../shared/api/types";
 import { formatDate, formatSalaryRange } from "../../shared/formatting";
 import { validateJobQuery } from "../../shared/validation/jobs";
 import { CityPicker } from "../../components/CityPicker";
@@ -56,7 +56,7 @@ function readDraft(params: URLSearchParams): FilterDraft {
   };
 }
 
-function readQuery(params: URLSearchParams): JobQuery {
+export function readQuery(params: URLSearchParams): JobQuery {
   const numberOrUndefined = (value: string | null): number | undefined => {
     if (!value) return undefined;
     const number = Number(value);
@@ -84,6 +84,7 @@ function readQuery(params: URLSearchParams): JobQuery {
     salary_max: numberOrUndefined(params.get("salary_max")),
     published_within_days: publishedAtUnknown ? undefined : numberOrUndefined(publishedDate),
     published_at_unknown: publishedAtUnknown || undefined,
+    company_group_id: params.get("company_group_id") ?? undefined,
   };
 }
 
@@ -97,15 +98,18 @@ export function JobsPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const queryString = searchParams.toString();
   const query = useMemo(() => readQuery(searchParams), [queryString]);
+  const view = searchParams.get("view") === "company" ? "company" : "job";
   const [draft, setDraft] = useState<FilterDraft>(() => readDraft(searchParams));
   const [loadState, setLoadState] = useState<LoadState>("loading");
   const [jobs, setJobs] = useState<JobsPageResponse | null>(null);
+  const [companies, setCompanies] = useState<CompanyPoolPageResponse | null>(null);
   const [filters, setFilters] = useState<JobFilterOptions | null>(null);
   const [filterErrorMessage, setFilterErrorMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [savingJobId, setSavingJobId] = useState<string | null>(null);
   const [retryKey, setRetryKey] = useState(0);
   const [isFilterPanelOpen, setIsFilterPanelOpen] = useState(() => hasFilterParams(searchParams));
+  const filterRequested = useRef(false);
 
   useEffect(() => {
     const nextDraft = readDraft(searchParams);
@@ -113,6 +117,8 @@ export function JobsPage() {
   }, [queryString]);
 
   useEffect(() => {
+    if (filterRequested.current || (!jobs && !companies && !isFilterPanelOpen)) return;
+    filterRequested.current = true;
     let active = true;
     jobsApi.filterOptions().then((response) => {
       if (active) {
@@ -125,7 +131,7 @@ export function JobsPage() {
     return () => {
       active = false;
     };
-  }, []);
+  }, [companies, isFilterPanelOpen, jobs]);
 
   useEffect(() => {
     const validationMessage = validateJobQuery(query);
@@ -138,10 +144,20 @@ export function JobsPage() {
     let active = true;
     setLoadState("loading");
     setErrorMessage(null);
-    jobsApi.list(query).then((response) => {
+    setJobs(null);
+    setCompanies(null);
+    const request = view === "company" ? jobsApi.companies(query) : jobsApi.list(query);
+    request.then((response) => {
       if (!active) return;
-      setJobs(response);
-      setLoadState(response.items.length ? "ready" : "empty");
+      if (view === "company") {
+        const companyResponse = response as CompanyPoolPageResponse;
+        setCompanies(companyResponse);
+        setLoadState(companyResponse.items.length ? "ready" : "empty");
+      } else {
+        const jobResponse = response as JobsPageResponse;
+        setJobs(jobResponse);
+        setLoadState(jobResponse.items.length ? "ready" : "empty");
+      }
     }).catch((error: unknown) => {
       if (!active) return;
       setLoadState("error");
@@ -192,13 +208,23 @@ export function JobsPage() {
     } else if (draft.publishedDate) {
       next.set("published_within_days", draft.publishedDate);
     }
+    if (query.company_group_id) next.set("company_group_id", query.company_group_id);
     next.set("page", "1");
     setSearchParams(next);
   }
 
   function clearFilters() {
-    setSearchParams({ page: "1" });
+    setSearchParams(view === "company" ? { page: "1", view: "company" } : { page: "1" });
     setIsFilterPanelOpen(false);
+  }
+
+  function switchView(nextView: "job" | "company") {
+    const next = new URLSearchParams(searchParams);
+    next.set("page", "1");
+    next.delete("company_group_id");
+    if (nextView === "company") next.set("view", "company");
+    else next.delete("view");
+    setSearchParams(next);
   }
 
   function goToPage(page: number) {
@@ -225,8 +251,9 @@ export function JobsPage() {
     }
   }
 
-  const totalPages = jobs ? Math.max(1, Math.ceil(jobs.total / jobs.page_size)) : 1;
-  const hasFilters = Array.from(searchParams.keys()).some((key) => !["page", "page_size", "source_id"].includes(key));
+  const resultPage = view === "company" ? companies : jobs;
+  const totalPages = resultPage ? Math.max(1, Math.ceil(resultPage.total / resultPage.page_size)) : 1;
+  const hasFilters = Array.from(searchParams.keys()).some((key) => !["page", "page_size", "source_id", "view"].includes(key));
   const activeFilterCount = [
     draft.city.length,
     draft.companyNature.length,
@@ -250,14 +277,18 @@ export function JobsPage() {
 
       <section className="jobs-toolbar" aria-label="岗位数量">
         <div className="toolbar-stats">
-          <div className="toolbar-stat"><span className="toolbar-label">岗位池</span><strong>{jobs ? jobs.pool_total.toLocaleString("zh-CN") : "..."}</strong></div>
+          <div className="toolbar-stat"><span className="toolbar-label">{view === "company" ? "公司数" : "岗位池"}</span><strong>{resultPage ? resultPage.pool_total.toLocaleString("zh-CN") : "..."}</strong></div>
           <span className="toolbar-divider" aria-hidden="true" />
-          <div className="toolbar-stat"><span className="toolbar-label">当前视图</span><strong>{jobs ? jobs.total.toLocaleString("zh-CN") : "..."}</strong></div>
+          <div className="toolbar-stat"><span className="toolbar-label">当前视图</span><strong>{resultPage ? resultPage.total.toLocaleString("zh-CN") : "..."}</strong></div>
         </div>
         <div className="toolbar-meta">
           <span>数据持续更新</span>
           <span className="toolbar-divider" aria-hidden="true" />
           <span>{status === "authenticated" ? "收藏状态已同步" : "登录后可搜索、筛选和收藏"}</span>
+        </div>
+        <div className="view-toggle" role="tablist" aria-label="岗位池视图">
+          <button className={view === "job" ? "is-active" : ""} type="button" role="tab" aria-selected={view === "job"} onClick={() => switchView("job")}>岗位</button>
+          <button className={view === "company" ? "is-active" : ""} type="button" role="tab" aria-selected={view === "company"} onClick={() => switchView("company")}>公司</button>
         </div>
       </section>
 
@@ -312,12 +343,20 @@ export function JobsPage() {
       {loadState === "error" && <StatePanel title="岗位加载失败" description={errorMessage ?? "请稍后重试。"} actionLabel="重新加载" onAction={() => setRetryKey((current) => current + 1)} />}
       {loadState === "empty" && <StatePanel title="没有找到岗位" description="没有找到符合条件的岗位。可以减少筛选条件后再试。" actionLabel="清除筛选" onAction={clearFilters} />}
 
-      {loadState === "ready" && jobs && (
+      {loadState === "ready" && view === "job" && jobs && (
         <>
           <section className="job-grid" aria-label="岗位列表">
             {jobs.items.map((job) => <JobCard key={job.id} job={job} isSaving={savingJobId === job.id} onToggleSaved={() => void toggleSaved(job)} />)}
           </section>
           <Pagination page={jobs.page} totalPages={totalPages} onChange={goToPage} />
+        </>
+      )}
+      {loadState === "ready" && view === "company" && companies && (
+        <>
+          <section className="company-grid" aria-label="公司列表">
+            {companies.items.map((company) => <CompanyCard key={company.group_id} company={company} searchParams={searchParams} />)}
+          </section>
+          <Pagination page={companies.page} totalPages={totalPages} onChange={goToPage} />
         </>
       )}
     </div>
@@ -371,6 +410,26 @@ function FilterDropdown({ id, label, value, options, labels, disabled = false, o
         </div>
       )}
     </div>
+  );
+}
+
+function CompanyCard({ company, searchParams }: { company: CompanyListItem; searchParams: URLSearchParams }) {
+  const next = new URLSearchParams(searchParams);
+  next.set("view", "job");
+  next.set("company_group_id", company.group_id);
+  next.set("page", "1");
+  const to = `/jobs?${next.toString()}`;
+  return (
+    <article className="company-card">
+      <Link className="company-card-link" to={to}>
+        <div className="company-card-topline"><span className="company-card-label"><Buildings size={17} />公司</span><span>{company.job_count} 个岗位</span></div>
+        <h2>{company.company_name}</h2>
+        <div className="company-card-titles">
+          {company.job_titles.map((title) => <span key={title}>{title}</span>)}
+        </div>
+        <div className="company-card-footer"><span>{company.company_nature ?? "公司性质待确认"}</span><span>{company.latest_published_at ? `最近发布 ${formatDate(company.latest_published_at)}` : "发布日期未注明"}</span></div>
+      </Link>
+    </article>
   );
 }
 

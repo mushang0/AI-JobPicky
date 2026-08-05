@@ -9,6 +9,8 @@ from pathlib import Path
 
 from openpyxl import load_workbook  # type: ignore[import-untyped]
 
+from jobpicky.contracts.normalization import normalize_recruitment_type, split_batch_values
+
 from .link_classification import UNKNOWN, classify_link
 from .link_extraction import extract_links as _extract_links
 
@@ -56,13 +58,12 @@ class SpreadsheetRow:
 
     @property
     def recruitment_type(self) -> str | None:
-        if not self.batch:
-            return None
-        if "实习" in self.batch:
-            return "实习"
-        if any(word in self.batch for word in ("秋招", "春招", "校园招聘")):
-            return "校招"
-        return self.batch
+        types = {
+            recruitment_type
+            for value in split_batch_values(self.batch)
+            if (recruitment_type := normalize_recruitment_type(value)) is not None
+        }
+        return next(iter(types)) if len(types) == 1 else None
 
 
 def clean(value: object) -> str:

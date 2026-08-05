@@ -77,6 +77,23 @@ export interface JobsPageResponse {
   pool_total: number;
 }
 
+export interface CompanyListItem {
+  group_id: string;
+  company_name: string;
+  company_nature: string | null;
+  job_titles: string[];
+  job_count: number;
+  latest_published_at: IsoDate | null;
+}
+
+export interface CompanyPoolPageResponse {
+  items: CompanyListItem[];
+  total: number;
+  page: number;
+  page_size: number;
+  pool_total: number;
+}
+
 export interface JobFilterOptions {
   cities: string[];
   company_natures: string[];
@@ -107,6 +124,7 @@ export interface JobQuery {
   salary_max?: number | null;
   published_within_days?: number | null;
   published_at_unknown?: boolean;
+  company_group_id?: string;
 }
 
 export interface AuthUserView {

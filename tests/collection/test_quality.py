@@ -233,7 +233,7 @@ def test_page_titles_and_announcements_fall_back_to_table(monkeypatch) -> None:
     ]
 
 
-def test_reliable_parser_keeps_facts_but_table_type_wins(monkeypatch) -> None:
+def test_reliable_parser_keeps_facts_and_parser_type_wins(monkeypatch) -> None:
     monkeypatch.setitem(
         pipeline.PARSERS,
         BEISEN,
@@ -255,7 +255,7 @@ def test_reliable_parser_keeps_facts_but_table_type_wins(monkeypatch) -> None:
     item = result.batch.items[0]
     assert item.title == "网站真实岗位"
     assert item.description == "网站真实 JD"
-    assert item.recruitment_type == "校招"
+    assert item.recruitment_type == "社招"
     assert item.metadata["collection_mode"] == "PARSED"
     assert item.metadata["quality_reasons"] == ["RECRUITMENT_TYPE_CONFLICT"]
 

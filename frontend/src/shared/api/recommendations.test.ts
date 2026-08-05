@@ -28,6 +28,8 @@ describe("recommendation API helpers", () => {
     );
 
     await recommendationsApi.list({ page: 2, page_size: 10, sort: "match_score_desc" });
-    expect(fetchMock.mock.calls[0]?.[0]).toBe("/api/v1/user/recommendations?page=2&page_size=10&sort=match_score_desc");
+    expect(String(fetchMock.mock.calls[0]?.[0])).toMatch(
+      /\/api\/v1\/user\/recommendations\?page=2&page_size=10&sort=match_score_desc$/,
+    );
   });
 });

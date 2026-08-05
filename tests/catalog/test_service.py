@@ -104,6 +104,68 @@ def test_batch_is_exposed_and_filters_raw_batch_without_using_recruitment_type()
     assert filtered.items[0].batch == "秋招提前批"
 
 
+def test_batch_filter_matches_any_token_in_a_mixed_batch() -> None:
+    pool = [
+        (
+            make_job(id="mixed", metadata={"batch": "实习、春招补录、实习"}),
+            JobSourceView(id="source-1", name="飞书招聘"),
+        ),
+        (
+            make_job(id="other", metadata={"batch": "秋招提前批"}),
+            JobSourceView(id="source-1", name="飞书招聘"),
+        ),
+    ]
+    service = JobPoolService(
+        _VisibleJobStore(pool), _UnusedSavedJobStore(), Settings(environment="test")
+    )
+
+    options = asyncio.run(service.get_filter_options())
+    filtered = asyncio.run(service.list_jobs("user-1", JobListQuery(batch=["春招补录"])))
+
+    assert options.batches == ["实习", "春招补录", "秋招提前批"]
+    assert [item.id for item in filtered.items] == ["mixed"]
+
+
+def test_company_view_groups_jobs_by_feishu_record() -> None:
+    pool = [
+        (
+            make_job(
+                id="job-1",
+                company_name="同一公司",
+                published_at=datetime.now(UTC),
+                metadata={"batch": "秋招", "feishu_record_id": "rec-1"},
+            ),
+            JobSourceView(id="source-1", name="飞书招聘"),
+        ),
+        (
+            make_job(
+                id="job-2",
+                company_name="同一公司",
+                metadata={"batch": "实习", "feishu_record_id": "rec-1"},
+            ),
+            JobSourceView(id="source-1", name="飞书招聘"),
+        ),
+        (
+            make_job(
+                id="job-3",
+                company_name="同一公司",
+                metadata={"batch": "秋招", "feishu_record_id": "rec-2"},
+            ),
+            JobSourceView(id="source-1", name="飞书招聘"),
+        ),
+    ]
+    service = JobPoolService(
+        _VisibleJobStore(pool), _UnusedSavedJobStore(), Settings(environment="test")
+    )
+
+    page = asyncio.run(service.list_companies("user-1", JobListQuery(page_size=10)))
+
+    assert page.total == 2
+    assert page.pool_total == 2
+    assert page.items[0].job_count == 2
+    assert page.items[0].job_titles == ["后端工程师", "后端工程师"]
+
+
 def test_published_date_filters_use_published_at_and_keep_unknown_separate() -> None:
     now = datetime.now(UTC)
     pool = [

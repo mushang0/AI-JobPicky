@@ -8,6 +8,7 @@ from jobpicky.api.dependencies import get_job_pool_service
 from jobpicky.app import create_app
 from jobpicky.config import Settings
 from jobpicky.contracts import (
+    CompanyPoolPage,
     EducationLevel,
     JobListQuery,
     JobPoolPage,
@@ -23,6 +24,17 @@ class RecordingJobPoolService:
         del user_id
         self.query = query
         return JobPoolPage(
+            items=[],
+            total=0,
+            page=query.page,
+            page_size=query.page_size,
+            pool_total=0,
+        )
+
+    async def list_companies(self, user_id: str | None, query: JobListQuery) -> CompanyPoolPage:
+        del user_id
+        self.query = query
+        return CompanyPoolPage(
             items=[],
             total=0,
             page=query.page,
@@ -107,3 +119,19 @@ def test_jobs_route_rejects_query_limits_at_http_boundary() -> None:
         body: dict[str, Any] = response.json()
         assert response.status_code == 422
         assert body["code"] == "VALIDATION_ERROR"
+
+
+def test_companies_route_reuses_job_filters_and_group_navigation() -> None:
+    service = RecordingJobPoolService()
+    with TestClient(_app(service)) as client:
+        response = client.get(
+            "/api/v1/jobs/companies",
+            params={"page": 2, "page_size": 12, "company_group_id": "feishu:rec-1"},
+        )
+
+    assert response.status_code == 200
+    assert service.query == JobListQuery(
+        page=2,
+        page_size=12,
+        company_group_id="feishu:rec-1",
+    )

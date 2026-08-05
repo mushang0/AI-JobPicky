@@ -45,6 +45,7 @@ from ..contracts.normalization import (
     normalize_education,
     normalize_locations,
     normalize_recruitment_type,
+    split_batch_values,
 )
 from ..errors import ApplicationError
 from ..ports import EmbeddingPort
@@ -62,6 +63,8 @@ JOB_TABLE = sa.table(
     sa.column("locations", postgresql.ARRAY(sa.String)),
     sa.column("description", sa.Text),
     sa.column("metadata", postgresql.JSONB),
+    sa.column("batch_tokens", postgresql.ARRAY(sa.String)),
+    sa.column("company_group_key", sa.String),
     sa.column("detail_url", sa.String),
     sa.column("apply_url", sa.String),
     sa.column("recruitment_type", sa.String),
@@ -211,6 +214,8 @@ def _job_values(
     run_id: str,
 ) -> dict[str, object]:
     normalized = _normalized_filter_values(job)
+    metadata = normalized["metadata"]
+    assert isinstance(metadata, dict)
     return {
         "source_id": job.source_id,
         "company_name": job.company_name,
@@ -218,7 +223,11 @@ def _job_values(
         "title": job.title,
         "locations": normalized["locations"],
         "description": job.description,
-        "metadata": normalized["metadata"],
+        "metadata": metadata,
+        "batch_tokens": split_batch_values(
+            metadata.get("batch") if isinstance(metadata.get("batch"), str) else None
+        ),
+        "company_group_key": _company_group_key(job.source_id, metadata, identity_key),
         "detail_url": job.detail_url,
         "apply_url": job.apply_url,
         "recruitment_type": normalized["recruitment_type"],
@@ -234,6 +243,18 @@ def _job_values(
         "content_hash": content_hash,
         "last_seen_run_id": run_id,
     }
+
+
+def _company_group_key(source_id: str, metadata: dict[str, object], identity_key: str) -> str:
+    record_id = metadata.get("feishu_record_id")
+    if isinstance(record_id, str) and record_id.strip():
+        return f"feishu:{record_id.strip()}"
+    row_number = metadata.get("table_row_number")
+    if isinstance(row_number, (int, float)) or (
+        isinstance(row_number, str) and row_number.strip().isdigit()
+    ):
+        return f"row:{source_id}:{str(row_number).strip()}"
+    return f"job:{identity_key}"
 
 
 def _normalized_filter_values(job: CollectedJob) -> dict[str, object]:
