@@ -19,8 +19,9 @@ dependencies = [
     "langchain-openai>=0.3,<1",
     "openpyxl>=3.1,<4",
     "pgvector>=0.3,<1",
+    "pillow>=10,<13",
     "pydantic>=2.10,<3",
-    "pypdf>=5,<7",
+    "pypdfium2>=5,<6",
     "PyJWT>=2.10,<3",
     "python-multipart>=0.0.18,<1",
     "sentence-transformers>=3,<6",
@@ -68,3 +69,7 @@ warn_unused_ignores = true
 [[tool.mypy.overrides]]
 module = ["numpy", "numpy.*"]
 follow_imports = "skip"
+
+[[tool.mypy.overrides]]
+module = ["pypdfium2", "pypdfium2.*"]
+ignore_missing_imports = true
