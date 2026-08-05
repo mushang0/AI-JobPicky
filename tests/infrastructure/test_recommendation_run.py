@@ -114,6 +114,8 @@ def _seed() -> None:
                         **job.model_dump(),
                         "status": str(job.status),
                         "published_at": job.published_at or now,
+                        "batch_tokens": [],
+                        "company_group_key": f"job:{job.id}",
                     }
                     for job in jobs
                 ],

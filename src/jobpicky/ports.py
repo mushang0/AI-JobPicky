@@ -8,6 +8,7 @@ from .contracts import (
     AuthUserView,
     Candidate,
     CollectionBatch,
+    CompanyPoolPage,
     CreditSummary,
     CreditUsage,
     Feedback,
@@ -158,6 +159,8 @@ class UserJobQueryPort(Protocol):
 
 class JobPoolQueryPort(Protocol):
     async def list_jobs(self, user_id: str | None, query: JobListQuery) -> JobPoolPage: ...
+
+    async def list_companies(self, user_id: str | None, query: JobListQuery) -> CompanyPoolPage: ...
 
     async def get_job(self, user_id: str | None, job_id: str) -> JobDetailView: ...
 

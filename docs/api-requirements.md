@@ -45,6 +45,7 @@
 
 ```http
 GET /api/v1/jobs
+GET /api/v1/jobs/companies
 ```
 
 该接口使用可选 Bearer 身份上下文：匿名请求可以访问公开预览，登录请求获得完整查询能力和用户收藏状态。
@@ -97,6 +98,7 @@ GET /api/v1/jobs
 | `salary_max` | `int \| null` | `null` | 是 | 用户选择的薪资区间上限，单位为元/月 |
 | `published_within_days` | `int \| null` | `null` | 是 | 只保留最近指定天数内有发布日期的岗位，例如 `3`、`7`、`30` |
 | `published_at_unknown` | `bool` | `false` | 是 | 只保留没有发布日期的岗位；不能与 `published_within_days` 同时使用 |
+| `company_group_id` | `str \| null` | `null` | 否 | 公司视图点击后查看该飞书记录下的岗位；不改变岗位事实 |
 
 列表参数使用重复查询参数传递，不使用逗号拼接：
 
@@ -122,6 +124,8 @@ GET /api/v1/jobs?page=1&page_size=30&city=上海&city=北京&company_nature=民�
 - `salary_min` 和 `salary_max` 同时存在时，`salary_min` 不得大于 `salary_max`。
 - `published_within_days` 只按岗位事实的 `published_at` 计算，不使用 `first_seen_at`；没有发布日期的岗位不进入该范围。
 - `published_at_unknown=true` 只返回 `published_at=null` 的岗位，不为缺失日期猜造时间。
+- `batch` 的值按来源表格批次单元筛选；原始单元中的逗号、顿号、分号、斜杠和换行会拆成多个批次。
+  同一查询的多个 `batch` 值使用 OR，只要岗位包含一个已选批次就保留；不同筛选项之间仍使用 AND。
 
 筛选值使用 §32 的统一规范化语义；前端通过 API-020 获得可用选项，不自行维护另一套字典。
 
@@ -218,6 +222,16 @@ GET /api/v1/jobs?page=1&page_size=30&city=上海&city=北京&company_nature=民�
 4. 数据库岗位数超过 5000 时，仍能返回超过 5000 的 `pool_total`，并按 `published_at` 从新到旧展示。
 5. 开启任一筛选时，缺少该字段的岗位仍被保留，已知且不匹配的岗位被排除。
 6. 搜索或筛选无命中时返回成功空页，不伪造岗位。
+
+### 2.13 公司视图
+
+`GET /api/v1/jobs/companies` 与 API-001 使用相同的搜索、筛选和分页参数，但返回公司聚合卡片。
+一个飞书表格记录对应一个聚合组，不按当前页临时聚合，也不只按公司名称合并。筛选和搜索先作用于岗位，
+再按飞书记录聚合，因此公司卡片只代表当前查询命中的岗位。
+
+公司响应使用 `CompanyPoolPage`，卡片包含 `group_id`、`company_name`、`company_nature`、最多三个岗位名称、
+岗位数量和该组最新发布时间。点击卡片后使用 `/api/v1/jobs?company_group_id=...` 查看该组内的岗位卡片。
+公司视图的 `pool_total` 和 `total` 表示公司组数量，岗位视图仍返回岗位数量。
 
 ## 3. 推荐页面公共规则
 
@@ -1378,7 +1392,7 @@ GET /api/v1/jobs/filter-options
 - `cities`、`company_natures`、`sources` 和 `graduation_years` 从当前可见岗位池的已知规范化事实中去重生成，
   分别按中文显示值、平台名称和年份升序排序；多个来源 ID 归属于同一平台时只返回一个 `sources` 项，
   并在 `source_ids` 中列出该平台对应的全部来源 ID。
-- `batches` 从当前可见岗位池的 `metadata["batch"]` 原始文本中去重生成并排序，不映射为“校招”等粗粒度招聘类型；岗位卡片和该筛选使用同一字段。
+- `batches` 从当前可见岗位池的 `metadata["batch"]` 原始文本拆分、去重并排序，不映射为“校招”等粗粒度招聘类型；岗位卡片和该筛选使用同一事实来源。
 - `recruitment_types` 和 `educations` 返回首版支持的固定规范值。
 - 未知值不作为筛选选项返回；用户选择任一筛选后，岗位未知字段仍按“未知保留”处理。
 - 不返回每个选项的实时岗位数量，避免为首版增加昂贵的聚合查询。

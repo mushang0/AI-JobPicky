@@ -368,7 +368,8 @@ API View，避免把 `fact_version`、召回分或其他内部字段泄露到页
 - `JobDetailView` 含完整 JD、详情/投递链接、生命周期状态以及 `published_at`、`deadline_at`、`first_seen_at`、
   `last_confirmed_at`、`updated_at` 等时间字段；不含 `fact_version`、去重键、Embedding 或秘密来源配置。
 - `SavedJobView` 包含 `saved_at` 与岗位列表视图，岗位状态保留以便展示已关闭或待确认岗位。
-- `JobFilterOptions` 提供当前可见岗位池的规范化城市、公司性质、来源、原始招聘批次、招聘类型、学历、届次和分页限制；`batches` 只返回已知的 `metadata["batch"]` 值。
+- `JobFilterOptions` 提供当前可见岗位池的规范化城市、公司性质、来源、原始招聘批次、招聘类型、学历、届次和分页限制；`batches` 将已知的 `metadata["batch"]` 拆分为单个批次后返回。
+- `CompanyListItem` 和 `CompanyPoolPage` 是岗位池的公司视图 DTO；公司组优先使用飞书 `source_record_id`，缺失时使用稳定表格行或岗位标识兜底。
 - 岗位池的发布日期筛选使用 `JobListQuery.published_within_days` 或 `published_at_unknown`，只读取岗位事实的
   `published_at`，不把 `first_seen_at` 当作发布日期。
 
@@ -905,7 +906,7 @@ class AdminJobQueryPort(Protocol):
 - 长任务创建成功返回 `202 Accepted` 和 `RecommendationRunAccepted`；采集运行继续使用 `RunAccepted`。
 - 列表使用统一分页，页大小上限由服务配置并写入 OpenAPI。
 - `GET /api/v1/jobs` 的多选筛选使用重复 query 参数传递；未提供时按空列表处理，不使用 GET 请求体。
-- `batch` 是岗位池对原始招聘批次的精确多选筛选；`recruitment_type` 继续保留为校招、社招、实习等粗粒度规范字段，两者不互相映射。
+- `batch` 是岗位池对原始招聘批次单元的多选筛选；同一查询的多个批次使用 OR，`recruitment_type` 继续保留为校招、社招、实习等粗粒度规范字段，两者不互相映射。
 - 错误使用统一错误响应；内部堆栈不得对外返回。
 - OpenAPI 是可执行接口清单，必须通过契约测试与本文语义保持一致。
 

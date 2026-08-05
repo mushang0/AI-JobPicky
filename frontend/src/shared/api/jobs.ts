@@ -1,5 +1,5 @@
 import { request } from "./client";
-import type { JobDetailView, JobFilterOptions, JobQuery, JobsPageResponse, SavedJobState } from "./types";
+import type { CompanyPoolPageResponse, JobDetailView, JobFilterOptions, JobQuery, JobsPageResponse, SavedJobState } from "./types";
 
 function appendValues(params: URLSearchParams, key: string, values: string[] | undefined): void {
   values?.forEach((value) => params.append(key, value));
@@ -20,6 +20,7 @@ export function buildJobsQuery(query: JobQuery = {}): string {
   appendValues(params, "recruitment_type", query.recruitment_type);
   appendValues(params, "education", query.education);
   query.graduation_year?.forEach((year) => params.append("graduation_year", String(year)));
+  if (query.company_group_id) params.set("company_group_id", query.company_group_id);
 
   if (query.salary_min !== undefined && query.salary_min !== null) {
     params.set("salary_min", String(query.salary_min));
@@ -38,6 +39,10 @@ export function buildJobsQuery(query: JobQuery = {}): string {
 export const jobsApi = {
   list(query: JobQuery = {}): Promise<JobsPageResponse> {
     return request<JobsPageResponse>(`/api/v1/jobs?${buildJobsQuery(query)}`);
+  },
+
+  companies(query: JobQuery = {}): Promise<CompanyPoolPageResponse> {
+    return request<CompanyPoolPageResponse>(`/api/v1/jobs/companies?${buildJobsQuery(query)}`);
   },
 
   filterOptions(): Promise<JobFilterOptions> {

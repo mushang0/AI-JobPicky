@@ -3,6 +3,7 @@ import { jobDetails, jobFilterOptions, jobFixtures, mockProfile, mockProfileImpo
 import type {
   CreditSummary,
   JobListItem,
+  CompanyPoolPageResponse,
   JobsPageResponse,
   ProfileSaveRequest,
   ProfileView,
@@ -16,6 +17,8 @@ const scenario = (): MockScenario => import.meta.env.VITE_MOCK_SCENARIO ?? "norm
 const isAuthenticated = (request: Request): boolean =>
   Boolean(request.headers.get("Authorization")) || import.meta.env.VITE_MOCK_AUTH === "authenticated";
 const savedJobIds = new Set(["job-102"]);
+const batchValues = (value: string | null): string[] => value?.split(/[,，、;/；|\n\r]+/).map((item) => item.trim()).filter(Boolean) ?? [];
+const companyGroupId = (job: JobListItem): string => `company:${job.company_name}`;
 
 function errorResponse(code: string, message: string, status: number) {
   return HttpResponse.json(
@@ -70,9 +73,11 @@ function filterJobs(url: URL, authenticated: boolean): JobListItem[] {
       }
       if (!matches("company_nature", job.company_nature)) return false;
       if (!matches("source_id", job.source.id)) return false;
-      if (!matches("batch", job.batch)) return false;
+      const batches = url.searchParams.getAll("batch");
+      if (batches.length && job.batch && !batchValues(job.batch).some((batch) => batches.includes(batch))) return false;
       if (!matches("recruitment_type", job.recruitment_type)) return false;
       if (!matches("education", job.education_requirement)) return false;
+      if (url.searchParams.get("company_group_id") && companyGroupId(job) !== url.searchParams.get("company_group_id")) return false;
 
       const graduationYears = url.searchParams.getAll("graduation_year").map(Number);
       if (graduationYears.length && !graduationYears.some((year) => job.graduation_years.includes(year))) return false;
@@ -151,6 +156,33 @@ export const handlers = [
   http.get("*/api/v1/jobs/filter-options", () => {
     if (scenario() === "server-error") return errorResponse("INTERNAL_ERROR", "服务暂时不可用，请稍后重试。", 500);
     return HttpResponse.json(jobFilterOptions);
+  }),
+
+  http.get("*/api/v1/jobs/companies", ({ request }) => {
+    const url = new URL(request.url);
+    const authenticated = isAuthenticated(request);
+    if (shouldRequireAuth(url, authenticated)) return errorResponse("AUTHENTICATION_REQUIRED", "请登录后继续搜索、筛选或翻页。", 401);
+    const filtered = filterJobs(url, authenticated);
+    const grouped = new Map<string, JobListItem[]>();
+    filtered.forEach((job) => grouped.set(companyGroupId(job), [...(grouped.get(companyGroupId(job)) ?? []), job]));
+    const companies = [...grouped.entries()].map(([group_id, items]) => ({
+      group_id,
+      company_name: items[0].company_name,
+      company_nature: items[0].company_nature,
+      job_titles: items.slice(0, 3).map((job) => job.title),
+      job_count: items.length,
+      latest_published_at: items[0].published_at,
+    }));
+    const page = Number(url.searchParams.get("page") ?? "1");
+    const pageSize = Number(url.searchParams.get("page_size") ?? "30");
+    const response: CompanyPoolPageResponse = {
+      items: companies.slice((page - 1) * pageSize, page * pageSize),
+      total: companies.length,
+      page,
+      page_size: pageSize,
+      pool_total: new Set(jobFixtures.map(companyGroupId)).size,
+    };
+    return HttpResponse.json(response);
   }),
 
   http.get("*/api/v1/jobs/:jobId", ({ params, request }) => {

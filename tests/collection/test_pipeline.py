@@ -1,3 +1,4 @@
+from dataclasses import replace
 from datetime import UTC, datetime
 
 import pytest
@@ -34,7 +35,7 @@ def make_row(*links: str) -> SpreadsheetRow:
     )
 
 
-def test_merge_uses_parser_facts_and_table_recruitment_type() -> None:
+def test_merge_prefers_explicit_parser_recruitment_type() -> None:
     job = merge_job_fields(
         "source-1",
         make_row("https://acme.zhiye.com/campus/jobs"),
@@ -60,7 +61,7 @@ def test_merge_uses_parser_facts_and_table_recruitment_type() -> None:
     assert job.locations == ["网站地点"]
     assert job.salary_min == 12000
     assert job.education_requirement == "硕士"
-    assert job.recruitment_type == "校招"
+    assert job.recruitment_type == "社招"
     assert job.company_name == "表格公司"
     assert job.company_nature == "民企"
     assert job.graduation_years == [2027]
@@ -79,6 +80,31 @@ def test_table_values_fill_missing_parser_facts() -> None:
     assert job.recruitment_type == "校招"
     assert job.deadline_at == datetime(2026, 8, 20, tzinfo=UTC)
     assert job.source_ref == "table-row:12"
+
+
+def test_mixed_table_batch_does_not_become_internship() -> None:
+    row = make_row("https://acme.zhiye.com/campus/jobs")
+    row = replace(row, batch="实习、暑期实习、秋招提前批")
+
+    job = merge_job_fields(
+        "source-1",
+        row,
+        {"title": "正式岗位", "recruitment_type": "正式"},
+    )
+
+    assert job.recruitment_type is None
+
+
+def test_explicit_unknown_parser_type_does_not_fallback_to_internship() -> None:
+    row = replace(make_row("https://acme.zhiye.com/campus/jobs"), batch="实习")
+
+    job = merge_job_fields(
+        "source-1",
+        row,
+        {"title": "正式岗位", "recruitment_type": "正式"},
+    )
+
+    assert job.recruitment_type is None
 
 
 def test_wechat_announcement_does_not_use_article_as_apply_url() -> None:

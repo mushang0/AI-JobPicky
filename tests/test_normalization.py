@@ -10,6 +10,7 @@ from jobpicky.contracts import (
     normalize_recruitment_type,
     normalize_search_text,
     normalize_tags,
+    split_batch_values,
 )
 
 
@@ -45,6 +46,12 @@ def test_recruitment_type_rejects_mixed_or_unknown_categories() -> None:
     assert normalize_recruitment_type("暑期实习") == "实习"
     assert normalize_recruitment_type("实习、秋招提前批") is None
     assert normalize_recruitment_type("灵活招聘") is None
+
+
+def test_batch_values_split_delimiters_without_splitting_labels() -> None:
+    assert split_batch_values("实习、实习，春招补录、") == ["实习", "春招补录"]
+    assert split_batch_values("秋招提前批\n暑期实习") == ["秋招提前批", "暑期实习"]
+    assert split_batch_values("秋招提前批") == ["秋招提前批"]
 
 
 def test_education_uses_lowest_explicit_admission_level_and_keeps_unknown_unknown() -> None:

@@ -124,6 +124,8 @@ def _seed() -> None:
                         "status": str(job.status),
                         "published_at": job.published_at or now,
                         "embedding": embeddings.get(job.id),
+                        "batch_tokens": [],
+                        "company_group_key": f"job:{job.id}",
                     }
                     for job in rows
                 ],

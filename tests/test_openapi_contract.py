@@ -3,6 +3,8 @@ from jobpicky.config import Settings
 from jobpicky.contracts import (
     AccessTokenResponse,
     AuthUserView,
+    CompanyListItem,
+    CompanyPoolPage,
     CreditSummary,
     CurrentProfileView,
     ErrorBody,
@@ -28,6 +30,8 @@ from jobpicky.contracts import (
 PUBLIC_CONTRACT_MODELS = (
     AccessTokenResponse,
     AuthUserView,
+    CompanyListItem,
+    CompanyPoolPage,
     CreditSummary,
     CurrentProfileView,
     ErrorBody,
@@ -68,6 +72,7 @@ def test_openapi_lists_only_real_routes_until_business_handlers_exist() -> None:
         "/api/v1/auth/refresh",
         "/api/v1/auth/register",
         "/api/v1/jobs",
+        "/api/v1/jobs/companies",
         "/api/v1/jobs/filter-options",
         "/api/v1/jobs/{job_id}",
         "/api/v1/system/health",
