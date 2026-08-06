@@ -1,0 +1,21 @@
+[Unit]
+Description=AI JobPicky API
+After=network-online.target docker.service
+Wants=network-online.target
+Requires=docker.service
+
+[Service]
+Type=simple
+User=jobpicky
+Group=jobpicky
+WorkingDirectory=/opt/jobpicky
+EnvironmentFile=/opt/jobpicky/.env
+ExecStart=/opt/jobpicky/.venv/bin/uvicorn jobpicky.main:app --host 127.0.0.1 --port 8000 --workers 1
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=30
+PrivateTmp=true
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target

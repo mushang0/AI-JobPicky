@@ -1,0 +1,22 @@
+# Local (laptop/workstation) user unit for the API backend. Binds loopback
+# only; the public server reaches it through the reverse SSH tunnel.
+# Install:
+#   mkdir -p ~/.config/systemd/user
+#   cp deploy/systemd/jobpicky-backend-local.service ~/.config/systemd/user/
+#   systemctl --user daemon-reload
+#   systemctl --user enable --now jobpicky-backend-local.service
+[Unit]
+Description=JobPicky API backend (local, tunnel-served)
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+WorkingDirectory=%h/shand/project/AI-JobPicky
+EnvironmentFile=%h/shand/project/AI-JobPicky/.env
+ExecStart=%h/shand/project/AI-JobPicky/.venv/bin/uvicorn jobpicky.main:app --host 127.0.0.1 --port 8000
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=30
+
+[Install]
+WantedBy=default.target

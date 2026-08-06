@@ -1,0 +1,19 @@
+# Local (laptop/workstation) user unit that keeps the reverse tunnel alive.
+# Install:
+#   mkdir -p ~/.config/systemd/user
+#   cp deploy/systemd/jobpicky-tunnel-local.service ~/.config/systemd/user/
+#   systemctl --user daemon-reload
+#   systemctl --user enable --now jobpicky-tunnel-local.service
+#   sudo loginctl enable-linger "$USER"   # keep it running without a login session
+[Unit]
+Description=JobPicky reverse SSH tunnel (local backend -> public server)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+ExecStart=%h/shand/project/AI-JobPicky/scripts/tunnel.sh
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=default.target
