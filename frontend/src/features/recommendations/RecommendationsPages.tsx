@@ -439,46 +439,40 @@ function StatePanel({ title, description, actionLabel, onAction, link }: { title
 }
 
 function useDisplayedProgress(task: RecommendationTaskView | null) {
+  // Anchored to the backend progress_percent: entering or refreshing the page
+  // starts at the real value, and the timer only smooths jumps between polls.
   const [displayedProgress, setDisplayedProgress] = useState(0);
-  const targetProgressRef = useRef(0);
+  const runIdRef = useRef<string | null>(null);
+  const targetRef = useRef(0);
   const isRunning = task?.status === "PENDING" || task?.status === "RUNNING";
 
-  useEffect(() => {
-    targetProgressRef.current = 0;
-    setDisplayedProgress(0);
-  }, [task?.run_id]);
-
-  useEffect(() => {
-    if (!task) return;
-    targetProgressRef.current = Math.max(targetProgressRef.current, task.progress_percent);
-  }, [task?.progress_percent]);
-
-  useEffect(() => {
-    if (!task) {
-      targetProgressRef.current = 0;
-      setDisplayedProgress(0);
-      return;
+  if (task) {
+    const target = task.status === "SUCCEEDED" ? 100 : task.progress_percent;
+    if (runIdRef.current !== task.run_id) {
+      // Switching runs: snap synchronously to the real progress.
+      runIdRef.current = task.run_id;
+      targetRef.current = target;
+      setDisplayedProgress(target);
+    } else {
+      targetRef.current = Math.max(targetRef.current, target);
+      if (!isRunning && displayedProgress !== targetRef.current) {
+        setDisplayedProgress(targetRef.current);
+      }
     }
-    if (!isRunning) {
-      const finalProgress = task.status === "SUCCEEDED" ? 100 : task.progress_percent;
-      targetProgressRef.current = finalProgress;
-      setDisplayedProgress(finalProgress);
-      return;
-    }
+  }
 
-    const tick = () => {
-      targetProgressRef.current = Math.max(targetProgressRef.current, task.progress_percent);
+  useEffect(() => {
+    if (!task || !isRunning) return;
+
+    const timer = window.setInterval(() => {
       setDisplayedProgress((current) => {
-        const gap = targetProgressRef.current - current;
+        const gap = targetRef.current - current;
         if (gap <= 0.05) return current;
-        return Math.min(targetProgressRef.current, current + Math.min(0.7, Math.max(0.08, gap * 0.2)));
+        return Math.min(targetRef.current, current + Math.min(0.85, Math.max(0.08, gap * 0.16)));
       });
-    };
-
-    tick();
-    const timer = window.setInterval(tick, 220);
+    }, 350);
     return () => window.clearInterval(timer);
-  }, [isRunning, task?.run_id, task?.status]);
+  }, [isRunning, task?.run_id]);
 
   return Math.max(0, Math.min(100, Math.round(displayedProgress)));
 }
