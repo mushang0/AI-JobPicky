@@ -138,7 +138,7 @@ def _identity_scope(job: CollectedJob) -> str:
     return f"{_normalized_text(platform)}:{normalize_company_group_key(job.company_name, metadata)}"
 
 
-def _fact_metadata(metadata: dict[str, object]) -> dict[str, object]:
+def _fact_metadata(metadata: Mapping[str, object]) -> dict[str, object]:
     return {key: value for key, value in metadata.items() if key not in _PROVENANCE_METADATA_KEYS}
 
 
@@ -531,7 +531,7 @@ class PostgresJobCatalog:
                     created_count += 1
                 else:
                     job_id = existing.id
-                    values = _merge_existing_values(existing, values)
+                    values = _merge_existing_values(cast(Mapping[str, object], existing), values)
                     facts_changed = existing.content_hash != content_hash
                     provenance_changed = any(
                         existing.get(field) != values.get(field)
