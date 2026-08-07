@@ -30,6 +30,7 @@ class Settings:
     llm_timeout_seconds: float = 180.0
     llm_max_retries: int = 1
     evaluation_batch_size: int = 10
+    evaluation_workers: int = 2
     model_config_version: str = "recommendation-v1"
 
     job_pool_default_page_size: int = 30
@@ -119,6 +120,12 @@ class Settings:
             values.get("JOBPICKY_EVALUATION_BATCH_SIZE", str(defaults.evaluation_batch_size)),
             "JOBPICKY_EVALUATION_BATCH_SIZE",
         )
+        evaluation_workers = _read_positive_int(
+            values.get("JOBPICKY_EVALUATION_WORKERS", str(defaults.evaluation_workers)),
+            "JOBPICKY_EVALUATION_WORKERS",
+        )
+        if evaluation_workers > 4:
+            raise ValueError("JOBPICKY_EVALUATION_WORKERS must be between 1 and 4")
         model_config_version = values.get(
             "JOBPICKY_MODEL_CONFIG_VERSION", defaults.model_config_version
         ).strip()
@@ -364,6 +371,7 @@ class Settings:
             llm_timeout_seconds=llm_timeout_seconds,
             llm_max_retries=llm_max_retries,
             evaluation_batch_size=evaluation_batch_size,
+            evaluation_workers=evaluation_workers,
             model_config_version=model_config_version,
             job_pool_default_page_size=job_pool_default_page_size,
             job_pool_public_page_size_max=job_pool_public_page_size_max,

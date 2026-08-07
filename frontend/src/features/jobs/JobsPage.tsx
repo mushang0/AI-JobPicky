@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { BookmarkSimple, Buildings, CaretDown, CaretLeft, CaretRight, Check, Funnel, MagnifyingGlass, WarningCircle, X } from "@phosphor-icons/react";
-import { Link, useNavigate, useSearchParams } from "react-router-dom";
+import { BookmarkSimple, CaretDown, CaretLeft, CaretRight, Check, Funnel, MagnifyingGlass, WarningCircle, X } from "@phosphor-icons/react";
+import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "../../adapters/web/AuthProvider";
 import { ApiError } from "../../shared/api/client";
 import { getApiErrorMessage } from "../../shared/api/errorMessage";
 import { jobsApi } from "../../shared/api/jobs";
 import type { CompanyListItem, CompanyPoolPageResponse, JobFilterOptions, JobListItem, JobQuery, JobsPageResponse } from "../../shared/api/types";
 import { formatDate, formatSalaryRange } from "../../shared/formatting";
+import { currentPath, jobDetailPath, restoreListScroll, safeInternalPath, saveListScroll } from "../../shared/navigation";
 import { validateJobQuery } from "../../shared/validation/jobs";
 import { CityPicker } from "../../components/CityPicker";
 
@@ -17,6 +18,7 @@ interface FilterDraft {
   city: string[];
   companyNature: string[];
   batch: string[];
+  recruitmentType: string[];
   education: string[];
   graduationYear: string[];
   salaryMin: string;
@@ -48,6 +50,7 @@ function readDraft(params: URLSearchParams): FilterDraft {
     city: params.getAll("city"),
     companyNature: params.getAll("company_nature"),
     batch: params.getAll("batch"),
+    recruitmentType: params.getAll("recruitment_type"),
     education: params.getAll("education"),
     graduationYear: params.getAll("graduation_year"),
     salaryMin: params.get("salary_min") ?? "",
@@ -94,6 +97,7 @@ function loginPath(returnTo: string): string {
 
 export function JobsPage() {
   const { status } = useAuth();
+  const location = useLocation();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const queryString = searchParams.toString();
@@ -109,12 +113,38 @@ export function JobsPage() {
   const [savingJobId, setSavingJobId] = useState<string | null>(null);
   const [retryKey, setRetryKey] = useState(0);
   const [isFilterPanelOpen, setIsFilterPanelOpen] = useState(() => hasFilterParams(searchParams));
+  const filterFormRef = useRef<HTMLFormElement>(null);
+  const loadedPathRef = useRef<string | null>(null);
   const filterRequested = useRef(false);
+  const listPath = currentPath(location.pathname, location.search);
+  const companyReturnTo = safeInternalPath(searchParams.get("company_return_to"), "/jobs?view=company");
 
   useEffect(() => {
     const nextDraft = readDraft(searchParams);
     setDraft(nextDraft);
   }, [queryString]);
+
+  useEffect(() => {
+    if (!isFilterPanelOpen) return;
+    const closeOnOutsidePointer = (event: PointerEvent) => {
+      if (!filterFormRef.current?.contains(event.target as Node)) setIsFilterPanelOpen(false);
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setIsFilterPanelOpen(false);
+    };
+    document.addEventListener("pointerdown", closeOnOutsidePointer);
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.removeEventListener("pointerdown", closeOnOutsidePointer);
+      document.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [isFilterPanelOpen]);
+
+  useEffect(() => {
+    if ((loadState === "ready" || loadState === "empty") && loadedPathRef.current === listPath) {
+      restoreListScroll(listPath);
+    }
+  }, [listPath, loadState]);
 
   useEffect(() => {
     if (filterRequested.current || (!jobs && !companies && !isFilterPanelOpen)) return;
@@ -151,10 +181,12 @@ export function JobsPage() {
       if (!active) return;
       if (view === "company") {
         const companyResponse = response as CompanyPoolPageResponse;
+        loadedPathRef.current = listPath;
         setCompanies(companyResponse);
         setLoadState(companyResponse.items.length ? "ready" : "empty");
       } else {
         const jobResponse = response as JobsPageResponse;
+        loadedPathRef.current = listPath;
         setJobs(jobResponse);
         setLoadState(jobResponse.items.length ? "ready" : "empty");
       }
@@ -191,6 +223,7 @@ export function JobsPage() {
       ["city", draft.city],
       ["company_nature", draft.companyNature],
       ["batch", draft.batch],
+      ["recruitment_type", draft.recruitmentType],
       ["education", draft.education],
       ["graduation_year", draft.graduationYear],
       ["salary_min", draft.salaryMin],
@@ -209,21 +242,36 @@ export function JobsPage() {
       next.set("published_within_days", draft.publishedDate);
     }
     if (query.company_group_id) next.set("company_group_id", query.company_group_id);
+    if (query.company_group_id) next.set("company_return_to", companyReturnTo);
+    searchParams.getAll("source_id").forEach((sourceId) => next.append("source_id", sourceId));
+    if (view === "company") next.set("view", "company");
     next.set("page", "1");
     setSearchParams(next);
+    setIsFilterPanelOpen(false);
   }
 
   function clearFilters() {
-    setSearchParams(view === "company" ? { page: "1", view: "company" } : { page: "1" });
+    const next = new URLSearchParams();
+    next.set("page", "1");
+    if (view === "company") next.set("view", "company");
+    if (query.company_group_id) {
+      next.set("company_group_id", query.company_group_id);
+      next.set("company_return_to", companyReturnTo);
+    }
+    setSearchParams(next);
+    setDraft(readDraft(new URLSearchParams()));
     setIsFilterPanelOpen(false);
   }
 
   function switchView(nextView: "job" | "company") {
     const next = new URLSearchParams(searchParams);
-    next.set("page", "1");
     next.delete("company_group_id");
+    next.delete("company_return_to");
     if (nextView === "company") next.set("view", "company");
     else next.delete("view");
+    const nextPath = currentPath(location.pathname, `?${next.toString()}`);
+    saveListScroll(listPath);
+    saveListScroll(nextPath);
     setSearchParams(next);
   }
 
@@ -253,17 +301,19 @@ export function JobsPage() {
 
   const resultPage = view === "company" ? companies : jobs;
   const totalPages = resultPage ? Math.max(1, Math.ceil(resultPage.total / resultPage.page_size)) : 1;
-  const hasFilters = Array.from(searchParams.keys()).some((key) => !["page", "page_size", "source_id", "view"].includes(key));
-  const activeFilterCount = [
-    draft.city.length,
-    draft.companyNature.length,
-    draft.batch.length,
-    draft.education.length,
-    draft.graduationYear.length,
-    draft.publishedDate ? 1 : 0,
-    draft.salaryMin ? 1 : 0,
-    draft.salaryMax ? 1 : 0,
-  ].reduce((total, count) => total + count, 0);
+  const hasFilters = Array.from(searchParams.keys()).some((key) => !["page", "page_size", "source_id", "view", "company_group_id", "company_return_to"].includes(key));
+  const hasDraftValues = Boolean(
+    draft.q.trim()
+      || draft.city.length
+      || draft.companyNature.length
+      || draft.batch.length
+      || draft.recruitmentType.length
+      || draft.education.length
+      || draft.graduationYear.length
+      || draft.salaryMin
+      || draft.salaryMax
+      || draft.publishedDate,
+  );
 
   return (
     <div className="jobs-page">
@@ -274,6 +324,8 @@ export function JobsPage() {
           <p>搜索岗位、公司或关键词，再按条件筛选。</p>
         </div>
       </section>
+
+      {query.company_group_id && view === "job" && <Link className="back-link jobs-company-back-link" to={companyReturnTo}><CaretLeft size={17} />返回公司视图</Link>}
 
       <section className="jobs-toolbar" aria-label="岗位数量">
         <div className="toolbar-stats">
@@ -292,32 +344,24 @@ export function JobsPage() {
         </div>
       </section>
 
-      <form className="job-filters" onSubmit={applyFilters} aria-label="搜索和筛选岗位">
+      <form className="job-filters" ref={filterFormRef} onSubmit={applyFilters} aria-label="搜索和筛选岗位">
         <div className="job-search-row">
           <label className="search-field field-group">
             <span>搜索岗位或公司</span>
             <span className="search-input-wrap">
               <MagnifyingGlass size={18} aria-hidden="true" />
-              <input value={draft.q} onChange={(event) => updateDraft("q", event.target.value)} placeholder="搜索岗位、公司或关键词" />
+              <input value={draft.q} onFocus={() => setIsFilterPanelOpen(true)} onClick={() => setIsFilterPanelOpen(true)} onChange={(event) => updateDraft("q", event.target.value)} placeholder="搜索岗位、公司或关键词" />
             </span>
           </label>
-          <div className="job-search-actions">
-            {hasFilters && <button className="button button-secondary" type="button" onClick={clearFilters}><X size={16} />清除筛选</button>}
-            <button
-              className="button button-secondary mobile-filter-toggle"
-              type="button"
-              aria-expanded={isFilterPanelOpen}
-              aria-controls="job-filter-panel"
-              onClick={() => setIsFilterPanelOpen((current) => !current)}
-            >
-              <Funnel size={17} />筛选{activeFilterCount > 0 && <span className="filter-count">{activeFilterCount}</span>}
-            </button>
-            <button className="button button-primary desktop-filter-submit" type="submit"><Funnel size={17} />应用筛选</button>
-          </div>
+          {isFilterPanelOpen && <div className="job-search-actions">
+            <button className="button button-secondary" type="button" onClick={clearFilters} disabled={!hasFilters && !hasDraftValues}><X size={16} />清除筛选</button>
+            <button className="button button-primary" type="submit"><Funnel size={17} />应用筛选</button>
+          </div>}
         </div>
-        <div id="job-filter-panel" className={`filter-grid${isFilterPanelOpen ? " is-open" : ""}`}>
+        <div id="job-filter-panel" className={`filter-grid${isFilterPanelOpen ? " is-open" : ""}`} aria-hidden={!isFilterPanelOpen}>
           <div className="field-group jobs-city-filter"><span>城市</span><CityPicker label="城市" values={draft.city} onChange={(value) => updateDraft("city", value)} /></div>
           <FilterDropdown id="job-filter-batch" label="招聘批次" value={draft.batch} options={filters?.batches ?? []} disabled={!filters} onChange={(value) => updateDraft("batch", value)} />
+          <FilterDropdown id="job-filter-recruitment-type" label="招聘类型" value={draft.recruitmentType} options={filters?.recruitment_types ?? []} disabled={!filters} onChange={(value) => updateDraft("recruitmentType", value)} />
           <FilterDropdown id="job-filter-education" label="学历" value={draft.education} options={filters?.educations ?? []} disabled={!filters} onChange={(value) => updateDraft("education", value)} />
           <FilterDropdown id="job-filter-company-nature" label="公司性质" value={draft.companyNature} options={filters?.company_natures ?? []} disabled={!filters} onChange={(value) => updateDraft("companyNature", value)} />
           <SelectField label="发布日期" value={draft.publishedDate} options={[
@@ -331,10 +375,6 @@ export function JobsPage() {
           <label className="field-group"><span>最低薪资</span><input type="number" min="0" inputMode="numeric" value={draft.salaryMin} onChange={(event) => updateDraft("salaryMin", event.target.value)} placeholder="元/月" /></label>
           <label className="field-group"><span>最高薪资</span><input type="number" min="0" inputMode="numeric" value={draft.salaryMax} onChange={(event) => updateDraft("salaryMax", event.target.value)} placeholder="元/月" /></label>
         </div>
-        <div className="filter-panel-actions">
-          <button className="button button-secondary" type="button" onClick={clearFilters} disabled={!hasFilters}>清除筛选</button>
-          <button className="button button-primary" type="submit"><Funnel size={17} />应用筛选</button>
-        </div>
       </form>
 
       {filterErrorMessage && <p className="form-error inline-page-error" role="alert">{filterErrorMessage}</p>}
@@ -346,7 +386,7 @@ export function JobsPage() {
       {loadState === "ready" && view === "job" && jobs && (
         <>
           <section className="job-grid" aria-label="岗位列表">
-            {jobs.items.map((job) => <JobCard key={job.id} job={job} isSaving={savingJobId === job.id} onToggleSaved={() => void toggleSaved(job)} />)}
+            {jobs.items.map((job) => <JobCard key={job.id} job={job} returnTo={listPath} isSaving={savingJobId === job.id} onToggleSaved={() => void toggleSaved(job)} />)}
           </section>
           <Pagination page={jobs.page} totalPages={totalPages} onChange={goToPage} />
         </>
@@ -354,7 +394,7 @@ export function JobsPage() {
       {loadState === "ready" && view === "company" && companies && (
         <>
           <section className="company-grid" aria-label="公司列表">
-            {companies.items.map((company) => <CompanyCard key={company.group_id} company={company} searchParams={searchParams} />)}
+            {companies.items.map((company) => <CompanyCard key={company.group_id} company={company} returnTo={listPath} searchParams={searchParams} />)}
           </section>
           <Pagination page={companies.page} totalPages={totalPages} onChange={goToPage} />
         </>
@@ -413,27 +453,28 @@ function FilterDropdown({ id, label, value, options, labels, disabled = false, o
   );
 }
 
-function CompanyCard({ company, searchParams }: { company: CompanyListItem; searchParams: URLSearchParams }) {
+function CompanyCard({ company, returnTo, searchParams }: { company: CompanyListItem; returnTo: string; searchParams: URLSearchParams }) {
   const next = new URLSearchParams(searchParams);
   next.set("view", "job");
   next.set("company_group_id", company.group_id);
+  next.set("company_return_to", returnTo);
   next.set("page", "1");
   const to = `/jobs?${next.toString()}`;
   return (
     <article className="company-card">
-      <Link className="company-card-link" to={to}>
-        <div className="company-card-topline"><span className="company-card-label"><Buildings size={17} />公司</span><span>{company.job_count} 个岗位</span></div>
+      <Link className="company-card-link" to={to} onClick={() => saveListScroll(returnTo)}>
+        <div className="company-card-topline"><div className="company-card-batches" aria-label="招聘批次">{(company.batches.length ? company.batches : ["未注明"]).slice(0, 4).map((batch) => <span key={batch}>{batch}</span>)}{company.batches.length > 4 && <small>+{company.batches.length - 4}</small>}</div><span>{company.job_count} 个岗位</span></div>
         <h2>{company.company_name}</h2>
         <div className="company-card-titles">
           {company.job_titles.map((title) => <span key={title}>{title}</span>)}
         </div>
-        <div className="company-card-footer"><span>{company.company_nature ?? "公司性质待确认"}</span><span>{company.latest_published_at ? `最近发布 ${formatDate(company.latest_published_at)}` : "发布日期未注明"}</span></div>
+        <div className="company-card-footer"><span>{(company.company_natures.length ? company.company_natures : company.company_nature ? [company.company_nature] : ["未注明"]).join("、")}</span><span>{company.latest_published_at ? `最近发布 ${formatDate(company.latest_published_at)}` : "发布日期未注明"}</span></div>
       </Link>
     </article>
   );
 }
 
-function JobCard({ job, isSaving, onToggleSaved }: { job: JobListItem; isSaving: boolean; onToggleSaved: () => void }) {
+function JobCard({ job, returnTo, isSaving, onToggleSaved }: { job: JobListItem; returnTo: string; isSaving: boolean; onToggleSaved: () => void }) {
   return (
     <article className="job-card">
       <div className="job-card-topline">
@@ -442,7 +483,7 @@ function JobCard({ job, isSaving, onToggleSaved }: { job: JobListItem; isSaving:
           <BookmarkSimple size={19} weight={job.is_saved ? "fill" : "regular"} />
         </button>
       </div>
-      <Link className="job-card-link" to={`/jobs/${job.id}`}>
+      <Link className="job-card-link" to={jobDetailPath(job.id, returnTo)} onClick={() => saveListScroll(returnTo)}>
         <div className="job-card-heading"><h2>{job.title}</h2></div>
         <p className="job-company">{job.company_name}</p>
         <div className="job-tags">

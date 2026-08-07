@@ -438,9 +438,76 @@ def test_ingest_identity_fallbacks_and_batch_deduplication() -> None:
         assert facts_first.job_ids == facts_second.job_ids
 
         conflict = by_facts.model_copy(update={"description": "冲突 JD"})
-        with pytest.raises(ApplicationError) as error:
-            await catalog.ingest("fallback-5", _batch(source_id, by_facts, conflict))
-        assert error.value.code == str(ErrorCode.CONFLICT)
+        conflict_result = await catalog.ingest("fallback-5", _batch(source_id, by_facts, conflict))
+        assert conflict_result.created_count == 1
+        assert conflict_result.job_ids[0] != facts_first.job_ids[0]
+        await engine.dispose()
+
+    asyncio.run(check())
+
+
+def test_ingest_merges_stable_id_across_sources_in_one_company_scope() -> None:
+    source_a = "itest-baidu-source-a"
+    source_b = "itest-baidu-source-b"
+
+    async def check() -> None:
+        engine = create_engine(_TEST_DATABASE_URL)
+        factory = create_session_factory(engine)
+        catalog = PostgresJobCatalog(factory)
+        async with factory() as session:
+            job_ids = sa.select(JOB_TABLE.c.id).where(
+                JOB_TABLE.c.source_id.in_([source_a, source_b])
+            )
+            await session.execute(
+                sa.delete(RECOMMENDATION_TABLE).where(RECOMMENDATION_TABLE.c.job_id.in_(job_ids))
+            )
+            await session.execute(
+                sa.delete(SAVED_JOB_TABLE).where(SAVED_JOB_TABLE.c.job_id.in_(job_ids))
+            )
+            await session.execute(
+                sa.delete(JOB_TABLE).where(JOB_TABLE.c.source_id.in_([source_a, source_b]))
+            )
+            await session.commit()
+
+        metadata_a = {
+            "company_group": "baidu",
+            "platform_family": "baidu-campus",
+            "feishu_record_id": "rec-a",
+            "batch": "秋招专场",
+        }
+        metadata_b = {**metadata_a, "feishu_record_id": "rec-b", "batch": "实习"}
+        first = await catalog.ingest(
+            "cross-source-1",
+            _batch(
+                source_a,
+                _collected(source_a, metadata=metadata_a),
+            ),
+        )
+        second = await catalog.ingest(
+            "cross-source-2",
+            _batch(
+                source_b,
+                _collected(source_b, metadata=metadata_b),
+            ),
+        )
+
+        assert first.created_count == 1
+        assert second.job_ids == first.job_ids
+        assert second.created_count == 0
+        async with factory() as session:
+            row = (
+                (
+                    await session.execute(
+                        sa.select(JOB_TABLE).where(JOB_TABLE.c.id == first.job_ids[0])
+                    )
+                )
+                .mappings()
+                .one()
+            )
+        assert row.company_group_key == "company:baidu"
+        assert row.metadata["feishu_record_ids"] == ["rec-a", "rec-b"]
+        assert row.metadata["source_ids"] == [source_a, source_b]
+        assert row.batch_tokens == ["秋招专场", "实习"]
         await engine.dispose()
 
     asyncio.run(check())

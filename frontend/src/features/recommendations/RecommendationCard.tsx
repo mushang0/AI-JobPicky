@@ -1,12 +1,13 @@
 import { useState } from "react";
-import { BookmarkSimple, ChatCircleText, Check, ThumbsDown, ThumbsUp, Trash, X } from "@phosphor-icons/react";
+import { BookmarkSimple, ChatCircleText, ThumbsDown, ThumbsUp, Trash, X } from "@phosphor-icons/react";
 import { Link } from "react-router-dom";
 import type { RecommendationCardView, RecommendationFeedback, RecommendationResultView } from "../../shared/api/types";
 import { formatRecommendationDeadline } from "../../shared/formatting";
+import { jobDetailPath, saveListScroll } from "../../shared/navigation";
 
 type RecommendationItem = RecommendationCardView | RecommendationResultView;
 
-export function RecommendationCard({ item, onFeedback, onToggleSaved, onDelete }: { item: RecommendationItem; onFeedback: (feedback: RecommendationFeedback) => void; onToggleSaved: () => void; onDelete?: () => void }) {
+export function RecommendationCard({ item, returnTo, onFeedback, onToggleSaved, onDelete }: { item: RecommendationItem; returnTo?: string; onFeedback: (feedback: RecommendationFeedback) => void; onToggleSaved: () => void; onDelete?: () => void }) {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const isDeleted = "is_deleted" in item && item.is_deleted;
 
@@ -16,16 +17,14 @@ export function RecommendationCard({ item, onFeedback, onToggleSaved, onDelete }
         <span className="match-score">AI 匹配度 {item.assessment.match_score}%</span>
         <span className={`recommendation-date recommendation-deadline${item.job.status === "CLOSED" ? " is-closed" : ""}`}>{formatRecommendationDeadline(item.job.deadline_at, item.job.status)}</span>
       </div>
-      <Link className="recommendation-card-link" to={`/jobs/${item.job.id}`}>
+      <Link className="recommendation-card-link" to={jobDetailPath(item.job.id, returnTo)} onClick={() => returnTo && saveListScroll(returnTo)}>
         <h2>{item.job.title}</h2>
         <p>{item.job.company_name}</p>
         <div className="recommendation-meta"><span>{item.job.locations.join("、") || "地点待确认"}</span>{item.job.company_nature && <span>{item.job.company_nature}</span>}</div>
       </Link>
       <div className="recommendation-reason"><ChatCircleText size={19} /><p>{item.assessment.reason}</p></div>
       <div className="recommendation-sections">
-        {item.assessment.matched_strengths.length > 0 && <RecommendationList title="匹配优势" values={item.assessment.matched_strengths} icon={<Check size={15} />} className="strength-list" />}
         {item.assessment.gaps.length > 0 && <RecommendationList title="能力缺口" values={item.assessment.gaps} icon={<X size={15} />} className="gap-list" />}
-        {item.assessment.evidence.length > 0 && <RecommendationList title="匹配依据" values={item.assessment.evidence} icon={<Check size={15} />} className="evidence-list" />}
       </div>
       <div className="recommendation-card-footer">
         <div className="recommendation-actions" aria-label="推荐操作">

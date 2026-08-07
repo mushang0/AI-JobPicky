@@ -1,8 +1,14 @@
 from pathlib import Path
+from typing import cast
 
 import pytest
 
-from jobpicky.collection.parsers.moka import _is_open, entry_identity, parse
+from jobpicky.collection.parsers.moka import (
+    _decrypt_detail_response,
+    _is_open,
+    entry_identity,
+    parse,
+)
 
 FIXTURE = Path(__file__).parent / "fixtures" / "moka_init_data.html"
 LIST_URL = "https://app.mokahr.com/campus-recruitment/demo/12345#/jobs"
@@ -26,6 +32,55 @@ def test_moka_parser_reads_server_rendered_job_list() -> None:
     metadata = jobs[0]["metadata"]
     assert isinstance(metadata, dict)
     assert metadata["department"] == "研发部"
+
+
+def test_moka_parser_fetches_and_normalises_job_detail() -> None:
+    calls: list[tuple[str, str, str, str, str]] = []
+
+    def fetch_detail(
+        page_url: str,
+        org_id: str,
+        site_id: str,
+        job_id: str,
+        locale: str,
+    ) -> dict[str, object]:
+        calls.append((page_url, org_id, site_id, job_id, locale))
+        return {"jobDescription": "<p>岗位职责</p><p>熟悉 Python &amp; Go。</p>"}
+
+    jobs = parse(LIST_URL, lambda _url: fixture_html(), fetch_detail)
+
+    assert jobs[0]["description"] == "岗位职责\n熟悉 Python & Go。"
+    metadata = cast(dict[str, object], jobs[0]["metadata"])
+    assert metadata["detail_status"] == "api"
+    assert calls == [(LIST_URL, "demo", "12345", "job-open", "zh-CN")]
+
+
+def test_moka_detail_response_is_decrypted() -> None:
+    detail = _decrypt_detail_response(
+        {
+            "data": (
+                "1THXlBikAEAVg9cIxBZPcbRoa1FVgptyGySnWh7POUbvR3UFKO/KG6RYVv2FEt95"
+                "AVzen/mUfiQ74OXz1zc7QXD2wxohpPd9hLLkwFDl9K5gr/IAFbGrEBY46oL0/q8R5Y6"
+                "ZD0mYrJHUzvASlPofA1rmAwOWK6KLvhTbnySTrpOTBEHzlwfU6CY6V/D9Ejco"
+            ),
+            "necromancer": "1234567890abcdef",
+        },
+        "abcdef1234567890",
+    )
+
+    assert detail["jobDescription"] == "<p>岗位职责</p><p>熟悉 Python &amp; Go。</p>"
+
+
+def test_moka_parser_keeps_job_when_detail_fetch_fails() -> None:
+    def fetch_detail(*_args: str) -> dict[str, object]:
+        raise TimeoutError("detail request timed out")
+
+    jobs = parse(LIST_URL, lambda _url: fixture_html(), fetch_detail)
+
+    assert jobs[0]["description"] is None
+    metadata = cast(dict[str, object], jobs[0]["metadata"])
+    assert metadata["detail_status"] == "failed"
+    assert metadata["detail_error_type"] == "TimeoutError"
 
 
 @pytest.mark.parametrize(

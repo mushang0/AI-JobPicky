@@ -1,5 +1,7 @@
 from dataclasses import replace
 from datetime import UTC, datetime
+from threading import Lock
+from time import sleep
 
 import pytest
 
@@ -55,7 +57,7 @@ def test_merge_prefers_explicit_parser_recruitment_type() -> None:
 
     assert isinstance(job, CollectedJob)
     assert job.title == "网站真实岗位"
-    assert job.description == "后端, 前端"
+    assert job.description is None
     assert job.detail_url == "https://acme.zhiye.com/job/1"
     assert job.apply_url == job.detail_url
     assert job.locations == ["网站地点"]
@@ -69,13 +71,13 @@ def test_merge_prefers_explicit_parser_recruitment_type() -> None:
     assert job.metadata["announcement_url"] == "https://example.com/notice"
 
 
-def test_table_values_fill_missing_parser_facts() -> None:
+def test_table_values_fill_missing_non_description_parser_facts() -> None:
     job = merge_job_fields(
         "source-1", make_row("https://acme.zhiye.com/campus/jobs"), {"title": "网站岗位"}
     )
 
     assert job.locations == ["表格地点"]
-    assert job.description == "后端, 前端"
+    assert job.description is None
     assert job.education_requirement == "本科"
     assert job.recruitment_type == "校招"
     assert job.deadline_at == datetime(2026, 8, 20, tzinfo=UTC)
@@ -171,6 +173,24 @@ def test_feishu_link_uses_the_platform_parser(monkeypatch) -> None:
     assert result.batch.complete is True
 
 
+def test_parsed_job_without_description_does_not_use_table_job_summary(monkeypatch) -> None:
+    monkeypatch.setitem(
+        pipeline.PARSERS,
+        "MOKA",
+        lambda _: [{"source_job_id": "moka-1", "title": "产品经理", "description": None}],
+    )
+
+    result = run_pipeline(
+        "source-1",
+        [make_row("https://app.mokahr.com/campus-recruitment/acme/145894")],
+    )
+
+    assert len(result.batch.items) == 1
+    assert result.batch.items[0].title == "产品经理"
+    assert result.batch.items[0].description is None
+    assert result.batch.items[0].metadata["collection_mode"] == "PARSED"
+
+
 def test_unsupported_link_is_recorded_with_row_and_reason() -> None:
     result = run_pipeline("source-1", [make_row("https://app.mokahr.com/campus-recruitment/acme")])
 
@@ -232,3 +252,62 @@ def test_moka_tracking_links_share_a_source_and_dedupe_jobs(monkeypatch) -> None
 
     assert len(results) == 1
     assert [item.source_job_id for item in results[0].batch.items] == ["moka-1"]
+
+
+def test_different_sources_are_processed_in_parallel(monkeypatch) -> None:
+    active = 0
+    maximum_active = 0
+    lock = Lock()
+
+    def parse(_: str) -> list[dict[str, object]]:
+        nonlocal active, maximum_active
+        with lock:
+            active += 1
+            maximum_active = max(maximum_active, active)
+        sleep(0.05)
+        with lock:
+            active -= 1
+        return [{"source_job_id": "job-1", "title": "岗位"}]
+
+    monkeypatch.setitem(pipeline.PARSERS, "BEISEN", parse)
+    results = run_pipeline_by_source(
+        [
+            make_row("https://one.zhiye.com/campus/jobs"),
+            make_row("https://two.zhiye.com/campus/jobs"),
+        ],
+        max_workers=2,
+    )
+
+    assert len(results) == 2
+    assert maximum_active == 2
+
+
+def test_rows_for_one_source_are_processed_serially(monkeypatch) -> None:
+    active = 0
+    maximum_active = 0
+    calls = 0
+    lock = Lock()
+
+    def parse(_: str) -> list[dict[str, object]]:
+        nonlocal active, calls, maximum_active
+        with lock:
+            active += 1
+            calls += 1
+            maximum_active = max(maximum_active, active)
+        sleep(0.01)
+        with lock:
+            active -= 1
+        return [{"source_job_id": f"job-{calls}", "title": "岗位"}]
+
+    monkeypatch.setitem(pipeline.PARSERS, "BEISEN", parse)
+    results = run_pipeline_by_source(
+        [
+            make_row("https://one.zhiye.com/campus/jobs"),
+            make_row("https://one.zhiye.com/campus/jobs"),
+        ],
+        max_workers=2,
+    )
+
+    assert len(results) == 1
+    assert calls == 2
+    assert maximum_active == 1

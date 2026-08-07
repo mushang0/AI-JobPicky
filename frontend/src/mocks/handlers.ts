@@ -169,6 +169,8 @@ export const handlers = [
       group_id,
       company_name: items[0].company_name,
       company_nature: items[0].company_nature,
+      company_natures: [...new Set(items.map((job) => job.company_nature).filter((value): value is string => Boolean(value)))],
+      batches: [...new Set(items.map((job) => job.batch).filter((value): value is string => Boolean(value)))],
       job_titles: items.slice(0, 3).map((job) => job.title),
       job_count: items.length,
       latest_published_at: items[0].published_at,

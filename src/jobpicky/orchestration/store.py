@@ -168,7 +168,6 @@ def projection_to_card(projection: RecommendationProjection) -> RecommendationCa
     current_status = projection.current_job_status or job.status
     current_published_at = projection.current_published_at or job.published_at
     current_deadline_at = projection.current_deadline_at or job.deadline_at
-    evidence = assessment.evidence or [detail.explanation for detail in assessment.evidence_details]
     return RecommendationCardView(
         recommendation_id=record.recommendation_id,
         run_id=record.run_id,
@@ -187,9 +186,7 @@ def projection_to_card(projection: RecommendationProjection) -> RecommendationCa
         assessment=RecommendationAssessmentView(
             match_score=assessment.match_score,
             reason=assessment.reason,
-            matched_strengths=assessment.matched_strengths,
             gaps=assessment.gaps,
-            evidence=evidence,
         ),
         is_saved=projection.is_saved,
         feedback=record.feedback,

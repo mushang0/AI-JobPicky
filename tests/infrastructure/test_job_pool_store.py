@@ -88,9 +88,9 @@ def _seed() -> None:
                         "batch_tokens": ["实习", "春招补录"]
                         if job.id != _IDS[2]
                         else ["秋招提前批"],
-                        "company_group_key": "feishu:rec-1"
+                        "company_group_key": "name:聚合公司"
                         if job.id != _IDS[2]
-                        else "feishu:rec-2",
+                        else "name:另一家公司",
                     }
                     for job in jobs
                 ],
@@ -131,6 +131,8 @@ def test_store_pushes_page_batch_and_company_queries_to_postgres() -> None:
         assert companies.total == 2
         grouped_company = next(item for item in companies.items if item.job_count == 2)
         assert grouped_company.job_titles == ["后端工程师", "算法工程师"]
+        assert grouped_company.batches == ["实习", "春招补录"]
+        assert grouped_company.group_id == "name:聚合公司"
 
     try:
         asyncio.run(check())

@@ -6,11 +6,13 @@ import argparse
 import csv
 import json
 from collections import Counter
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from jobpicky.collection.link_classification import MOKA, classify_link
 from jobpicky.collection.parsers.moka import entry_identity as moka_entry_identity
+from jobpicky.collection.parsers.moka import source_identity as moka_source_identity
 from jobpicky.collection.pipeline import PARSERS, merge_job_fields
 from jobpicky.collection.spreadsheet import SpreadsheetRow, extract_links, extract_row
 from jobpicky.contracts import CollectedJob
@@ -76,15 +78,62 @@ def _write_sample(path: Path, header: Sequence[str], rows: Sequence[SpreadsheetR
             )
 
 
+def _parse_case(
+    row: SpreadsheetRow,
+    platform_parser: Callable[[str], Sequence[Mapping[str, object]]],
+) -> tuple[list[dict[str, object]], list[CollectedJob], list[str]]:
+    parsed_jobs: list[dict[str, object]] = []
+    jobs: list[CollectedJob] = []
+    errors: list[str] = []
+    try:
+        parsed_jobs = [dict(job) for job in platform_parser(row.apply_links[0])]
+        if not parsed_jobs:
+            raise ValueError("parser returned no verified job title")
+        jobs = [
+            merge_job_fields(f"test-source-{classify_link(row.apply_links[0]).lower()}", row, job)
+            for job in parsed_jobs
+        ]
+    except Exception as exc:  # noqa: BLE001 - preserve the real verification failure
+        errors.append(f"{type(exc).__name__}: {exc}")
+    return parsed_jobs, jobs, errors
+
+
+def _parse_cases(
+    rows: Sequence[SpreadsheetRow],
+    platform: str,
+    platform_parser: Callable[[str], Sequence[Mapping[str, object]]],
+    max_workers: int,
+) -> dict[tuple[int, str], tuple[list[dict[str, object]], list[CollectedJob], list[str]]]:
+    grouped: dict[str, list[SpreadsheetRow]] = {}
+    for row in rows:
+        url = row.apply_links[0]
+        source_key = moka_source_identity(url) if platform == MOKA else url
+        grouped.setdefault(source_key or url, []).append(row)
+
+    def parse_group(group: Sequence[SpreadsheetRow]):
+        return [_parse_case(row, platform_parser) for row in group]
+
+    with ThreadPoolExecutor(max_workers=min(max_workers, len(grouped) or 1)) as executor:
+        group_results = list(executor.map(parse_group, grouped.values()))
+    cases: dict[tuple[int, str], tuple[list[dict[str, object]], list[CollectedJob], list[str]]] = {}
+    for group, results in zip(grouped.values(), group_results, strict=True):
+        for row, result in zip(group, results, strict=True):
+            cases[(row.row_number, row.apply_links[0])] = result
+    return cases
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--input", required=True, type=Path)
     parser.add_argument("--output", required=True, type=Path)
     parser.add_argument("--platform", required=True, type=str.upper)
     parser.add_argument("--limit", type=int, default=0, help="0 means all matching links")
+    parser.add_argument("--workers", type=int, default=4, help="parallel source groups, 1-8")
     args = parser.parse_args()
     if args.limit < 0:
         raise ValueError("--limit must be non-negative")
+    if not 1 <= args.workers <= 8:
+        raise ValueError("--workers must be between 1 and 8")
     platform_parser = PARSERS.get(args.platform)
     if platform_parser is None:
         raise ValueError(f"no registered parser for {args.platform}")
@@ -103,20 +152,11 @@ def main() -> None:
     application_method_counts: Counter[str] = Counter()
     failure_reason_counts: Counter[str] = Counter()
     needs_review_count = 0
+    parsed_cases = _parse_cases(rows, args.platform, platform_parser, args.workers)
     for index, row in enumerate(rows, start=1):
         case_id = f"case-{index:03d}"
         url = row.apply_links[0]
-        errors: list[str] = []
-        parsed_jobs: list[dict[str, object]] = []
-        jobs: list[CollectedJob] = []
-        try:
-            parsed_jobs = [dict(job) for job in platform_parser(url)]
-            if not parsed_jobs:
-                raise ValueError("parser returned no verified job title")
-            source_id = f"test-source-{args.platform.lower()}"
-            jobs = [merge_job_fields(source_id, row, job) for job in parsed_jobs]
-        except Exception as exc:  # noqa: BLE001 - preserve the real verification failure
-            errors.append(f"{type(exc).__name__}: {exc}")
+        parsed_jobs, jobs, errors = parsed_cases[(row.row_number, url)]
         parsed_job_count += len(parsed_jobs)
         for parsed_job in parsed_jobs:
             metadata = parsed_job.get("metadata")

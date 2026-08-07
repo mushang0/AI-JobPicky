@@ -226,10 +226,10 @@ GET /api/v1/jobs?page=1&page_size=30&city=上海&city=北京&company_nature=民�
 ### 2.13 公司视图
 
 `GET /api/v1/jobs/companies` 与 API-001 使用相同的搜索、筛选和分页参数，但返回公司聚合卡片。
-一个飞书表格记录对应一个聚合组，不按当前页临时聚合，也不只按公司名称合并。筛选和搜索先作用于岗位，
-再按飞书记录聚合，因此公司卡片只代表当前查询命中的岗位。
+公司卡片代表一个规范真实公司，不按单条飞书记录聚合，也不把来源 URL 或表格行号当作公司身份。筛选和搜索先作用于岗位，
+再按规范公司组聚合，因此公司卡片只代表当前查询命中的岗位。
 
-公司响应使用 `CompanyPoolPage`，卡片包含 `group_id`、`company_name`、`company_nature`、最多三个岗位名称、
+公司响应使用 `CompanyPoolPage`，卡片包含 `group_id`、`company_name`、`company_nature`、`company_natures`、`batches`、最多三个岗位名称、
 岗位数量和该组最新发布时间。点击卡片后使用 `/api/v1/jobs?company_group_id=...` 查看该组内的岗位卡片。
 公司视图的 `pool_total` 和 `total` 表示公司组数量，岗位视图仍返回岗位数量。
 
@@ -261,7 +261,7 @@ GET /api/v1/jobs?page=1&page_size=30&city=上海&city=北京&company_nature=民�
 - `retrieval_score` 是系统内部的关键词与语义召回融合分，不在前端推荐卡片展示。
 - `match_score` 是 AI 返回的 0～100 匹配分，前端以百分比展示。
 - 首版不设置 `match_score >= 75` 或其他数值阈值；是否进入推荐只由 AI 的 `matched` 判断。
-- AI 后端必须直接输出中文的 `reason`、`matched_strengths`、`gaps` 和 `evidence`。
+- AI 后端只输出中文的 `reason` 和 `gaps`；学历、地点、招聘类型、届次、薪资和开放状态等确定性条件由后端执行，不由 AI 生成说明。
 - 前端不翻译、不改写 AI 内容，只把英文 JSON key 映射成中文标题。
 
 ### 3.4 推荐卡片
@@ -276,9 +276,7 @@ GET /api/v1/jobs?page=1&page_size=30&city=上海&city=北京&company_nature=民�
 | `job.company_nature` | 公司性质 |
 | `assessment.match_score` | AI 匹配度，例如 `89%` |
 | `assessment.reason` | 推荐理由 |
-| `assessment.matched_strengths` | 匹配优势 |
 | `assessment.gaps` | 能力缺口 |
-| `assessment.evidence` | 匹配依据 |
 | `job.published_at` | 岗位发布日期（已知时） |
 | `job.deadline_at` | 投递截止日期（已知时） |
 | `job.status` | 当前岗位状态 |
@@ -287,7 +285,7 @@ GET /api/v1/jobs?page=1&page_size=30&city=上海&city=北京&company_nature=民�
 
 - 不显示原始英文字段名。
 - 公司性质为空时隐藏该项。
-- 匹配优势、能力缺口或匹配依据为空时隐藏对应区域。
+- 能力缺口为空时隐藏对应区域。
 - 卡片不展示岗位薪资、学历、届次、完整 JD、来源标识或内部检索分；推荐时间和 `first_seen_at` 作为兼容字段保留，
   但不作为卡片主信息。
 - 有未来截止日期时展示截止日期；没有截止日期时显示“建议尽快投递”；已截止或当前关闭时显示相应状态并停止引导投递。
@@ -314,10 +312,8 @@ GET /api/v1/jobs?page=1&page_size=30&city=上海&city=北京&company_nature=民�
   },
   "assessment": {
     "match_score": 89,
-    "reason": "该岗位与用户的 Python 后端经历高度匹配。",
-    "matched_strengths": ["具有 Python 后端开发经验"],
-    "gaps": ["缺少大型系统实践"],
-    "evidence": ["项目经历中使用过 FastAPI"]
+    "reason": "候选人的 Python 后端和服务端项目经历，与岗位的后端开发和服务稳定性要求较匹配；大型系统实践证据不足，因此整体适合度较高但仍有一定上手成本。",
+    "gaps": ["缺少大型系统实践"]
   },
   "is_saved": true,
   "feedback": "LIKE"
@@ -1392,7 +1388,7 @@ GET /api/v1/jobs/filter-options
 - `cities`、`company_natures`、`sources` 和 `graduation_years` 从当前可见岗位池的已知规范化事实中去重生成，
   分别按中文显示值、平台名称和年份升序排序；多个来源 ID 归属于同一平台时只返回一个 `sources` 项，
   并在 `source_ids` 中列出该平台对应的全部来源 ID。
-- `batches` 从当前可见岗位池的 `metadata["batch"]` 原始文本拆分、去重并排序，不映射为“校招”等粗粒度招聘类型；岗位卡片和该筛选使用同一事实来源。
+- `batches` 从当前可见岗位池已保存的 `batch_tokens` 拆分、去重并排序；它们来自 Feishu 的 `metadata["batch"]` 原始文本，合并岗位时保留批次并集，不映射为“校招”等粗粒度招聘类型。
 - `recruitment_types` 和 `educations` 返回首版支持的固定规范值。
 - 未知值不作为筛选选项返回；用户选择任一筛选后，岗位未知字段仍按“未知保留”处理。
 - 不返回每个选项的实时岗位数量，避免为首版增加昂贵的聚合查询。

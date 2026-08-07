@@ -220,9 +220,7 @@ export const recommendationFixtures: RecommendationCardView[] = [
     assessment: {
       match_score: 89,
       reason: "该岗位与 Python 后端经历和服务端项目经验高度匹配。",
-      matched_strengths: ["Python 后端开发经验", "熟悉接口与数据库设计"],
       gaps: ["缺少大型系统实践证据"],
-      evidence: ["经历摘要中包含 FastAPI 与异步任务链路"],
     },
     is_saved: false,
     feedback: null,

@@ -103,6 +103,7 @@ class RecommendationRunService:
         recommendation_cost: int = 100,
         candidate_limit: int = 50,
         evaluation_batch_size: int = 10,
+        evaluation_workers: int = 2,
         run_in_background: bool = True,
         now: Callable[[], datetime] | None = None,
     ) -> None:
@@ -112,6 +113,8 @@ class RecommendationRunService:
             raise ValueError("candidate_limit must be between 1 and 50")
         if evaluation_batch_size < 1:
             raise ValueError("evaluation_batch_size must be at least 1")
+        if not 1 <= evaluation_workers <= 4:
+            raise ValueError("evaluation_workers must be between 1 and 4")
         self._store = store
         self._profile_reader = profile_reader
         self._catalog = catalog
@@ -121,6 +124,7 @@ class RecommendationRunService:
         self._recommendation_cost = recommendation_cost
         self._candidate_limit = candidate_limit
         self._evaluation_batch_size = evaluation_batch_size
+        self._evaluation_semaphore = asyncio.Semaphore(evaluation_workers)
         self._run_in_background = run_in_background
         self._now = now or (lambda: datetime.now(UTC))
         self._tasks: set[asyncio.Task[None]] = set()
@@ -326,29 +330,58 @@ class RecommendationRunService:
                 )
                 await self._store.save_progress(record)
                 total = len(evaluable_candidates)
-                for batch_index, start in enumerate(range(0, total, self._evaluation_batch_size)):
-                    candidate_batch = evaluable_candidates[
-                        start : start + self._evaluation_batch_size
-                    ]
-                    batch_jobs = [jobs_by_id[candidate.job_id] for candidate in candidate_batch]
-                    batch_assessments = await self._evaluate_batch(
-                        profile,
-                        batch_jobs,
-                        candidate_batch,
-                        run_input.effective_extra_request,
+                batch_specs = [
+                    (
                         batch_index,
+                        evaluable_candidates[start : start + self._evaluation_batch_size],
                     )
-                    assessments.extend(batch_assessments)
-                    completed = len(assessments)
-                    record = replace(
-                        record,
-                        progress_percent=50 + (40 * completed // total),
-                        counts={
-                            "evaluated": completed,
-                            "recommended": sum(item.matched for item in assessments),
-                        },
+                    for batch_index, start in enumerate(
+                        range(0, total, self._evaluation_batch_size)
                     )
-                    await self._store.save_progress(record)
+                ]
+                batch_tasks = [
+                    asyncio.create_task(
+                        self._evaluate_batch_limited(
+                            profile,
+                            [jobs_by_id[candidate.job_id] for candidate in candidate_batch],
+                            candidate_batch,
+                            run_input.effective_extra_request,
+                            batch_index,
+                        )
+                    )
+                    for batch_index, candidate_batch in batch_specs
+                ]
+                batch_results: dict[int, list[MatchAssessment]] = {}
+                try:
+                    for completed_task in asyncio.as_completed(batch_tasks):
+                        batch_index, batch_assessments = await completed_task
+                        batch_results[batch_index] = batch_assessments
+                        completed = sum(len(result) for result in batch_results.values())
+                        completed_assessments = [
+                            assessment
+                            for index in sorted(batch_results)
+                            for assessment in batch_results[index]
+                        ]
+                        record = replace(
+                            record,
+                            progress_percent=50 + (40 * completed // total),
+                            counts={
+                                "evaluated": completed,
+                                "recommended": sum(item.matched for item in completed_assessments),
+                            },
+                        )
+                        await self._store.save_progress(record)
+                except BaseException:
+                    for task in batch_tasks:
+                        if not task.done():
+                            task.cancel()
+                    await asyncio.gather(*batch_tasks, return_exceptions=True)
+                    raise
+                assessments = [
+                    assessment
+                    for batch_index in sorted(batch_results)
+                    for assessment in batch_results[batch_index]
+                ]
 
             # Re-read facts after the model call so history contains completion-time snapshots.
             final_jobs = await self._catalog.get_jobs(
@@ -400,6 +433,23 @@ class RecommendationRunService:
         except Exception as exc:
             await self._fail(record, exc)
 
+    async def _evaluate_batch_limited(
+        self,
+        profile: ProfileSnapshot,
+        jobs: Sequence[JobFact],
+        candidates: Sequence[Candidate],
+        extra_request: str | None,
+        batch_index: int,
+    ) -> tuple[int, list[MatchAssessment]]:
+        async with self._evaluation_semaphore:
+            return batch_index, await self._evaluate_batch(
+                profile,
+                jobs,
+                candidates,
+                extra_request,
+                batch_index,
+            )
+
     async def _evaluate_batch(
         self,
         profile: ProfileSnapshot,
@@ -419,6 +469,9 @@ class RecommendationRunService:
             details: JsonObject = {"stage": "EVALUATE", "batch_index": batch_index}
             if exc.code == str(ErrorCode.DEPENDENCY_UNAVAILABLE):
                 details["dependency"] = "llm"
+            for key in ("failure_kind", "provider_attempts", "validation_attempts", "retryable"):
+                if key in exc.details:
+                    details[key] = exc.details[key]
             raise ApplicationError(
                 exc.code,
                 "evaluator dependency unavailable"
@@ -432,7 +485,11 @@ class RecommendationRunService:
                 ErrorCode.RECOMMENDATION_FAILED,
                 "evaluator batch failed",
                 status_code=502,
-                details={"stage": "EVALUATE", "batch_index": batch_index},
+                details={
+                    "stage": "EVALUATE",
+                    "batch_index": batch_index,
+                    "failure_kind": "unexpected",
+                },
             ) from exc
         try:
             return validate_assessments([candidate.job_id for candidate in candidates], assessments)
@@ -441,7 +498,11 @@ class RecommendationRunService:
                 ErrorCode.RECOMMENDATION_FAILED,
                 "evaluator returned an incomplete assessment batch",
                 status_code=502,
-                details={"stage": "EVALUATE", "batch_index": batch_index},
+                details={
+                    "stage": "EVALUATE",
+                    "batch_index": batch_index,
+                    "failure_kind": "candidate_mapping",
+                },
             ) from exc
 
     async def _fail(self, record: RunRecord, exc: Exception) -> None:

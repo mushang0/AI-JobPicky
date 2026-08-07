@@ -3,7 +3,9 @@ from pydantic import ValidationError
 
 from jobpicky.contracts import (
     JobListQuery,
+    company_nature_display_value,
     normalize_city,
+    normalize_company_group_key,
     normalize_company_nature,
     normalize_education,
     normalize_locations,
@@ -31,13 +33,26 @@ def test_city_and_locations_normalize_aliases_and_preserve_order() -> None:
     ]
 
 
-def test_company_nature_maps_only_confirmed_aliases() -> None:
+def test_company_nature_preserves_feishu_canonical_values() -> None:
     assert normalize_company_nature("民企") == "民营企业"
     assert normalize_company_nature("国有企业") == "国企"
     assert normalize_company_nature("外企") == "外资企业"
     assert normalize_company_nature("合资") == "合资企业"
-    assert normalize_company_nature("央国企") is None
+    assert normalize_company_nature("央国企") == "央国企"
     assert normalize_company_nature("社会组织") is None
+
+
+def test_company_identity_prefers_profile_and_company_nature_keeps_source_wording() -> None:
+    assert normalize_company_group_key("百度移动生态事业群", {"company_group": "baidu"}) == (
+        "company:baidu"
+    )
+    assert normalize_company_group_key(" 示例  公司 ", {}) == "name:示例公司"
+    assert (
+        company_nature_display_value(
+            "民营企业", {"_normalization_v1_original": {"company_nature": "民企"}}
+        )
+        == "民企"
+    )
 
 
 def test_recruitment_type_rejects_mixed_or_unknown_categories() -> None:

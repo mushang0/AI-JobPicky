@@ -2,9 +2,10 @@ from __future__ import annotations
 
 import re
 import unicodedata
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 
 COMPANY_NATURE_VALUES = (
+    "央国企",
     "央企",
     "国企",
     "事业单位",
@@ -32,6 +33,7 @@ _CAMPUS_RECRUITMENT_MARKERS = (
 )
 
 _COMPANY_NATURE_ALIASES = {
+    "央国企": "央国企",
     "央企": "央企",
     "中央企业": "央企",
     "中央国有企业": "央企",
@@ -139,6 +141,35 @@ def normalize_company_nature(value: str | None) -> str | None:
     return _COMPANY_NATURE_ALIASES.get(_compact(value))
 
 
+def company_nature_display_value(
+    value: str | None,
+    metadata: Mapping[str, object] | None = None,
+) -> str | None:
+    """Return the source wording when normalization kept it as metadata."""
+    if metadata is not None:
+        original = metadata.get("_normalization_v1_original")
+        if isinstance(original, Mapping):
+            raw = original.get("company_nature")
+            if isinstance(raw, str) and (display := normalize_text(raw)):
+                return display
+    if not value:
+        return None
+    return normalize_text(value) or None
+
+
+def normalize_company_group_key(
+    company_name: str,
+    metadata: Mapping[str, object] | None = None,
+) -> str:
+    """Use a known company profile before falling back to an exact name key."""
+    if metadata is not None:
+        group = metadata.get("company_group")
+        if isinstance(group, str) and (normalized_group := _compact(group)):
+            return f"company:{normalized_group.casefold()}"
+    normalized_name = _compact(company_name).casefold()
+    return f"name:{normalized_name or 'unknown'}"
+
+
 def normalize_recruitment_type(value: str | None) -> str | None:
     if value is None:
         return None
@@ -200,7 +231,9 @@ __all__ = [
     "EDUCATION_VALUES",
     "RECRUITMENT_TYPE_VALUES",
     "normalize_city",
+    "normalize_company_group_key",
     "normalize_company_nature",
+    "company_nature_display_value",
     "normalize_education",
     "normalize_locations",
     "normalize_recruitment_type",

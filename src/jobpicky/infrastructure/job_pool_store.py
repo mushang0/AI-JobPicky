@@ -21,6 +21,7 @@ from ..contracts import (
     RecruitmentType,
     normalize_city,
 )
+from ..contracts.normalization import split_batch_values
 from .job_catalog import JOB_TABLE, row_to_job_fact
 from .source_store import JOB_SOURCE_TABLE
 
@@ -36,6 +37,19 @@ def _display_source_name(source_id: str, stored_name: object) -> str:
 
 def row_to_source_view(row: sa.RowMapping) -> JobSourceView:
     return JobSourceView(id=row.source_id, name=_source_name(row))
+
+
+def _company_nature_values(row: sa.RowMapping) -> list[str]:
+    return [
+        str(value).strip() for value in (row.get("company_natures") or []) if str(value).strip()
+    ][:10]
+
+
+def _company_batch_values(row: sa.RowMapping) -> list[str]:
+    values: list[str] = []
+    for raw in row.get("batch_values") or []:
+        values.extend(split_batch_values(str(raw)))
+    return list(dict.fromkeys(values))[:50]
 
 
 class PostgresJobPoolStore:
@@ -106,8 +120,16 @@ class PostgresJobPoolStore:
         grouped = (
             sa.select(
                 ranked.c.company_group_key.label("group_id"),
-                sa.func.min(ranked.c.company_name).label("company_name"),
-                sa.func.min(ranked.c.company_nature).label("company_nature"),
+                sa.func.coalesce(
+                    sa.func.min(ranked.c.company_profile),
+                    sa.func.min(ranked.c.company_name),
+                ).label("company_name"),
+                sa.func.array_agg(sa.distinct(ranked.c.company_nature_display))
+                .filter(ranked.c.company_nature_display.is_not(None))
+                .label("company_natures"),
+                sa.func.array_agg(sa.distinct(ranked.c.batch_raw))
+                .filter(ranked.c.batch_raw.is_not(None))
+                .label("batch_values"),
                 sa.func.count().label("job_count"),
                 latest_published_at,
                 sa.func.array_agg(
@@ -130,17 +152,7 @@ class PostgresJobPoolStore:
             total = int((await session.execute(total_statement)).scalar_one())
             pool_total = int((await session.execute(pool_total_statement)).scalar_one())
 
-        items = [
-            CompanyListItem(
-                group_id=row.group_id,
-                company_name=row.company_name,
-                company_nature=row.company_nature,
-                job_titles=list(row.job_titles or [])[:3],
-                job_count=row.job_count,
-                latest_published_at=row.latest_published_at,
-            )
-            for row in rows
-        ]
+        items = [_company_list_item(row) for row in rows]
         return CompanyPoolPage(
             items=items,
             total=total,
@@ -323,7 +335,15 @@ def _company_ranked_query(query: JobListQuery) -> sa.Select[tuple[object, ...]]:
     return sa.select(
         JOB_TABLE.c.company_group_key,
         JOB_TABLE.c.company_name,
-        JOB_TABLE.c.company_nature,
+        JOB_TABLE.c.metadata.op("->>")("company_profile").label("company_profile"),
+        sa.func.coalesce(
+            JOB_TABLE.c.metadata.op("->")("_normalization_v1_original").op("->>")("company_nature"),
+            JOB_TABLE.c.company_nature,
+        ).label("company_nature_display"),
+        sa.func.coalesce(
+            sa.func.nullif(sa.func.array_to_string(JOB_TABLE.c.batch_tokens, "、"), ""),
+            JOB_TABLE.c.metadata.op("->>")("batch"),
+        ).label("batch_raw"),
         JOB_TABLE.c.title,
         JOB_TABLE.c.id,
         JOB_TABLE.c.published_at,
@@ -338,6 +358,21 @@ def _company_ranked_query(query: JobListQuery) -> sa.Select[tuple[object, ...]]:
         )
         .label("title_rank"),
     ).where(*_where_conditions(query))
+
+
+def _company_list_item(row: sa.RowMapping) -> CompanyListItem:
+    natures = _company_nature_values(row)
+    batches = _company_batch_values(row)
+    return CompanyListItem(
+        group_id=row.group_id,
+        company_name=str(row.company_name or row.company_profile),
+        company_nature=natures[0] if natures else None,
+        company_natures=natures,
+        batches=batches,
+        job_titles=list(row.job_titles or [])[:3],
+        job_count=row.job_count,
+        latest_published_at=row.latest_published_at,
+    )
 
 
 def _order_by(query: JobListQuery) -> list[sa.ColumnElement[Any]]:

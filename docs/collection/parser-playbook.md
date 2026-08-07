@@ -29,6 +29,9 @@ uv run python scripts/verify_parser_pipeline.py \
 先小样本验证；确需全量时用 `--limit 0`，完成后先看 `summary.json`。北森专用脚本额外
 保存脱敏前的接口响应并支持行区间定位，仅在诊断北森时使用。
 
+批量采集默认按来源使用 4 路有界并发（上限 8 路），同一来源内仍按解析器顺序处理；可用
+`JOBPICKY_COLLECTION_WORKERS=1..8` 调整。验证脚本也支持 `--workers 1..8`。
+
 ## 北森（BEISEN）
 
 - 域名：`beisen.com`、`zhiye.com`。

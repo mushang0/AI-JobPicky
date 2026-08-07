@@ -24,7 +24,8 @@ from jobpicky.collection.feishu_bitable import (
     FeishuBitableSource,
     FeishuRecord,
 )
-from jobpicky.collection.pipeline import run_pipeline_by_source
+from jobpicky.collection.pipeline import run_pipeline_by_source, source_id_for_entry
+from jobpicky.collection.spreadsheet import SpreadsheetRow
 from jobpicky.config import Settings
 from jobpicky.infrastructure.database import create_engine, create_session_factory
 from jobpicky.infrastructure.feishu_auth import (
@@ -82,6 +83,24 @@ class FeishuScriptConfig:
             ).expanduser(),
             scope=os.environ.get("JOBPICKY_FEISHU_OAUTH_SCOPE", _DEFAULT_SCOPE).strip(),
         )
+
+
+@dataclass
+class _RecordOutcome:
+    failures: list[str]
+    item_count: int = 0
+
+
+def _job_record_id(job: object) -> str | None:
+    metadata = getattr(job, "metadata", None)
+    if isinstance(metadata, dict):
+        record_id = metadata.get("feishu_record_id")
+        if isinstance(record_id, str) and record_id:
+            return record_id
+    source_ref = getattr(job, "source_ref", None)
+    if isinstance(source_ref, str) and source_ref.startswith("feishu-record:"):
+        return source_ref.removeprefix("feishu-record:") or None
+    return None
 
 
 class SingleProcessLock:
@@ -219,6 +238,7 @@ async def run_sync(config: FeishuScriptConfig, *, limit: int | None) -> None:
             config.bitable.table_id,
             [record.record_id for record in unique_records],
         )
+        eligible: list[tuple[FeishuRecord, str, SpreadsheetRow]] = []
         for row_number, record in enumerate(unique_records, start=1):
             record_hash = source.record_hash(record)
             state = states.get(record.record_id)
@@ -255,30 +275,7 @@ async def run_sync(config: FeishuScriptConfig, *, limit: int | None) -> None:
                     )
                     counts["skipped"] += 1
                     continue
-
-                pipeline_results = run_pipeline_by_source([row])
-                unsupported = [
-                    f"{failure.link_type}: {failure.reason}"
-                    for result in pipeline_results
-                    for failure in result.unsupported
-                ]
-                ingested = 0
-                for result in pipeline_results:
-                    if result.batch.items:
-                        ingestion = await catalog.ingest(run_id, result.batch)
-                        counts["created"] += ingestion.created_count
-                        counts["updated"] += ingestion.updated_count
-                        counts["unchanged_jobs"] += ingestion.unchanged_count
-                        ingested += len(result.batch.items)
-
-                status = "FAILED" if unsupported else ("SUCCEEDED" if ingested else "SKIPPED")
-                await save_state(
-                    record,
-                    record_hash,
-                    status=status,
-                    last_error="; ".join(unsupported)[:2000] if unsupported else None,
-                )
-                counts[status.lower()] += 1
+                eligible.append((record, record_hash, row))
             except Exception as exc:  # noqa: BLE001 - isolate one record from the batch
                 await save_state(
                     record,
@@ -287,6 +284,68 @@ async def run_sync(config: FeishuScriptConfig, *, limit: int | None) -> None:
                     last_error=f"{type(exc).__name__}: {exc}"[:2000],
                 )
                 counts["failed"] += 1
+
+        outcomes = {record.record_id: _RecordOutcome([]) for record, _record_hash, _row in eligible}
+        rows_by_number = {
+            row.row_number: (record, record_hash) for record, record_hash, row in eligible
+        }
+        source_record_ids: dict[str, set[str]] = {}
+        for record, _record_hash, row in eligible:
+            if row.company_name is None:
+                continue
+            for url in row.apply_links:
+                source_record_ids.setdefault(source_id_for_entry(row.company_name, url), set()).add(
+                    record.record_id
+                )
+        try:
+            pipeline_results = run_pipeline_by_source([row for _record, _hash, row in eligible])
+        except Exception as exc:  # noqa: BLE001 - keep a batch parser failure state-local
+            error = f"{type(exc).__name__}: {exc}"
+            for outcome in outcomes.values():
+                outcome.failures.append(error)
+            pipeline_results = []
+
+        for result in pipeline_results:
+            result_record_ids = set(source_record_ids.get(result.batch.source_id, ()))
+            result_record_ids.update(
+                record_id
+                for record_id in (_job_record_id(item) for item in result.batch.items)
+                if record_id in outcomes
+            )
+            for failure in result.unsupported:
+                record_info = rows_by_number.get(failure.row_number)
+                if record_info is None:
+                    continue
+                record, _record_hash = record_info
+                result_record_ids.add(record.record_id)
+                outcomes[record.record_id].failures.append(f"{failure.link_type}: {failure.reason}")
+            if not result.batch.items:
+                continue
+            try:
+                ingestion = await catalog.ingest(run_id, result.batch)
+            except Exception as exc:  # noqa: BLE001 - isolate one batch write failure
+                error = f"{type(exc).__name__}: {exc}"
+                for record_id in result_record_ids:
+                    outcomes[record_id].failures.append(error)
+                continue
+            counts["created"] += ingestion.created_count
+            counts["updated"] += ingestion.updated_count
+            counts["unchanged_jobs"] += ingestion.unchanged_count
+            for record_id in result_record_ids:
+                outcomes[record_id].item_count += 1
+
+        for record, record_hash, _row in eligible:
+            outcome = outcomes[record.record_id]
+            status = (
+                "FAILED" if outcome.failures else ("SUCCEEDED" if outcome.item_count else "SKIPPED")
+            )
+            await save_state(
+                record,
+                record_hash,
+                status=status,
+                last_error="; ".join(outcome.failures)[:2000] if outcome.failures else None,
+            )
+            counts[status.lower()] += 1
     finally:
         await engine.dispose()
 
