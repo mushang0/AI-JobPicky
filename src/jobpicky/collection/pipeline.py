@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import hashlib
+import os
 from collections.abc import Callable, Mapping, Sequence
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, replace
 from datetime import datetime
 from typing import cast
@@ -51,6 +53,10 @@ from .quality import (
 from .spreadsheet import SpreadsheetRow
 
 Parser = Callable[[str], Sequence[Mapping[str, object]]]
+
+_SOURCE_WORKERS_ENV = "JOBPICKY_COLLECTION_WORKERS"
+_DEFAULT_SOURCE_WORKERS = 4
+_MAX_SOURCE_WORKERS = 8
 
 # Keep routing visible and boring. Add a parser here only when it is implemented.
 PARSERS: dict[str, Parser] = {
@@ -221,7 +227,8 @@ def merge_job_fields(
         company_nature=row.company_nature,
         title=title,
         locations=locations,
-        description=_string(website, "description") or row.job_directions,
+        # The spreadsheet job field is a row-level summary, not a parsed job description.
+        description=_string(website, "description"),
         detail_url=detail_url,
         apply_url=apply_url,
         recruitment_type=(
@@ -465,6 +472,7 @@ def run_pipeline_by_source(
     *,
     policy: CollectionQualityPolicy | None = None,
     now: datetime | None = None,
+    max_workers: int | None = None,
 ) -> list[PipelineResult]:
     grouped: dict[str, list[SpreadsheetRow]] = {}
     for row in rows:
@@ -473,10 +481,34 @@ def run_pipeline_by_source(
         for url in row.apply_links:
             source_id = source_id_for_entry(row.company_name, url)
             grouped.setdefault(source_id, []).append(replace(row, apply_links=[url]))
-    return [
-        run_pipeline(source_id, source_rows, policy=policy, now=now)
-        for source_id, source_rows in grouped.items()
-    ]
+    if not grouped:
+        return []
+    workers = _source_worker_count(max_workers)
+    if len(grouped) == 1 or workers == 1:
+        return [
+            run_pipeline(source_id, source_rows, policy=policy, now=now)
+            for source_id, source_rows in grouped.items()
+        ]
+    with ThreadPoolExecutor(max_workers=min(workers, len(grouped))) as executor:
+        futures = [
+            executor.submit(run_pipeline, source_id, source_rows, policy=policy, now=now)
+            for source_id, source_rows in grouped.items()
+        ]
+        return [future.result() for future in futures]
+
+
+def _source_worker_count(max_workers: int | None) -> int:
+    if max_workers is None:
+        value = os.environ.get(_SOURCE_WORKERS_ENV)
+        if value is None:
+            return _DEFAULT_SOURCE_WORKERS
+        try:
+            max_workers = int(value)
+        except ValueError as exc:
+            raise ValueError(f"{_SOURCE_WORKERS_ENV} must be an integer") from exc
+    if not 1 <= max_workers <= _MAX_SOURCE_WORKERS:
+        raise ValueError(f"source workers must be between 1 and {_MAX_SOURCE_WORKERS}")
+    return max_workers
 
 
 __all__ = [

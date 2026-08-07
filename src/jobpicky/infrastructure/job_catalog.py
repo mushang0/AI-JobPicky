@@ -4,7 +4,7 @@ import hashlib
 import json
 import re
 import unicodedata
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from datetime import UTC, datetime
 from typing import cast
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
@@ -41,6 +41,7 @@ from ..contracts import (
     SearchHit,
 )
 from ..contracts.normalization import (
+    normalize_company_group_key,
     normalize_company_nature,
     normalize_education,
     normalize_locations,
@@ -109,9 +110,36 @@ _SOURCE_DISPLAY_NAMES = {
     "PUBLIC_ANNOUNCEMENT": "公开招聘公告",
 }
 
+_PROVENANCE_METADATA_KEYS = frozenset(
+    {
+        "feishu_record_id",
+        "feishu_record_ids",
+        "feishu_last_modified_at",
+        "sheet_updated_at",
+        "table_row_number",
+        "source_id",
+        "source_ids",
+        "source_url",
+        "fallback_source_url",
+        "batch",
+    }
+)
+
 
 def _normalized_text(value: str) -> str:
     return _SPACE_RE.sub(" ", unicodedata.normalize("NFKC", value)).strip().casefold()
+
+
+def _identity_scope(job: CollectedJob) -> str:
+    metadata = job.metadata
+    platform = metadata.get("platform_family") or metadata.get("parser")
+    if not isinstance(platform, str) or not platform.strip():
+        platform = job.source_id
+    return f"{_normalized_text(platform)}:{normalize_company_group_key(job.company_name, metadata)}"
+
+
+def _fact_metadata(metadata: Mapping[str, object]) -> dict[str, object]:
+    return {key: value for key, value in metadata.items() if key not in _PROVENANCE_METADATA_KEYS}
 
 
 def _normalized_identifier(value: str) -> str:
@@ -147,31 +175,40 @@ def _digest(value: object) -> str:
 
 
 def _identity_key(job: CollectedJob) -> str:
+    scope = _identity_scope(job)
     if job.source_job_id:
-        evidence: object = ["source_job_id", _normalized_identifier(job.source_job_id)]
+        evidence: object = ["source_job_id", scope, _normalized_identifier(job.source_job_id)]
     elif job.detail_url:
-        evidence = ["detail_url", _normalized_url(job.detail_url)]
+        evidence = ["detail_url", scope, _normalized_url(job.detail_url)]
     else:
+        values = _normalized_filter_values(job)
         evidence = [
             "facts",
+            scope,
             _normalized_text(job.company_name),
             _normalized_text(job.title),
             sorted(_normalized_text(location) for location in normalize_locations(job.locations)),
+            values["recruitment_type"],
+            values["education_requirement"],
+            job.salary_min,
+            job.salary_max,
+            job.salary_months,
+            sorted(job.graduation_years),
+            job.description,
         ]
-    return _digest([job.source_id, evidence])
+    return _digest(evidence)
 
 
 def _content_hash(job: CollectedJob) -> str:
     values = _normalized_filter_values(job)
     return _digest(
         {
-            "source_id": job.source_id,
             "company_name": job.company_name,
             "company_nature": values["company_nature"],
             "title": job.title,
             "locations": values["locations"],
             "description": job.description,
-            "metadata": job.metadata,
+            "metadata": _fact_metadata(job.metadata),
             "detail_url": job.detail_url,
             "apply_url": job.apply_url,
             "recruitment_type": values["recruitment_type"],
@@ -227,7 +264,7 @@ def _job_values(
         "batch_tokens": split_batch_values(
             metadata.get("batch") if isinstance(metadata.get("batch"), str) else None
         ),
-        "company_group_key": _company_group_key(job.source_id, metadata, identity_key),
+        "company_group_key": normalize_company_group_key(job.company_name, metadata),
         "detail_url": job.detail_url,
         "apply_url": job.apply_url,
         "recruitment_type": normalized["recruitment_type"],
@@ -243,18 +280,6 @@ def _job_values(
         "content_hash": content_hash,
         "last_seen_run_id": run_id,
     }
-
-
-def _company_group_key(source_id: str, metadata: dict[str, object], identity_key: str) -> str:
-    record_id = metadata.get("feishu_record_id")
-    if isinstance(record_id, str) and record_id.strip():
-        return f"feishu:{record_id.strip()}"
-    row_number = metadata.get("table_row_number")
-    if isinstance(row_number, (int, float)) or (
-        isinstance(row_number, str) and row_number.strip().isdigit()
-    ):
-        return f"row:{source_id}:{str(row_number).strip()}"
-    return f"job:{identity_key}"
 
 
 def _normalized_filter_values(job: CollectedJob) -> dict[str, object]:
@@ -284,6 +309,99 @@ def _normalized_filter_values(job: CollectedJob) -> dict[str, object]:
         "locations": locations,
         "metadata": metadata,
     }
+
+
+def _string_values(value: object) -> list[str]:
+    if isinstance(value, str):
+        return [value] if value.strip() else []
+    if isinstance(value, (list, tuple)):
+        return [item.strip() for item in value if isinstance(item, str) and item.strip()]
+    return []
+
+
+def _merge_unique_strings(*values: object) -> list[str]:
+    result: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        for item in _string_values(value):
+            key = item.casefold()
+            if key not in seen:
+                seen.add(key)
+                result.append(item)
+    return result
+
+
+def _merge_metadata(
+    existing: object,
+    incoming: object,
+    *,
+    existing_source_id: object,
+    incoming_source_id: object,
+) -> dict[str, object]:
+    old = dict(existing) if isinstance(existing, Mapping) else {}
+    new = dict(incoming) if isinstance(incoming, Mapping) else {}
+    merged = {**old, **new}
+
+    old_original = old.get("_normalization_v1_original")
+    new_original = new.get("_normalization_v1_original")
+    if isinstance(old_original, Mapping) or isinstance(new_original, Mapping):
+        merged["_normalization_v1_original"] = {
+            **(dict(old_original) if isinstance(old_original, Mapping) else {}),
+            **(dict(new_original) if isinstance(new_original, Mapping) else {}),
+        }
+
+    old_record_ids = _merge_unique_strings(
+        old.get("feishu_record_ids"),
+        old.get("feishu_record_id"),
+    )
+    new_record_ids = _merge_unique_strings(
+        new.get("feishu_record_ids"),
+        new.get("feishu_record_id"),
+    )
+    record_ids = _merge_unique_strings(old_record_ids, new_record_ids)
+    if record_ids and (
+        len({item.casefold() for item in (*old_record_ids, *new_record_ids)}) > 1
+        or "feishu_record_ids" in old
+        or "feishu_record_ids" in new
+    ):
+        merged["feishu_record_ids"] = record_ids
+
+    old_source_ids = _merge_unique_strings(old.get("source_ids"), existing_source_id)
+    new_source_ids = _merge_unique_strings(new.get("source_ids"), incoming_source_id)
+    source_ids = _merge_unique_strings(
+        old_source_ids,
+        new_source_ids,
+    )
+    if source_ids and (
+        len({item.casefold() for item in (*old_source_ids, *new_source_ids)}) > 1
+        or "source_ids" in old
+        or "source_ids" in new
+    ):
+        merged["source_ids"] = source_ids
+    return merged
+
+
+def _merge_existing_values(
+    existing: Mapping[str, object], incoming: dict[str, object]
+) -> dict[str, object]:
+    values = dict(incoming)
+    values["metadata"] = _merge_metadata(
+        existing.get("metadata"),
+        incoming.get("metadata"),
+        existing_source_id=existing.get("source_id"),
+        incoming_source_id=incoming.get("source_id"),
+    )
+    values["batch_tokens"] = _merge_unique_strings(
+        existing.get("batch_tokens"), incoming.get("batch_tokens")
+    )
+    if values.get("company_nature") is None and existing.get("company_nature") is not None:
+        values["company_nature"] = existing["company_nature"]
+    if values.get("recruitment_type") is None and existing.get("recruitment_type") is not None:
+        values["recruitment_type"] = existing["recruitment_type"]
+    old_source_id = str(existing.get("source_id") or "")
+    new_source_id = str(incoming.get("source_id") or "")
+    values["source_id"] = min(filter(None, (old_source_id, new_source_id)), default=new_source_id)
+    return values
 
 
 def row_to_job_fact(row: sa.RowMapping) -> JobFact:
@@ -413,8 +531,13 @@ class PostgresJobCatalog:
                     created_count += 1
                 else:
                     job_id = existing.id
+                    values = _merge_existing_values(cast(Mapping[str, object], existing), values)
                     facts_changed = existing.content_hash != content_hash
-                    changed = facts_changed or existing.status != "OPEN"
+                    provenance_changed = any(
+                        existing.get(field) != values.get(field)
+                        for field in ("source_id", "metadata", "batch_tokens", "company_group_key")
+                    )
+                    changed = facts_changed or provenance_changed or existing.status != "OPEN"
                     if changed:
                         update_values: dict[str, object] = {
                             **values,

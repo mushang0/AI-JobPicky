@@ -17,11 +17,15 @@ from ..contracts import (
     ProfileSnapshot,
     validate_assessments,
 )
-from ..contracts.common import JobStatus
+from ..contracts.common import JobStatus, JsonObject
 from ..errors import ApplicationError
 from .evaluation_resources import load_evaluation_output_schema, load_evaluation_prompt
 
 _OUTPUT_VALIDATION_RETRIES = 1
+
+
+class _CandidateMappingValidationError(ValueError):
+    pass
 
 
 class DashScopeJobEvaluator:
@@ -57,7 +61,10 @@ class DashScopeJobEvaluator:
         candidate_ids = [candidate.job_id for candidate in candidates]
         job_by_id = {job.id: job for job in jobs}
         if len(job_by_id) != len(jobs) or any(job_id not in job_by_id for job_id in candidate_ids):
-            raise self._evaluation_error("candidate and job facts do not form a complete set")
+            raise self._evaluation_error(
+                "candidate and job facts do not form a complete set",
+                failure_kind="candidate_mapping",
+            )
 
         payload = self._build_input(
             profile,
@@ -69,14 +76,20 @@ class DashScopeJobEvaluator:
         for attempt in range(_OUTPUT_VALIDATION_RETRIES + 1):
             raw = await self._invoke_with_retries(payload, repair_hint=repair_hint)
             try:
-                response = EvaluationResponse.model_validate(self._extract_payload(raw))
-                assessments = validate_assessments(candidate_ids, response.assessments)
-                _validate_constraint_conclusions(payload, assessments)
+                raw_payload = _without_model_owned_fields(self._extract_payload(raw))
+                response = EvaluationResponse.model_validate(raw_payload)
+                try:
+                    assessments = validate_assessments(candidate_ids, response.assessments)
+                except ValueError as exc:
+                    raise _CandidateMappingValidationError(str(exc)) from exc
+                assessments = _apply_backend_constraints(payload, assessments)
                 return assessments
             except (TypeError, ValueError, ValidationError, json.JSONDecodeError) as exc:
                 if attempt == _OUTPUT_VALIDATION_RETRIES:
                     raise self._evaluation_error(
-                        "evaluator output did not match the required structure or candidate facts"
+                        "evaluator output did not match the required structure or candidate facts",
+                        failure_kind=_validation_failure_kind(exc),
+                        details={"validation_attempts": attempt + 1},
                     ) from exc
                 repair_hint = _format_validation_error(exc)
         raise AssertionError("unreachable")
@@ -107,7 +120,14 @@ class DashScopeJobEvaluator:
                 return await asyncio.wait_for(invocation, timeout=self._timeout_seconds)
             except Exception as exc:
                 if attempt + 1 >= attempts or not _is_retryable_provider_error(exc):
-                    raise self._evaluation_error("evaluator provider request failed") from exc
+                    raise self._evaluation_error(
+                        "evaluator provider request failed",
+                        failure_kind=_provider_failure_kind(exc),
+                        details={
+                            "provider_attempts": attempt + 1,
+                            "retryable": _is_retryable_provider_error(exc),
+                        },
+                    ) from exc
         raise AssertionError("unreachable")
 
     async def _ainvoke(self, model: Any, messages: list[tuple[str, str]]) -> Any:
@@ -257,12 +277,21 @@ class DashScopeJobEvaluator:
         )
 
     @staticmethod
-    def _evaluation_error(message: str) -> ApplicationError:
+    def _evaluation_error(
+        message: str,
+        *,
+        failure_kind: str | None = None,
+        details: JsonObject | None = None,
+    ) -> ApplicationError:
+        error_details: JsonObject = {"stage": "EVALUATE"}
+        if failure_kind is not None:
+            error_details["failure_kind"] = failure_kind
+        error_details.update(details or {})
         return ApplicationError(
             ErrorCode.RECOMMENDATION_FAILED,
             message,
             status_code=502,
-            details={"stage": "EVALUATE"},
+            details=error_details,
         )
 
 
@@ -280,6 +309,32 @@ def _is_retryable_provider_error(exc: Exception) -> bool:
 
 def _format_validation_error(exc: Exception) -> str:
     return " ".join(str(exc).split())[:1200]
+
+
+def _validation_failure_kind(exc: Exception) -> str:
+    if isinstance(exc, _CandidateMappingValidationError):
+        return "candidate_mapping"
+    if isinstance(exc, json.JSONDecodeError):
+        return "invalid_json"
+    if isinstance(exc, (ValidationError, TypeError)):
+        return "schema_validation"
+    return "output_validation"
+
+
+def _provider_failure_kind(exc: Exception) -> str:
+    text = str(exc).lower()
+    if isinstance(exc, TimeoutError) or "timeout" in text:
+        return "provider_timeout"
+    status = getattr(exc, "status_code", None) or getattr(exc, "status", None)
+    if isinstance(status, str) and status.isdigit():
+        status = int(status)
+    if status == 429 or "429" in text:
+        return "provider_rate_limit"
+    if isinstance(status, int) and 500 <= status <= 599:
+        return "provider_5xx"
+    if any(f"{code}" in text for code in range(500, 600)):
+        return "provider_5xx"
+    return "provider_request"
 
 
 _EDUCATION_LEVELS = {
@@ -402,38 +457,73 @@ def _constraint_checks(profile: ProfileSnapshot, job: JobFact) -> dict[str, dict
     }
 
 
-def _validate_constraint_conclusions(
+def _without_model_owned_fields(payload: Any) -> Any:
+    """Keep objective facts and repetitive evidence owned outside model output."""
+    if not isinstance(payload, dict) or not isinstance(payload.get("assessments"), list):
+        return payload
+    sanitized = dict(payload)
+    ignored_fields = {
+        "constraint_conclusions",
+        "matched_strengths",
+        "evidence",
+        "evidence_details",
+    }
+    sanitized["assessments"] = [
+        {key: value for key, value in assessment.items() if key not in ignored_fields}
+        if isinstance(assessment, dict)
+        else assessment
+        for assessment in payload["assessments"]
+    ]
+    return sanitized
+
+
+def _apply_backend_constraints(
     payload: dict[str, Any],
     assessments: Sequence[MatchAssessment],
-) -> None:
+) -> list[MatchAssessment]:
+    """Attach deterministic facts and prevent hard-constraint overrides."""
     checks_by_job = {
         str(candidate["job_id"]): candidate.get("constraint_checks", {})
         for candidate in payload.get("candidates", [])
     }
+    corrected: list[MatchAssessment] = []
     for assessment in assessments:
         checks = checks_by_job.get(assessment.job_id)
         if not isinstance(checks, dict):
+            corrected.append(
+                assessment.model_copy(
+                    update={
+                        "gaps": [gap for gap in assessment.gaps if not _is_education_gap_text(gap)]
+                    }
+                )
+            )
             continue
-        for name, conclusion in assessment.constraint_conclusions.items():
-            check = checks.get(name)
+        conclusions: dict[str, ConstraintStatus] = {}
+        has_hard_violation = False
+        for name, check in checks.items():
             if not isinstance(check, dict) or "status" not in check:
-                raise ValueError(f"unknown objective constraint: {name}")
-            fact_status = ConstraintStatus(str(check["status"]))
-            if (
-                (
-                    fact_status == ConstraintStatus.SATISFIED
-                    and conclusion == ConstraintStatus.NOT_SATISFIED
-                )
-                or (
-                    fact_status == ConstraintStatus.NOT_SATISFIED
-                    and conclusion == ConstraintStatus.SATISFIED
-                )
-                or (
-                    fact_status == ConstraintStatus.UNKNOWN
-                    and conclusion == ConstraintStatus.NOT_SATISFIED
-                )
-            ):
-                raise ValueError(f"objective constraint conflicts with job facts: {name}")
+                continue
+            status = ConstraintStatus(str(check["status"]))
+            conclusions[name] = status
+            has_hard_violation |= status == ConstraintStatus.NOT_SATISFIED
+        gaps = [gap for gap in assessment.gaps if not _is_education_gap_text(gap)]
+        corrected.append(
+            assessment.model_copy(
+                update={
+                    "matched": assessment.matched and not has_hard_violation,
+                    "constraint_conclusions": conclusions,
+                    "gaps": gaps,
+                }
+            )
+        )
+    return corrected
+
+
+def _is_education_gap_text(text: str) -> bool:
+    return any(
+        term in text
+        for term in ("学历", "教育背景", "专科", "大专", "本科", "学士", "硕士", "研究生", "博士")
+    )
 
 
 __all__ = ["DashScopeJobEvaluator"]

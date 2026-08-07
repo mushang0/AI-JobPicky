@@ -1,14 +1,16 @@
 import { useEffect, useState } from "react";
 import { BookmarkSimple, MapPin, WarningCircle, X } from "@phosphor-icons/react";
-import { Link, useSearchParams } from "react-router-dom";
+import { Link, useLocation, useSearchParams } from "react-router-dom";
 import { ApiError } from "../../shared/api/client";
 import { getApiErrorMessage } from "../../shared/api/errorMessage";
 import { jobsApi } from "../../shared/api/jobs";
 import { savedJobsApi } from "../../shared/api/savedJobs";
 import type { SavedJobView } from "../../shared/api/types";
 import { formatDate, formatJobStatus, formatSalaryRange } from "../../shared/formatting";
+import { currentPath, jobDetailPath, restoreListScroll, saveListScroll } from "../../shared/navigation";
 
 export function SavedJobsPage() {
+  const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
   const page = Number(searchParams.get("page") ?? "1");
   const [items, setItems] = useState<SavedJobView[]>([]);
@@ -16,6 +18,7 @@ export function SavedJobsPage() {
   const [state, setState] = useState<"loading" | "ready" | "empty" | "error">("loading");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [retryKey, setRetryKey] = useState(0);
+  const listPath = currentPath(location.pathname, location.search);
 
   useEffect(() => {
     let active = true;
@@ -33,6 +36,10 @@ export function SavedJobsPage() {
     return () => { active = false; };
   }, [page, retryKey]);
 
+  useEffect(() => {
+    if (state === "ready" || state === "empty") restoreListScroll(listPath);
+  }, [listPath, state]);
+
   async function removeSaved(item: SavedJobView) {
     try {
       await jobsApi.unsave(item.job.id);
@@ -44,13 +51,13 @@ export function SavedJobsPage() {
     }
   }
 
-  return <div className="saved-jobs-page"><section className="page-intro saved-jobs-intro"><div><div className="eyebrow"><BookmarkSimple size={16} />收藏岗位</div><h1>我的收藏</h1><p>收藏的岗位会显示在这里。</p></div><div className="intro-note"><BookmarkSimple size={20} /><div><strong>{state === "ready" ? items.length : "..."}</strong><span>已收藏</span></div></div></section>{errorMessage && <p className="form-error inline-page-error" role="alert">{errorMessage}</p>}{state === "loading" && <SavedJobsSkeleton />}{state === "error" && <StatePanel title="收藏岗位加载失败" description={errorMessage ?? "请稍后重试。"} actionLabel="重新加载" onAction={() => setRetryKey((current) => current + 1)} />}{state === "empty" && <StatePanel title="还没有收藏岗位" description="在岗位池或推荐结果中收藏岗位后，会显示在这里。" actionLabel="去岗位池" link="/jobs" onAction={() => undefined} />}{state === "ready" && <><section className="saved-job-list" aria-label="收藏岗位列表">{items.map((item) => <SavedJobCard key={item.job.id} item={item} onRemove={() => void removeSaved(item)} />)}</section><Pagination page={page} totalPages={totalPages} onChange={(next) => setSearchParams({ page: String(next) })} /></>}</div>;
+  return <div className="saved-jobs-page"><section className="page-intro saved-jobs-intro"><div><div className="eyebrow"><BookmarkSimple size={16} />收藏岗位</div><h1>我的收藏</h1><p>收藏的岗位会显示在这里。</p></div><div className="intro-note"><BookmarkSimple size={20} /><div><strong>{state === "ready" ? items.length : "..."}</strong><span>已收藏</span></div></div></section>{errorMessage && <p className="form-error inline-page-error" role="alert">{errorMessage}</p>}{state === "loading" && <SavedJobsSkeleton />}{state === "error" && <StatePanel title="收藏岗位加载失败" description={errorMessage ?? "请稍后重试。"} actionLabel="重新加载" onAction={() => setRetryKey((current) => current + 1)} />}{state === "empty" && <StatePanel title="还没有收藏岗位" description="在岗位池或推荐结果中收藏岗位后，会显示在这里。" actionLabel="去岗位池" link="/jobs" onAction={() => undefined} />}{state === "ready" && <><section className="saved-job-list" aria-label="收藏岗位列表">{items.map((item) => <SavedJobCard key={item.job.id} item={item} returnTo={listPath} onRemove={() => void removeSaved(item)} />)}</section><Pagination page={page} totalPages={totalPages} onChange={(next) => setSearchParams({ page: String(next) })} /></>}</div>;
 }
 
-function SavedJobCard({ item, onRemove }: { item: SavedJobView; onRemove: () => void }) {
+function SavedJobCard({ item, returnTo, onRemove }: { item: SavedJobView; returnTo: string; onRemove: () => void }) {
   const { job } = item;
   const isClosed = job.status === "CLOSED";
-  return <article className="saved-job-card"><div className="saved-job-card-topline"><span className={`detail-status ${isClosed ? "detail-status-closed" : ""}`}>{formatJobStatus(job.status)}</span><span>收藏于 {formatDate(item.saved_at)}</span></div><Link className="saved-job-link" to={`/jobs/${job.id}`}><h2>{job.title}</h2><p>{job.company_name}</p><div className="saved-job-meta"><span><MapPin size={16} />{job.locations.join("、") || "地点待确认"}</span>{job.recruitment_type && <span>{job.recruitment_type}</span>}{job.education_requirement && <span>{job.education_requirement}</span>}</div><strong>{formatSalaryRange(job.salary_min, job.salary_max, job.salary_months)}</strong></Link><button className="text-button danger-text saved-remove" type="button" onClick={onRemove}><X size={16} />取消收藏</button></article>;
+  return <article className="saved-job-card"><div className="saved-job-card-topline"><span className={`detail-status ${isClosed ? "detail-status-closed" : ""}`}>{formatJobStatus(job.status)}</span><span>收藏于 {formatDate(item.saved_at)}</span></div><Link className="saved-job-link" to={jobDetailPath(job.id, returnTo)} onClick={() => saveListScroll(returnTo)}><h2>{job.title}</h2><p>{job.company_name}</p><div className="saved-job-meta"><span><MapPin size={16} />{job.locations.join("、") || "地点待确认"}</span>{job.recruitment_type && <span>{job.recruitment_type}</span>}{job.education_requirement && <span>{job.education_requirement}</span>}</div><strong>{formatSalaryRange(job.salary_min, job.salary_max, job.salary_months)}</strong></Link><button className="text-button danger-text saved-remove" type="button" onClick={onRemove}><X size={16} />取消收藏</button></article>;
 }
 
 function Pagination({ page, totalPages, onChange }: { page: number; totalPages: number; onChange: (page: number) => void }) {

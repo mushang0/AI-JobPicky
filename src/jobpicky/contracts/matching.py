@@ -58,8 +58,8 @@ class MatchAssessment(ContractModel):
     matched: bool
     match_score: MatchScore
     reason: NonEmptyStr
-    matched_strengths: list[NonEmptyStr]
-    gaps: list[NonEmptyStr]
+    matched_strengths: list[NonEmptyStr] = Field(default_factory=list)
+    gaps: list[NonEmptyStr] = Field(default_factory=list)
     evidence: list[NonEmptyStr] = Field(default_factory=list)
     evidence_details: list[MatchEvidence] = Field(default_factory=list)
     constraint_conclusions: dict[str, ConstraintStatus] = Field(default_factory=dict)
@@ -118,13 +118,11 @@ class RecommendationJobView(ContractModel):
 
 
 class RecommendationAssessmentView(ContractModel):
-    """Frontend assessment projection; matched/job identity stay internal."""
+    """Frontend assessment projection; only summary and capability gaps are public."""
 
     match_score: MatchScore
     reason: NonEmptyStr
-    matched_strengths: list[NonEmptyStr]
-    gaps: list[NonEmptyStr]
-    evidence: list[NonEmptyStr] = Field(default_factory=list)
+    gaps: list[NonEmptyStr] = Field(default_factory=list)
 
 
 class RecommendationCardView(ContractModel):

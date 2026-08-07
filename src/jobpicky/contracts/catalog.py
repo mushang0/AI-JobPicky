@@ -288,6 +288,8 @@ class CompanyListItem(ContractModel):
     group_id: NonEmptyStr
     company_name: NonEmptyStr
     company_nature: NonEmptyStr | None = None
+    company_natures: list[NonEmptyStr] = Field(default_factory=list, max_length=10)
+    batches: list[NonEmptyStr] = Field(default_factory=list, max_length=50)
     job_titles: list[NonEmptyStr] = Field(default_factory=list, max_length=3)
     job_count: NonNegativeInt
     latest_published_at: AwareDatetime | None = None

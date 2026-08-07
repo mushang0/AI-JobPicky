@@ -30,7 +30,9 @@ from ..contracts import (
     SavedJobView,
 )
 from ..contracts.normalization import (
+    company_nature_display_value,
     normalize_city,
+    normalize_company_group_key,
     normalize_company_nature,
     normalize_education,
     normalize_recruitment_type,
@@ -193,16 +195,7 @@ class JobPoolService:
             pool_groups.add(_company_group_key(job))
         start = (query.page - 1) * query.page_size
         items = [
-            CompanyListItem(
-                group_id=group_id,
-                company_name=jobs[0].company_name,
-                company_nature=next(
-                    (job.company_nature for job in jobs if job.company_nature), None
-                ),
-                job_titles=[job.title for job in jobs[:3]],
-                job_count=len(jobs),
-                latest_published_at=jobs[0].published_at,
-            )
+            _to_company_item(group_id, jobs)
             for group_id, jobs in ordered_groups[start : start + query.page_size]
         ]
         return CompanyPoolPage(
@@ -424,15 +417,36 @@ def _batch_values(job: JobFact) -> list[str]:
 
 
 def _company_group_key(job: JobFact) -> str:
-    record_id = job.metadata.get("feishu_record_id")
-    if isinstance(record_id, str) and record_id.strip():
-        return f"feishu:{record_id.strip()}"
-    row_number = job.metadata.get("table_row_number")
-    if isinstance(row_number, (int, float)) or (
-        isinstance(row_number, str) and row_number.strip().isdigit()
-    ):
-        return f"row:{job.source_id}:{str(row_number).strip()}"
-    return f"job:{job.id}"
+    return normalize_company_group_key(job.company_name, job.metadata)
+
+
+def _company_display_name(jobs: Sequence[JobFact]) -> str:
+    for job in jobs:
+        profile_name = job.metadata.get("company_profile")
+        if isinstance(profile_name, str) and profile_name.strip():
+            return profile_name.strip()
+    return jobs[0].company_name
+
+
+def _to_company_item(group_id: str, jobs: Sequence[JobFact]) -> CompanyListItem:
+    natures = list(
+        dict.fromkeys(
+            display
+            for job in jobs
+            if (display := company_nature_display_value(job.company_nature, job.metadata))
+        )
+    )[:10]
+    batches = list(dict.fromkeys(batch for job in jobs for batch in _batch_values(job)))[:50]
+    return CompanyListItem(
+        group_id=group_id,
+        company_name=_company_display_name(jobs),
+        company_nature=natures[0] if natures else None,
+        company_natures=natures,
+        batches=batches,
+        job_titles=[job.title for job in jobs[:3]],
+        job_count=len(jobs),
+        latest_published_at=jobs[0].published_at,
+    )
 
 
 def _search_terms(query: str | None) -> list[str]:

@@ -126,7 +126,7 @@ def test_batch_filter_matches_any_token_in_a_mixed_batch() -> None:
     assert [item.id for item in filtered.items] == ["mixed"]
 
 
-def test_company_view_groups_jobs_by_feishu_record() -> None:
+def test_company_view_groups_jobs_by_real_company_and_collects_batches() -> None:
     pool = [
         (
             make_job(
@@ -160,10 +160,12 @@ def test_company_view_groups_jobs_by_feishu_record() -> None:
 
     page = asyncio.run(service.list_companies("user-1", JobListQuery(page_size=10)))
 
-    assert page.total == 2
-    assert page.pool_total == 2
-    assert page.items[0].job_count == 2
-    assert page.items[0].job_titles == ["后端工程师", "后端工程师"]
+    assert page.total == 1
+    assert page.pool_total == 1
+    assert page.items[0].group_id == "name:同一公司"
+    assert page.items[0].job_count == 3
+    assert page.items[0].batches == ["秋招", "实习"]
+    assert page.items[0].job_titles == ["后端工程师", "后端工程师", "后端工程师"]
 
 
 def test_published_date_filters_use_published_at_and_keep_unknown_separate() -> None:

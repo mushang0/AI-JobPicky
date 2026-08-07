@@ -81,6 +81,8 @@ export interface CompanyListItem {
   group_id: string;
   company_name: string;
   company_nature: string | null;
+  company_natures: string[];
+  batches: string[];
   job_titles: string[];
   job_count: number;
   latest_published_at: IsoDate | null;
@@ -214,9 +216,7 @@ export interface RecommendationCardView {
   assessment: {
     match_score: number;
     reason: string;
-    matched_strengths: string[];
     gaps: string[];
-    evidence: string[];
   };
   is_saved: boolean;
   feedback: RecommendationFeedback;

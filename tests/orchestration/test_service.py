@@ -307,6 +307,28 @@ class FakeEvaluator:
         ]
 
 
+class TrackingEvaluator(FakeEvaluator):
+    def __init__(self) -> None:
+        super().__init__()
+        self.active = 0
+        self.max_active = 0
+
+    async def evaluate(
+        self,
+        profile: ProfileSnapshot,
+        jobs: Sequence[JobFact],
+        candidates: Sequence[Candidate],
+        effective_extra_request: str | None = None,
+    ) -> list[MatchAssessment]:
+        self.active += 1
+        self.max_active = max(self.max_active, self.active)
+        try:
+            await asyncio.sleep(0.01)
+            return await super().evaluate(profile, jobs, candidates, effective_extra_request)
+        finally:
+            self.active -= 1
+
+
 def make_service(
     *,
     profiles: Sequence[ProfileSnapshot] = (),
@@ -315,6 +337,7 @@ def make_service(
     store: InMemoryRunStore | None = None,
     evaluator: FakeEvaluator | None = None,
     evaluation_batch_size: int = 10,
+    evaluation_workers: int = 2,
     candidate_limit: int = 50,
     run_in_background: bool = False,
 ) -> RecommendationRunService:
@@ -328,6 +351,7 @@ def make_service(
         recommendation_cost=100,
         candidate_limit=candidate_limit,
         evaluation_batch_size=evaluation_batch_size,
+        evaluation_workers=evaluation_workers,
         run_in_background=run_in_background,
     )
 
@@ -523,6 +547,28 @@ def test_candidate_and_result_count_never_exceeds_fifty() -> None:
     assert len(store.recommendations) == 50
 
 
+def test_evaluation_batches_run_with_bounded_concurrency_and_stable_order() -> None:
+    jobs = [make_job(id=f"job-{index}", title=f"岗位 {index}") for index in range(4)]
+    evaluator = TrackingEvaluator()
+    catalog = FakeCatalog(jobs=jobs, hits=[_hit(job.id) for job in jobs])
+    store = InMemoryRunStore()
+
+    accepted = run(
+        make_service(
+            store=store,
+            catalog=catalog,
+            evaluator=evaluator,
+            evaluation_batch_size=1,
+            evaluation_workers=2,
+        ).start("user-1", None, "key-1")
+    )
+
+    recommendations = sorted(store.recommendations.values(), key=lambda item: item.position)
+    assert evaluator.max_active == 2
+    assert [item.job_id for item in recommendations] == [f"job-{index}" for index in range(4)]
+    assert store.records[accepted.run_id].counts == {"evaluated": 4, "recommended": 4}
+
+
 def test_system_failure_refunds_once_and_persists_actual_progress() -> None:
     store = InMemoryRunStore()
     catalog = FakeCatalog(
@@ -554,6 +600,48 @@ def test_system_failure_refunds_once_and_persists_actual_progress() -> None:
     )
     assert store.balance == 10_000
     assert store.refund_count == 1
+
+
+def test_evaluation_failure_preserves_safe_batch_diagnostics() -> None:
+    class FailingEvaluator(FakeEvaluator):
+        async def evaluate(
+            self,
+            profile: ProfileSnapshot,
+            jobs: Sequence[JobFact],
+            candidates: Sequence[Candidate],
+            effective_extra_request: str | None = None,
+        ) -> list[MatchAssessment]:
+            raise ApplicationError(
+                ErrorCode.RECOMMENDATION_FAILED,
+                "provider failed",
+                status_code=502,
+                details={
+                    "stage": "EVALUATE",
+                    "failure_kind": "provider_timeout",
+                    "provider_attempts": 2,
+                    "retryable": True,
+                },
+            )
+
+    store = InMemoryRunStore()
+    job = make_job()
+    accepted = run(
+        make_service(
+            store=store,
+            catalog=FakeCatalog(jobs=[job], hits=[_hit(job.id)]),
+            evaluator=FailingEvaluator(),
+        ).start("user-1", None, "key-1")
+    )
+
+    error = store.records[accepted.run_id].error
+    assert error is not None
+    assert error.details == {
+        "stage": "EVALUATE",
+        "batch_index": 0,
+        "failure_kind": "provider_timeout",
+        "provider_attempts": 2,
+        "retryable": True,
+    }
 
 
 def test_successful_empty_run_remains_charged() -> None:

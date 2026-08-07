@@ -156,6 +156,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         recommendation_cost=settings.recommendation_cost,
         candidate_limit=settings.recommendation_candidate_limit,
         evaluation_batch_size=settings.evaluation_batch_size,
+        evaluation_workers=settings.evaluation_workers,
     )
 
     @app.middleware("http")

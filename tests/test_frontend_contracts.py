@@ -218,9 +218,7 @@ def test_recommendation_card_does_not_reuse_internal_retrieval_dto() -> None:
         assessment=RecommendationAssessmentView(
             match_score=internal.assessment.match_score,
             reason=internal.assessment.reason,
-            matched_strengths=internal.assessment.matched_strengths,
             gaps=internal.assessment.gaps,
-            evidence=internal.assessment.evidence,
         ),
         is_saved=True,
         feedback=Feedback.LIKE,

@@ -1,12 +1,13 @@
 import { useEffect, useState } from "react";
 import { ArrowLeft, ArrowSquareOut, BookmarkSimple, Briefcase, CalendarBlank, GraduationCap, MapPin, Money, WarningCircle } from "@phosphor-icons/react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import { useAuth } from "../../adapters/web/AuthProvider";
 import { ApiError } from "../../shared/api/client";
 import { getApiErrorMessage } from "../../shared/api/errorMessage";
 import { jobsApi } from "../../shared/api/jobs";
 import type { JobDetailView } from "../../shared/api/types";
 import { formatJobStatus, formatPublishedDate, formatRecommendationDeadline, formatSalaryRange } from "../../shared/formatting";
+import { currentPath, safeInternalPath } from "../../shared/navigation";
 
 type LoadState = "loading" | "ready" | "error";
 
@@ -16,6 +17,7 @@ function loginPath(returnTo: string): string {
 
 export function JobDetailPage() {
   const { jobId } = useParams<{ jobId: string }>();
+  const location = useLocation();
   const navigate = useNavigate();
   const { status: authStatus } = useAuth();
   const [job, setJob] = useState<JobDetailView | null>(null);
@@ -23,6 +25,7 @@ export function JobDetailPage() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [retryKey, setRetryKey] = useState(0);
+  const returnTo = safeInternalPath(new URLSearchParams(location.search).get("returnTo"));
 
   useEffect(() => {
     if (!jobId) return;
@@ -46,7 +49,7 @@ export function JobDetailPage() {
   async function toggleSaved() {
     if (!job) return;
     if (authStatus !== "authenticated") {
-      navigate(loginPath(`/jobs/${job.id}`));
+      navigate(loginPath(currentPath(location.pathname, location.search)));
       return;
     }
 
@@ -64,7 +67,7 @@ export function JobDetailPage() {
   if (loadState === "loading") return <DetailSkeleton />;
 
   if (loadState === "error" || !job) {
-    return <section className="state-panel detail-state" role="status"><WarningCircle size={28} /><h1>岗位详情加载失败</h1><p>{errorMessage ?? "请稍后重试。"}</p><div className="detail-state-actions"><button className="button button-primary" type="button" onClick={() => setRetryKey((current) => current + 1)}>重新加载</button><button className="button button-secondary" type="button" onClick={() => navigate(-1)}>返回岗位池</button></div></section>;
+    return <section className="state-panel detail-state" role="status"><WarningCircle size={28} /><h1>岗位详情加载失败</h1><p>{errorMessage ?? "请稍后重试。"}</p><div className="detail-state-actions"><button className="button button-primary" type="button" onClick={() => setRetryKey((current) => current + 1)}>重新加载</button><Link className="button button-secondary" to={returnTo}>返回岗位池</Link></div></section>;
   }
 
   const isExpired = job.deadline_at !== null && new Date(job.deadline_at).getTime() <= Date.now();
@@ -72,7 +75,7 @@ export function JobDetailPage() {
   const cannotApply = isClosed || isExpired;
   return (
     <div className="job-detail-page">
-      <Link className="back-link" to="/jobs"><ArrowLeft size={18} />返回岗位池</Link>
+      <Link className="back-link" to={returnTo}><ArrowLeft size={18} />返回岗位池</Link>
       <section className="detail-hero">
         <div>
           <span className={`detail-status ${cannotApply ? "detail-status-closed" : ""}`}>{cannotApply ? "已截止" : formatJobStatus(job.status)}</span>

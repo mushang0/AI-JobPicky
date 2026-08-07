@@ -368,8 +368,8 @@ API View，避免把 `fact_version`、召回分或其他内部字段泄露到页
 - `JobDetailView` 含完整 JD、详情/投递链接、生命周期状态以及 `published_at`、`deadline_at`、`first_seen_at`、
   `last_confirmed_at`、`updated_at` 等时间字段；不含 `fact_version`、去重键、Embedding 或秘密来源配置。
 - `SavedJobView` 包含 `saved_at` 与岗位列表视图，岗位状态保留以便展示已关闭或待确认岗位。
-- `JobFilterOptions` 提供当前可见岗位池的规范化城市、公司性质、来源、原始招聘批次、招聘类型、学历、届次和分页限制；`batches` 将已知的 `metadata["batch"]` 拆分为单个批次后返回。
-- `CompanyListItem` 和 `CompanyPoolPage` 是岗位池的公司视图 DTO；公司组优先使用飞书 `source_record_id`，缺失时使用稳定表格行或岗位标识兜底。
+- `JobFilterOptions` 提供当前可见岗位池的规范化城市、公司性质、来源、原始招聘批次、招聘类型、学历、届次和分页限制；`batches` 使用已保存的 `batch_tokens`（由 Feishu `metadata["batch"]` 拆分而来）。
+- `CompanyListItem` 和 `CompanyPoolPage` 是岗位池的公司视图 DTO；`group_id` 表示规范真实公司，优先复用公司画像的 `company_group`，否则使用规范化公司名。Feishu 记录 ID、表格行号和来源 URL 只作为来源证据。公司项同时返回去重后的原始 `batches` 和展示用 `company_natures`，不把规范化失败解释为“待确认”。
 - 岗位池的发布日期筛选使用 `JobListQuery.published_within_days` 或 `published_at_unknown`，只读取岗位事实的
   `published_at`，不把 `first_seen_at` 当作发布日期。
 
@@ -440,11 +440,12 @@ SALARY_MISMATCH
 | `matched` | `bool` | 是 |
 | `match_score` | `int` | 是 |
 | `reason` | `str` | 是 |
-| `matched_strengths` | `list[str]` | 是 |
 | `gaps` | `list[str]` | 是 |
-| `evidence` | `list[str]` | 否 |
-| `evidence_details` | `list[MatchEvidence]` | 否 | 岗位要求、候选人证据、匹配关系、重要性和解释 |
-| `constraint_conclusions` | `object` | 否 | 模型对客观约束的结构化结论 |
+| `constraint_conclusions` | `object` | 否 | 后端根据岗位事实补齐的客观约束结论；模型输出不具备最终裁决权 |
+
+`reason` 是面向用户的唯一匹配摘要，必须把候选人的相关能力、岗位核心要求和综合判断连成简短说明；
+`gaps` 只表达能力层面的缺口。学历、地点、招聘类型、届次、薪资和开放状态等确定性条件由后端执行，
+不要求模型生成解释。匹配优势、普通 evidence 和 evidence_details 不进入模型输出或用户卡片。
 
 `job_id` 必须来自输入候选且每批最多出现一次。评估中不得包含可覆盖 `JobFact` 的岗位字段。
 
@@ -456,7 +457,7 @@ SALARY_MISMATCH
 {
   "job": {"id": "job-id", "company_name": "某公司", "title": "软件工程师"},
   "retrieval": {"job_id": "job-id", "retrieval_score": 0.82, "sources": ["keyword", "semantic"]},
-  "assessment": {"job_id": "job-id", "matched": true, "match_score": 88, "reason": "…", "matched_strengths": [], "gaps": []}
+  "assessment": {"job_id": "job-id", "matched": true, "match_score": 88, "reason": "…", "gaps": []}
 }
 ```
 
@@ -484,14 +485,14 @@ SALARY_MISMATCH
     "deadline_at": "2026-08-31T15:59:59Z",
     "first_seen_at": "2026-07-20T08:00:00Z"
   },
-  "assessment": {"match_score": 89, "reason": "…", "matched_strengths": [], "gaps": [], "evidence": []},
+  "assessment": {"match_score": 89, "reason": "…", "gaps": []},
   "is_saved": true,
   "feedback": "LIKE"
 }
 ```
 
 推荐卡片不返回 `retrieval_score`、薪资、学历、届次、完整 JD、来源标识或 `fact_version`。卡片中的
-`RecommendationAssessmentView` 是 `MatchAssessment` 的前端投影，只保留匹配分、中文理由、优势、缺口和依据，
+`RecommendationAssessmentView` 是 `MatchAssessment` 的前端投影，只保留匹配分、中文摘要和能力缺口，
 不返回内部 `job_id` 或 `matched`。单次任务结果使用扩展的 `RecommendationResultView` 增加 `is_deleted` 和
 `deleted_at`，软删除只隐藏“全部推荐”而保留历史任务。
 
