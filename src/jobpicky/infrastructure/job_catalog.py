@@ -124,6 +124,16 @@ _PROVENANCE_METADATA_KEYS = frozenset(
         "batch",
     }
 )
+_IDENTITY_HOST_SUFFIXES = (
+    "jobs.feishu.cn",
+    "mokahr.com",
+    "zhiye.com",
+    "beisen.com",
+    "zhaopin.com",
+    "51job.com",
+    "iguopin.com",
+    "hotjob.cn",
+)
 
 
 def _normalized_text(value: str) -> str:
@@ -139,8 +149,13 @@ def _identity_scope(job: CollectedJob) -> str:
                 continue
             hostname = urlsplit(url).hostname
             if hostname:
-                platform = f"host:{hostname.casefold().rstrip('.')}"
-                break
+                hostname = hostname.casefold().rstrip(".")
+                if any(
+                    hostname == suffix or hostname.endswith(f".{suffix}")
+                    for suffix in _IDENTITY_HOST_SUFFIXES
+                ):
+                    platform = f"host:{hostname}"
+                    break
     if not isinstance(platform, str) or not platform.strip():
         platform = job.source_id
     return f"{_normalized_text(platform)}:{normalize_company_group_key(job.company_name, metadata)}"
