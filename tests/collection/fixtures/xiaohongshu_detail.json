@@ -1,0 +1,18 @@
+{
+  "success": true,
+  "statusCode": 200,
+  "data": {
+    "positionId": "20821",
+    "positionName": "数据平台工程师",
+    "positionType": "技术岗位",
+    "workplace": "杭州市",
+    "publishTime": "2026-08-07",
+    "recruitStatus": "in_recruitment",
+    "recruitType": "campus",
+    "duty": "参与数据平台服务建设与稳定性优化。",
+    "qualification": "本科及以上学历，熟悉常用数据处理技术。",
+    "education": "本科",
+    "jobType": "数据开发",
+    "jobProjectName": "校园招聘"
+  }
+}

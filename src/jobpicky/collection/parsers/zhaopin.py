@@ -21,6 +21,12 @@ _GRACE_CONFIG_RE = re.compile(r"globalData(?:\$[12])?\s*=\s*\{", re.IGNORECASE)
 _SCRIPT_RE = re.compile(r"<(?:script|link)[^>]+(?:src|href)=[\"']([^\"']+\.js[^\"']*)", re.I)
 _TITLE_RE = re.compile(r"<title[^>]*>(.*?)</title>", re.IGNORECASE | re.DOTALL)
 _CLOSED_STATUS = frozenset({"closed", "offline", "disabled", "deleted"})
+_ZHAOKAO_CUSTOM_FIELD_LABELS = {
+    "customkey3eddbdf589ec": "岗位职责",
+    "customkey19cc24ddb0c9": "学历要求",
+    "customkeyf1254700e2ff": "年龄要求",
+    "customkey7cd38e40e519": "其他说明",
+}
 
 PageFetcher = Callable[[str], tuple[str, str]]
 JsonFetcher = Callable[[str, Mapping[str, str], Mapping[str, object]], object]
@@ -214,6 +220,32 @@ def _description(value: object) -> str | None:
     return result[:_MAX_DESCRIPTION_CHARS] if result else None
 
 
+def _zhaokao_description(
+    raw: Mapping[str, object], description: str | None, education: str | None
+) -> str | None:
+    if not any(key in raw for key in _ZHAOKAO_CUSTOM_FIELD_LABELS):
+        return description
+    custom_values = {
+        label: _description(raw.get(key)) for key, label in _ZHAOKAO_CUSTOM_FIELD_LABELS.items()
+    }
+    profession = _description(raw.get("professionReq"))
+    if profession:
+        custom_values["专业要求"] = profession
+    if education:
+        custom_values["学历要求"] = education
+    if not any(custom_values.values()):
+        return description
+    sections = []
+    if description:
+        sections.append(description)
+    for label in ("岗位职责", "专业要求", "学历要求", "年龄要求", "其他说明"):
+        value = custom_values.get(label)
+        if value:
+            sections.append(f"{label}：{value}")
+    result = "\n".join(sections).strip()
+    return result[:_MAX_DESCRIPTION_CHARS] or None
+
+
 def _detail_url(source_url: str, job_id: str, candidate: object = None) -> str:
     return _valid_url(candidate) or f"https://xiaoyuan.zhaopin.com/job/{job_id}"
 
@@ -282,6 +314,7 @@ def _job_record(
     )
     education = _text(_first(raw, "education", "eduRecord", "minEducationName"))
     education = education or _text(_first(nested_base or {}, "education", "minEducationName"))
+    description = _zhaokao_description(raw, description, education)
     work_type = _text(_first(raw, "workType", "jobGroupName", "jobLevel"))
     work_type = work_type or _text(_first(nested_base or {}, "workType"))
     type_hint = " ".join(

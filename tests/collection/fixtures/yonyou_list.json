@@ -1,0 +1,39 @@
+{
+  "state": 200,
+  "type": "success",
+  "data": {
+    "positonNum": 2,
+    "pageForm": {
+      "currentPage": 1,
+      "pageSize": 12,
+      "dataCount": 2,
+      "totalPage": 1,
+      "pageData": [
+        {
+          "postId": "post-1",
+          "postName": "软件测试工程师",
+          "workPlaceStr": "北京市",
+          "educationStr": "本科及以上",
+          "publishDate": "2026-08-05 16:38:00",
+          "endDate": "2027-08-05 23:59:59",
+          "workContent": "参与测试流程建设。",
+          "serviceCondition": "熟悉软件测试基础知识。",
+          "recruitType": 1,
+          "projectName": "2027届校招",
+          "department": "技术中心"
+        },
+        {
+          "postId": "post-2",
+          "postName": "算法工程师",
+          "workPlaceStr": "上海市",
+          "educationStr": "硕士研究生及以上",
+          "publishDate": "2026-08-05 16:38:00",
+          "endDate": "2027-08-05 23:59:59",
+          "recruitType": 1,
+          "projectName": "2027届校招",
+          "department": "算法中心"
+        }
+      ]
+    }
+  }
+}

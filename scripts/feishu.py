@@ -195,7 +195,12 @@ def _print_smoke_summary(client: FeishuBitableClient, config: FeishuScriptConfig
     print("记录 ID：", [record.record_id for record in records])
 
 
-async def run_sync(config: FeishuScriptConfig, *, limit: int | None) -> None:
+async def run_sync(
+    config: FeishuScriptConfig,
+    *,
+    limit: int | None,
+    reset: bool = False,
+) -> None:
     manager = _token_manager(config)
     access_token = manager.get_access_token()
     try:
@@ -212,6 +217,22 @@ async def run_sync(config: FeishuScriptConfig, *, limit: int | None) -> None:
     state_store = PostgresFeishuSyncStateStore(session_factory)
     catalog = PostgresJobCatalog(session_factory)
     unique_records = _unique_records(records)
+    if reset:
+        source = FeishuBitableSource(config.bitable)
+        has_eligible_record = any(
+            (row := source.row_from_record(record, row_number)) is not None
+            and source.row_is_after_cutoff(row)
+            and bool(row.apply_links)
+            for row_number, record in enumerate(unique_records, start=1)
+        )
+        if not has_eligible_record:
+            await engine.dispose()
+            raise RuntimeError(
+                "reset aborted: no eligible Feishu record after the configured cutoff"
+            )
+        await catalog.reset_development_data()
+        await state_store.reset(config.bitable.app_token, config.bitable.table_id)
+        print("reset=development-job-data-and-feishu-sync-state")
     run_id = f"feishu-{uuid4()}"
     counts: Counter[str] = Counter()
 
@@ -428,6 +449,11 @@ def main() -> int:
     auth_parser.add_argument("--timeout", type=int, default=180)
     sync_parser = subparsers.add_parser("sync", help="refresh the token and ingest changed records")
     sync_parser.add_argument("--limit", type=int, default=None)
+    sync_parser.add_argument(
+        "--reset",
+        action="store_true",
+        help="读取飞书记录成功后清空开发岗位数据并强制全量重灌",
+    )
     args = parser.parse_args()
     try:
         config = FeishuScriptConfig.from_env()
@@ -436,8 +462,10 @@ def main() -> int:
         else:
             if args.limit is not None and args.limit < 1:
                 parser.error("--limit must be at least 1")
+            if args.reset and Settings.from_env().environment not in {"development", "dev", "test"}:
+                parser.error("--reset 仅允许在 development、dev 或 test 环境使用")
             with SingleProcessLock(config.lock_file):
-                asyncio.run(run_sync(config, limit=args.limit))
+                asyncio.run(run_sync(config, limit=args.limit, reset=args.reset))
         return 0
     except (FeishuApiError, FeishuAuthError, RuntimeError, ValueError) as exc:
         print(f"feishu command failed: {type(exc).__name__}: {exc}", file=sys.stderr)

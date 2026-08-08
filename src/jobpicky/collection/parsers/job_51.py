@@ -604,6 +604,8 @@ def _list_jobs(session: Job51Session, page_url: str, ctmid: str) -> list[dict[st
             break
         if page_number > 1 and len(rows) < page_size:
             break
+    if jobs:
+        _enrich_list_jobs(session, page_url, jobs, ctmid)
     return jobs
 
 
@@ -628,6 +630,49 @@ def _detail_jobs(
             seen.add(key)
             jobs.append(job)
     return jobs
+
+
+def _enrich_list_jobs(
+    session: Job51Session,
+    page_url: str,
+    jobs: list[dict[str, object]],
+    ctmid: str,
+) -> None:
+    job_ids = [
+        source_job_id
+        for job in jobs
+        if not _text(job.get("description"))
+        and (source_job_id := _text(job.get("source_job_id"))) is not None
+    ]
+    details = _detail_jobs(session, page_url, job_ids, ctmid)
+    details_by_id = {
+        str(detail["source_job_id"]): detail
+        for detail in details
+        if detail.get("source_job_id") is not None
+    }
+    for job in jobs:
+        detail = details_by_id.get(str(job.get("source_job_id")))
+        if detail is None:
+            continue
+        for key in (
+            "description",
+            "locations",
+            "detail_url",
+            "apply_url",
+            "recruitment_type",
+            "education_requirement",
+            "salary_min",
+            "salary_max",
+            "published_at",
+            "source_ref",
+        ):
+            value = detail.get(key)
+            if value not in (None, "", [], {}):
+                job[key] = value
+        job_metadata = job.get("metadata")
+        detail_metadata = detail.get("metadata")
+        if isinstance(job_metadata, dict) and isinstance(detail_metadata, Mapping):
+            job_metadata.update(detail_metadata)
 
 
 def _page_title(page: str) -> str | None:

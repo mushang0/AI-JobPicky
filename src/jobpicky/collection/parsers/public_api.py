@@ -31,6 +31,8 @@ def request_json(
     source_url: str,
     method: str,
     payload: Mapping[str, object] | None,
+    *,
+    headers: Mapping[str, str] | None = None,
 ) -> object:
     """Fetch a public JSON endpoint with bounded response and no session state."""
     normalized_method = method.upper()
@@ -41,18 +43,20 @@ def request_json(
         if payload is not None and normalized_method != "GET"
         else None
     )
+    request_headers = {
+        "Accept": "application/json",
+        "Accept-Language": "zh-CN,zh;q=0.9",
+        "Content-Type": "application/json" if body is not None else "",
+        "Origin": _origin(source_url),
+        "Referer": source_url,
+        "User-Agent": "Mozilla/5.0 (compatible; AI-JobPicky/0.1)",
+    }
+    request_headers.update(headers or {})
     request = Request(
         request_url,
         data=body,
         method=normalized_method,
-        headers={
-            "Accept": "application/json",
-            "Accept-Language": "zh-CN,zh;q=0.9",
-            "Content-Type": "application/json" if body is not None else "",
-            "Origin": _origin(source_url),
-            "Referer": source_url,
-            "User-Agent": "Mozilla/5.0 (compatible; AI-JobPicky/0.1)",
-        },
+        headers=request_headers,
     )
     with urlopen(request, timeout=_TIMEOUT_SECONDS) as response:  # noqa: S310 - public API
         raw = response.read(_MAX_RESPONSE_BYTES + 1)

@@ -61,7 +61,24 @@ def _identity(row: Mapping[str, Any]) -> str:
 
 
 def _facts_match(rows: list[Mapping[str, Any]]) -> bool:
-    return len({_content_hash(_as_collected(row)) for row in rows}) == 1
+    return (
+        len(
+            {
+                _content_hash(
+                    _as_collected(row).model_copy(
+                        update={
+                            "detail_url": None,
+                            "apply_url": None,
+                            "graduation_years": [],
+                            "metadata": {},
+                        }
+                    )
+                )
+                for row in rows
+            }
+        )
+        == 1
+    )
 
 
 def _mergeable(rows: list[Mapping[str, Any]]) -> tuple[bool, str]:
@@ -198,6 +215,14 @@ async def _merge_group(session: Any, rows: list[Mapping[str, Any]]) -> None:
     last_confirmed = max(row["last_confirmed_at"] for row in rows)
     latest = max(rows, key=lambda row: row["last_confirmed_at"])
     source_ids = sorted(str(row["source_id"]) for row in rows if row.get("source_id"))
+    graduation_years = sorted(
+        {
+            year
+            for row in rows
+            for year in (row.get("graduation_years") or [])
+            if isinstance(year, int)
+        }
+    )
     embedding = winner.get("embedding") or next(
         (row.get("embedding") for row in rows if row.get("embedding") is not None), None
     )
@@ -214,6 +239,7 @@ async def _merge_group(session: Any, rows: list[Mapping[str, Any]]) -> None:
             updated_at=max(row["updated_at"] for row in rows),
             last_seen_run_id=latest.get("last_seen_run_id"),
             status="OPEN" if any(row.get("status") == "OPEN" for row in rows) else winner["status"],
+            graduation_years=graduation_years,
             embedding=embedding,
         )
     )

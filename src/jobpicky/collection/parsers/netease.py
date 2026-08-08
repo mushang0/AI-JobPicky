@@ -2,17 +2,26 @@
 
 from __future__ import annotations
 
-import html
-import re
 from collections.abc import Mapping
-from datetime import UTC, datetime
 from urllib.parse import parse_qs, quote, urlsplit, urlunsplit
 
 from .public_api import JsonRequester
 from .public_api import request_json as _request_json
+from .public_api_support import (
+    PublicPage,
+    bind_requester,
+    collect_pages,
+    map_bounded,
+    non_negative_int,
+)
+from .public_api_support import locations as _locations
+from .public_api_support import mapping as _mapping
+from .public_api_support import published_at as _published_at
+from .public_api_support import text as _text
 
 _PAGE_SIZE = 100
 _MAX_JOBS = 500
+_MAX_WORKERS = 8
 _LIST_PATH = "/api/campuspc/position/getJobList"
 _DETAIL_PATH = "/api/campuspc/position/getJobDetails"
 _API_ORIGIN = "https://campus.163.com"
@@ -20,32 +29,11 @@ _HR_DETAIL_PATH = "/api/hr163/position/query"
 _HR_API_ORIGIN = "https://hr.163.com"
 
 
-def _text(value: object) -> str | None:
-    if value is None:
-        return None
-    text = html.unescape(re.sub(r"<[^>]+>", "\n", str(value)))
-    text = re.sub(r"[ \t]+", " ", text)
-    text = re.sub(r"\n\s*", "\n", text).strip()
-    return text or None
-
-
-def _locations(value: object) -> list[str]:
-    if isinstance(value, list):
-        return [item for child in value if (item := _text(child))]
-    return [item for item in re.split(r"[,，、/|;；\s]+", _text(value) or "") if item]
-
-
-def _mapping(value: object) -> Mapping[str, object]:
-    if not isinstance(value, Mapping):
-        raise ValueError("NetEase API response is not an object")
-    return value
-
-
 def _data(response: object) -> Mapping[str, object]:
-    root = _mapping(response)
+    root = _mapping(response, "NetEase API response is not an object")
     if root.get("code") != 200:
         raise ValueError(f"NetEase API returned code {root.get('code')!r}")
-    return _mapping(root.get("data"))
+    return _mapping(root.get("data"), "NetEase API did not return data")
 
 
 def _project_id(url: str) -> str:
@@ -56,63 +44,44 @@ def _project_id(url: str) -> str:
     return project_id
 
 
-def _count(value: object) -> int:
-    try:
-        result = int(str(value))
-    except (TypeError, ValueError) as exc:
-        raise ValueError("NetEase API did not return a valid job count") from exc
-    if result < 0:
-        raise ValueError("NetEase API returned a negative job count")
-    return result
+def _list_page(
+    project_id: str,
+    request_json: JsonRequester,
+    page: int,
+) -> PublicPage:
+    data = _data(
+        request_json(
+            f"{_API_ORIGIN}{_LIST_PATH}",
+            "GET",
+            {"projectId": project_id, "pageSize": _PAGE_SIZE, "currentPage": page},
+        )
+    )
+    raw_items = data.get("list")
+    if not isinstance(raw_items, list):
+        raise ValueError("NetEase API did not return a position list")
+    raw_page_count = data.get("pages")
+    return PublicPage(
+        total=non_negative_int(data.get("total"), "NetEase API did not return a valid job count"),
+        page_count=(
+            non_negative_int(raw_page_count, "NetEase API did not return a valid page count")
+            if raw_page_count is not None
+            else None
+        ),
+        items=[_mapping(item, "NetEase API returned an invalid position") for item in raw_items],
+    )
 
 
 def _list_jobs(
     project_id: str,
-    source_url: str,
     request_json: JsonRequester,
 ) -> tuple[list[Mapping[str, object]], int]:
-    total: int | None = None
-    items: list[Mapping[str, object]] = []
-    page = 1
-    while page <= _MAX_JOBS:
-        data = _data(
-            request_json(
-                f"{_API_ORIGIN}{_LIST_PATH}",
-                "GET",
-                {"projectId": project_id, "pageSize": _PAGE_SIZE, "currentPage": page},
-            )
-        )
-        if total is None:
-            total = _count(data.get("total"))
-            if total > _MAX_JOBS:
-                raise ValueError(f"NetEase API returned {total} jobs, above the safe limit")
-        page_items = data.get("list")
-        if not isinstance(page_items, list):
-            raise ValueError("NetEase API did not return a position list")
-        mapped_items = [_mapping(item) for item in page_items if isinstance(item, Mapping)]
-        if not mapped_items and len(items) < total:
-            raise ValueError("NetEase API returned an incomplete page")
-        items.extend(mapped_items)
-        if len(items) >= total:
-            return items[:total], total
-        page += 1
-    raise ValueError("NetEase API pagination exceeded the safe page limit")
-
-
-def _published_at(value: object) -> datetime | None:
-    text = _text(value)
-    if not text:
-        return None
-    try:
-        if text.isdigit():
-            timestamp = float(text)
-            if timestamp > 10_000_000_000:
-                timestamp /= 1000
-            return datetime.fromtimestamp(timestamp, tz=UTC)
-        parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
-        return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
-    except (ValueError, OverflowError, OSError):
-        return None
+    return collect_pages(
+        lambda page: _list_page(project_id, request_json, page),
+        source="NetEase",
+        max_jobs=_MAX_JOBS,
+        max_pages=_MAX_JOBS // _PAGE_SIZE + 1,
+        job_id=lambda item: _text(item.get("id")),
+    )
 
 
 def _recruitment_type(value: str | None) -> str | None:
@@ -133,10 +102,13 @@ def _parse_hr_detail(url: str, request_json: JsonRequester) -> list[dict[str, ob
     if not source_job_id or not source_job_id.isdigit():
         raise ValueError("NetEase HR URL has no numeric position id")
     endpoint = f"{_HR_API_ORIGIN}{_HR_DETAIL_PATH}"
-    root = _mapping(request_json(endpoint, "GET", {"id": source_job_id}))
+    root = _mapping(
+        request_json(endpoint, "GET", {"id": source_job_id}),
+        "NetEase HR API response is not an object",
+    )
     if root.get("code") != 200:
         raise ValueError(f"NetEase HR API returned code {root.get('code')!r}")
-    detail = _mapping(root.get("data"))
+    detail = _mapping(root.get("data"), "NetEase HR API did not return data")
     title = _text(detail.get("name"))
     description = "\n".join(
         value
@@ -271,14 +243,16 @@ def _job(
 
 def parse(url: str, request_json: JsonRequester | None = None) -> list[dict[str, object]]:
     """Collect all public NetEase positions for a project page."""
-    requester = request_json or (
-        lambda endpoint, method, payload: _request_json(endpoint, url, method, payload)
-    )
+    requester = bind_requester(url, request_json, _request_json)
     if (urlsplit(url).hostname or "").casefold().endswith("hr.163.com"):
         return _parse_hr_detail(url, requester)
     project_id = _project_id(url)
-    items, total = _list_jobs(project_id, url, requester)
-    return [_job(item, project_id, url, requester, total) for item in items]
+    items, total = _list_jobs(project_id, requester)
+    return map_bounded(
+        items,
+        lambda item: _job(item, project_id, url, requester, total),
+        _MAX_WORKERS,
+    )
 
 
 __all__ = ["parse"]

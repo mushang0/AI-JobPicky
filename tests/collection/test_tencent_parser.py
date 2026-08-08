@@ -50,3 +50,80 @@ def test_tencent_parser_rejects_missing_description() -> None:
 
     with pytest.raises(ValueError, match="no public description"):
         parse("https://join.qq.com/post.html?query=p_14", request)
+
+
+def test_tencent_parser_reads_qingyun_topic_jd_fields() -> None:
+    list_response = {
+        "status": 0,
+        "data": {
+            "count": 1,
+            "positionList": [
+                {
+                    "postId": "topic-post-001",
+                    "positionTitle": "腾讯营销—大模型推荐研究",
+                    "projectName": "青云计划-应届生",
+                    "workCities": "上海",
+                }
+            ],
+        },
+    }
+    detail_response = {
+        "status": 0,
+        "data": {
+            "postId": "topic-post-001",
+            "title": "腾讯营销—大模型推荐研究",
+            "desc": "",
+            "request": "",
+            "workCityList": ["上海"],
+            "topicDetail": "负责推荐模型和 Agent 研究。",
+            "topicRequirement": "硕士及以上，熟悉深度学习框架。",
+        },
+    }
+
+    def request(endpoint: str, method: str, _payload: object) -> object:
+        if endpoint.endswith("/searchPosition"):
+            assert method == "POST"
+            return list_response
+        assert endpoint.endswith("postId=topic-post-001")
+        assert method == "GET"
+        return detail_response
+
+    jobs = parse("https://join.qq.com/post.html?query=p_14", request, max_workers=1)
+
+    assert jobs[0]["description"] == ("负责推荐模型和 Agent 研究。\n硕士及以上，熟悉深度学习框架。")
+
+
+def test_tencent_parser_skips_explicitly_closed_positions() -> None:
+    list_response = {
+        "status": 0,
+        "data": {
+            "count": 2,
+            "positionList": [
+                {"postId": "open-001", "positionTitle": "后台开发"},
+                {"postId": "closed-001", "positionTitle": "已下架岗位"},
+            ],
+        },
+    }
+    open_detail = {
+        "status": 0,
+        "data": {
+            "postId": "open-001",
+            "desc": "负责服务端开发。",
+            "request": "熟悉一种编程语言。",
+            "workCityList": ["深圳"],
+        },
+    }
+    closed_detail = {"status": 404, "message": "岗位已下架", "data": None}
+
+    def request(endpoint: str, method: str, _payload: object) -> object:
+        if endpoint.endswith("/searchPosition"):
+            assert method == "POST"
+            return list_response
+        assert method == "GET"
+        return closed_detail if "closed-001" in endpoint else open_detail
+
+    jobs = parse("https://join.qq.com/post.html?query=p_14", request, max_workers=1)
+
+    assert len(jobs) == 1
+    metadata = cast(dict[str, object], jobs[0]["metadata"])
+    assert metadata["closed_position_count"] == 1

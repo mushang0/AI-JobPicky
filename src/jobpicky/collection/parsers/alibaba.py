@@ -2,17 +2,25 @@
 
 from __future__ import annotations
 
-import html
 import json
 import re
 from collections.abc import Mapping
-from concurrent.futures import ThreadPoolExecutor
-from datetime import UTC, datetime
 from http.cookiejar import CookieJar
 from urllib.parse import parse_qs, quote, unquote, urlencode, urlsplit, urlunsplit
 from urllib.request import HTTPCookieProcessor, Request, build_opener
 
 from .public_api import JsonRequester
+from .public_api_support import (
+    PublicPage,
+    collect_pages,
+    map_bounded,
+    non_negative_int,
+)
+from .public_api_support import locations as _locations
+from .public_api_support import mapping as _mapping
+from .public_api_support import origin as _origin
+from .public_api_support import published_at as _published_at
+from .public_api_support import text as _text
 
 _PAGE_SIZE = 100
 _MAX_JOBS = 500
@@ -29,47 +37,11 @@ _FILTER_ALIASES = {
 }
 
 
-def _origin(url: str) -> str:
-    parts = urlsplit(url)
-    return urlunsplit((parts.scheme, parts.netloc, "", "", ""))
-
-
-def _text(value: object) -> str | None:
-    if value is None:
-        return None
-    text = html.unescape(re.sub(r"<[^>]+>", "\n", str(value)))
-    text = re.sub(r"[ \t]+", " ", text)
-    text = re.sub(r"\n\s*", "\n", text).strip()
-    return text or None
-
-
-def _locations(value: object) -> list[str]:
-    if isinstance(value, list):
-        return [item for child in value if (item := _text(child))]
-    return [item for item in re.split(r"[,，、/|;；\s]+", _text(value) or "") if item]
-
-
-def _mapping(value: object, message: str) -> Mapping[str, object]:
-    if not isinstance(value, Mapping):
-        raise ValueError(message)
-    return value
-
-
 def _content(response: object) -> Mapping[str, object]:
     root = _mapping(response, "Alibaba API response is not an object")
     if str(root.get("success")).lower() != "true":
         raise ValueError(f"Alibaba API returned failure {root.get('errorMsg')!r}")
     return _mapping(root.get("content"), "Alibaba API did not return content")
-
-
-def _count(value: object) -> int:
-    try:
-        result = int(str(value))
-    except (TypeError, ValueError) as exc:
-        raise ValueError("Alibaba API did not return a valid job count") from exc
-    if result < 0:
-        raise ValueError("Alibaba API returned a negative job count")
-    return result
 
 
 def _batch_id(url: str) -> int:
@@ -131,61 +103,36 @@ def _list_payload(url: str, page: int) -> dict[str, object]:
     return payload
 
 
+def _list_page(
+    url: str,
+    request_json: JsonRequester,
+    page: int,
+) -> PublicPage:
+    content = _content(
+        request_json(f"{_origin(url)}{_LIST_PATH}", "POST", _list_payload(url, page))
+    )
+    raw_items = content.get("datas")
+    if not isinstance(raw_items, list):
+        raise ValueError("Alibaba API did not return a position list")
+    return PublicPage(
+        total=non_negative_int(
+            content.get("totalCount"), "Alibaba API did not return a valid job count"
+        ),
+        items=[_mapping(item, "Alibaba API returned an invalid position") for item in raw_items],
+    )
+
+
 def _list_jobs(
     url: str,
     request_json: JsonRequester,
 ) -> tuple[list[Mapping[str, object]], int]:
-    total: int | None = None
-    items: list[Mapping[str, object]] = []
-    seen_ids: set[str] = set()
-    page = 1
-    while page <= _MAX_JOBS // _PAGE_SIZE + 1:
-        content = _content(
-            request_json(f"{_origin(url)}{_LIST_PATH}", "POST", _list_payload(url, page))
-        )
-        if total is None:
-            total = _count(content.get("totalCount"))
-            if total > _MAX_JOBS:
-                raise ValueError(f"Alibaba API returned {total} jobs, above the safe limit")
-            if total == 0:
-                return [], 0
-        raw_items = content.get("datas")
-        if raw_items is None and total == 0:
-            return [], 0
-        if not isinstance(raw_items, list):
-            raise ValueError("Alibaba API did not return a position list")
-        mapped_items = [
-            _mapping(item, "Alibaba API returned an invalid position") for item in raw_items
-        ]
-        new_items = 0
-        for item in mapped_items:
-            source_job_id = _text(item.get("id"))
-            if source_job_id and source_job_id not in seen_ids:
-                seen_ids.add(source_job_id)
-                items.append(item)
-                new_items += 1
-        if not mapped_items or new_items == 0:
-            raise ValueError("Alibaba API returned an incomplete or repeated page")
-        if len(items) >= total:
-            return items[:total], total
-        page += 1
-    raise ValueError("Alibaba API pagination exceeded the safe page limit")
-
-
-def _published_at(value: object) -> datetime | None:
-    text = _text(value)
-    if not text:
-        return None
-    try:
-        if text.isdigit():
-            timestamp = float(text)
-            if timestamp > 10_000_000_000:
-                timestamp /= 1000
-            return datetime.fromtimestamp(timestamp, tz=UTC)
-        parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
-        return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
-    except (ValueError, OverflowError, OSError):
-        return None
+    return collect_pages(
+        lambda page: _list_page(url, request_json, page),
+        source="Alibaba",
+        max_jobs=_MAX_JOBS,
+        max_pages=_MAX_JOBS // _PAGE_SIZE + 1,
+        job_id=lambda item: _text(item.get("id")),
+    )
 
 
 def _recruitment_type(*values: str) -> str | None:
@@ -352,13 +299,16 @@ def parse(
     if not 1 <= max_workers <= _MAX_WORKERS:
         raise ValueError(f"max_workers must be between 1 and {_MAX_WORKERS}")
     client = _AlibabaClient(url) if request_json is None else None
-    requester = request_json or client.request  # type: ignore[union-attr]
+    if request_json is not None:
+        requester = request_json
+    else:
+        assert client is not None
+        requester = client.request
     direct_id = _detail_parts(url)
     if direct_id is not None:
         return [_job({"id": direct_id}, url, requester, 1)]
     items, total = _list_jobs(url, requester)
-    with ThreadPoolExecutor(max_workers=min(max_workers, len(items) or 1)) as executor:
-        return list(executor.map(lambda item: _job(item, url, requester, total), items))
+    return map_bounded(items, lambda item: _job(item, url, requester, total), max_workers)
 
 
 __all__ = ["parse"]

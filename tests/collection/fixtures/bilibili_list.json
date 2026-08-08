@@ -1,0 +1,28 @@
+{
+  "code": 0,
+  "data": {
+    "list": [
+      {
+        "id": 29758,
+        "positionName": "海外招聘实习生",
+        "positionDescription": "工作职责：支持招聘工作。\n工作要求：本科及以上。",
+        "positionTypeName": "实习",
+        "workLocation": "上海",
+        "pushTime": "2026-08-07 15:18:48",
+        "recruitType": 0
+      },
+      {
+        "id": 29759,
+        "positionName": "后端开发工程师",
+        "positionDescription": "",
+        "positionTypeName": "全职",
+        "workLocation": "深圳",
+        "recruitType": 1
+      }
+    ],
+    "pages": 1,
+    "size": 2,
+    "total": 2
+  },
+  "message": "success"
+}

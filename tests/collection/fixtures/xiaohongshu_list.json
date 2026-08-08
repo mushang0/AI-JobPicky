@@ -1,0 +1,32 @@
+{
+  "success": true,
+  "statusCode": 200,
+  "data": {
+    "pageNum": 1,
+    "pageSize": 100,
+    "total": 2,
+    "totalPage": 1,
+    "list": [
+      {
+        "positionId": "20820",
+        "positionName": "【27届实习】Product Engineer 产品工程师",
+        "workplace": "北京市，上海市",
+        "publishTime": "2026-08-08",
+        "recruitStatus": "in_recruitment",
+        "duty": "负责跨境电商产品的工程实现。",
+        "qualification": "计算机相关专业，2027届及以后毕业。",
+        "jobType": "后端开发",
+        "jobProjectName": ""
+      },
+      {
+        "positionId": "20821",
+        "positionName": "数据平台工程师",
+        "workplace": "杭州市",
+        "publishTime": "2026-08-07",
+        "recruitStatus": "in_recruitment",
+        "jobType": "数据开发",
+        "jobProjectName": "校园招聘"
+      }
+    ]
+  }
+}

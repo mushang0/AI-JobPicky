@@ -144,6 +144,7 @@ _RECRUITMENT_MARKERS = (
 _DISCOVERY_ROUTE_RE = re.compile(
     r"(?P<quote>[\"'`])(?P<value>(?:https?:)?//[^\"'`\s]+|/[^\"'`\s]+)(?P=quote)"
 )
+_NEXT_FLIGHT_PUSH_RE = re.compile(r"self\.__next_f\.push\(\[\s*1\s*,")
 _DISCOVERY_BASE_RE = re.compile(
     r"[\"']?(?:apiPrefix|baseURL|baseUrl|publicBaseUrl)[\"']?\s*[:=]\s*[\"'`]([^\"'`]+)"
 )
@@ -304,6 +305,8 @@ def fetch_html(url: str) -> str:
 def _text(value: object) -> str | None:
     if value is None:
         return None
+    if isinstance(value, list):
+        value = " ".join(part for item in value if (part := _text(item)))
     if isinstance(value, str) and "<" in value and ">" in value:
         parser = _TextParser()
         parser.feed(value)
@@ -435,8 +438,67 @@ def _recruitment_type(*values: object) -> str | None:
         return "实习"
     if any(marker in text for marker in ("社会招聘", "社会招募", "社招")):
         return "社招"
-    if any(marker in text for marker in ("校园招聘", "校园", "校招", "秋招", "春招")):
+    if any(marker in text for marker in ("校园招聘", "校园", "校招", "秋招", "春招", "campus")):
         return "校招"
+    return None
+
+
+def _next_flight_values(scripts: list[tuple[str | None, str]]) -> list[object]:
+    values: list[object] = []
+    decoder = json.JSONDecoder()
+    for _script_type, body in scripts:
+        for match in _NEXT_FLIGHT_PUSH_RE.finditer(body):
+            try:
+                payload, _ = decoder.raw_decode(body[match.end() :])
+            except json.JSONDecodeError:
+                continue
+            if not isinstance(payload, str) or ":" not in payload:
+                continue
+            try:
+                value, _ = decoder.raw_decode(payload.split(":", 1)[1])
+            except json.JSONDecodeError:
+                continue
+            values.append(value)
+    return values
+
+
+def _job_description(item: Mapping[str, object]) -> str | None:
+    direct = _text(
+        _first(
+            item,
+            (
+                "description",
+                "jobDescription",
+                "jobDesc",
+                "jobDetail",
+                "detail",
+                "jobRequire",
+                "duty",
+            ),
+        )
+    )
+    if direct:
+        return direct
+    return _text(
+        [
+            item.get("summary"),
+            item.get("responsibility"),
+            item.get("responsibilities"),
+            item.get("requirements"),
+            item.get("highlights"),
+        ]
+    )
+
+
+def _next_flight_detail_url(item: Mapping[str, object], page_url: str) -> str | None:
+    slug = _text(item.get("slug"))
+    if not slug:
+        return None
+    path = urlsplit(page_url).path.rstrip("/")
+    if path.casefold().endswith("/job-search"):
+        return urljoin(page_url, f"jobs/{quote(slug, safe='')}")
+    if re.search(r"/join-us/jobs/[^/]+$", path, re.IGNORECASE):
+        return urlunsplit((*urlsplit(page_url)[:4], ""))
     return None
 
 
@@ -465,6 +527,7 @@ def _json_values(page: str, scripts: list[tuple[str | None, str]]) -> list[objec
         except json.JSONDecodeError:
             continue
         values.append(value)
+    values.extend(_next_flight_values(scripts))
     return values
 
 
@@ -483,9 +546,10 @@ def _record_from_mapping(
         return None
     if not json_ld and not any(key.casefold() in _JOB_SIGNAL_KEYS for key in item):
         return None
-    description = _text(_first(item, _DESCRIPTION_KEYS))
+    description = _job_description(item)
     identifier = _identifier(_first(item, _ID_KEYS))
     detail_url = _url(_first(item, _DETAIL_KEYS), page_url)
+    detail_url = detail_url or _next_flight_detail_url(item, page_url)
     if json_ld:
         identifier = identifier or _identifier(item.get("identifier"))
         detail_url = detail_url or _url(item.get("url"), page_url)
@@ -537,6 +601,7 @@ def _record_from_mapping(
             item.get("employmentType"),
             item.get("jobType"),
             item.get("positionType"),
+            item.get("recruitmentType"),
             item.get("recruitment_type"),
             item.get("job_mode_name"),
         ),

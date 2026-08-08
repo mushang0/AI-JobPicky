@@ -1,0 +1,17 @@
+{
+  "success": true,
+  "body": {
+    "publishId": 9070,
+    "reqId": 2443,
+    "positionName": "解决方案工程师",
+    "workContent": "参与客户解决方案设计与落地。",
+    "qualification": "2027届毕业生，本科及以上学历，具备良好的沟通能力。",
+    "education": "本科",
+    "requirementVoList": [
+      {"workCityCode": "44030", "workCity": "广东省-深圳市"}
+    ],
+    "jobDirection": "解决方案方向",
+    "jobCategory": "解决方案类",
+    "positionDept": "京东物流"
+  }
+}

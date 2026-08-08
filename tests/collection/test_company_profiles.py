@@ -80,6 +80,33 @@ def test_shared_recruitment_host_requires_company_alias() -> None:
             "保融科技",
             "moka-careers",
         ),
+        (
+            "https://careers.oppo.com/university/oppo/campus/post",
+            "OPPO",
+            "oppo-careers",
+        ),
+        ("https://campus.jd.com", "京东", "jd-campus"),
+        ("https://outreach.didichuxing.com/elite/", "滴滴", "didi-careers"),
+        (
+            "https://job.xiaohongshu.com/campus/position?campusRecruitTypes=term_intern",
+            "小红书",
+            "xiaohongshu-careers",
+        ),
+        (
+            "https://job.zte.com.cn/cn/campus-recruitment/Recruitment_positions/freshstudent.html",
+            "中兴通讯",
+            "zte-careers",
+        ),
+        (
+            "https://career.yonyou.com/SU67ac41886202cc7916ae3029/pb/school.html",
+            "用友",
+            "yonyou-careers",
+        ),
+        (
+            "https://apply.careers.dji.com/campus-recruitment/dji/143359",
+            "DJI",
+            "moka-careers",
+        ),
     ],
 )
 def test_custom_domains_reuse_verified_platform_families(

@@ -88,6 +88,26 @@ def test_company_recruitment_parser_is_attempted_before_fallback(monkeypatch) ->
     assert result.batch.items[0].metadata["collection_mode"] == "PARSED"
 
 
+def test_trusted_parsed_job_without_description_is_accepted(monkeypatch) -> None:
+    monkeypatch.setitem(
+        pipeline.PARSERS,
+        COMPANY_RECRUITMENT_SITE,
+        lambda _: [{"source_job_id": "job-1", "title": "真实岗位"}],
+    )
+    result = pipeline.run_pipeline(
+        "source-1",
+        [make_row("https://jobs.ecoflow.com/602892/position/list")],
+        now=NOW,
+    )
+
+    assert result.unsupported == []
+    assert result.batch.complete is True
+    assert len(result.batch.items) == 1
+    assert result.batch.items[0].title == "真实岗位"
+    assert result.batch.items[0].description is None
+    assert result.batch.items[0].metadata["collection_mode"] == "PARSED"
+
+
 def test_bad_parsed_title_falls_back_to_table(monkeypatch) -> None:
     monkeypatch.setitem(
         pipeline.PARSERS,
@@ -142,6 +162,82 @@ def test_space_separated_parser_title_falls_back_to_distinct_table_jobs(monkeypa
     assert all(
         item.metadata["quality_reasons"] == ["MULTI_JOB_TITLE"] for item in result.batch.items
     )
+
+
+def test_mixed_language_parser_title_keeps_internal_space(monkeypatch) -> None:
+    monkeypatch.setitem(
+        pipeline.PARSERS,
+        BEISEN,
+        lambda _: [
+            {
+                "source_job_id": "job-1",
+                "title": "测试 Infra 工程师（深圳）",
+                "description": "公开 JD",
+            }
+        ],
+    )
+    result = pipeline.run_pipeline(
+        "source-1",
+        [make_row("https://acme.zhiye.com/campus/jobs")],
+        now=NOW,
+    )
+
+    assert result.unsupported == []
+    assert result.batch.complete is True
+    assert len(result.batch.items) == 1
+    assert result.batch.items[0].title == "测试 Infra 工程师（深圳）"
+    assert result.batch.items[0].description == "公开 JD"
+    assert result.batch.items[0].metadata["collection_mode"] == "PARSED"
+
+
+def test_bilingual_parser_title_keeps_line_break(monkeypatch) -> None:
+    monkeypatch.setitem(
+        pipeline.PARSERS,
+        BEISEN,
+        lambda _: [
+            {
+                "source_job_id": "job-1",
+                "title": "Creator Operations -Overseas\n海外创作者运营【2027届】",
+                "description": "公开 JD",
+            }
+        ],
+    )
+    result = pipeline.run_pipeline(
+        "source-1",
+        [make_row("https://acme.zhiye.com/campus/jobs")],
+        now=NOW,
+    )
+
+    assert result.unsupported == []
+    assert result.batch.complete is True
+    assert len(result.batch.items) == 1
+    assert result.batch.items[0].title == "Creator Operations -Overseas\n海外创作者运营【2027届】"
+    assert result.batch.items[0].metadata["collection_mode"] == "PARSED"
+
+
+def test_internal_enumeration_in_one_parser_title_is_not_split(monkeypatch) -> None:
+    monkeypatch.setitem(
+        pipeline.PARSERS,
+        BEISEN,
+        lambda _: [
+            {
+                "source_job_id": "job-1",
+                "title": "2027未来精英-自动驾驶中智能体的行为理解、预测和规划",
+                "description": "公开 JD",
+            }
+        ],
+    )
+    result = pipeline.run_pipeline(
+        "source-1",
+        [make_row("https://acme.zhiye.com/campus/jobs")],
+        now=NOW,
+    )
+
+    assert result.unsupported == []
+    assert result.batch.complete is True
+    assert len(result.batch.items) == 1
+    assert result.batch.items[0].title == "2027未来精英-自动驾驶中智能体的行为理解、预测和规划"
+    assert result.batch.items[0].metadata["collection_mode"] == "PARSED"
 
 
 def test_unsafe_delimited_parser_title_is_not_accepted(monkeypatch) -> None:

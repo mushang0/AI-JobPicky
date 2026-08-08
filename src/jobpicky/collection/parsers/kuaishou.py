@@ -2,15 +2,23 @@
 
 from __future__ import annotations
 
-import html
-import re
 from collections.abc import Mapping
-from concurrent.futures import ThreadPoolExecutor
-from datetime import UTC, datetime
 from urllib.parse import parse_qs, quote, urlsplit, urlunsplit
 
 from .public_api import JsonRequester
 from .public_api import request_json as _request_json
+from .public_api_support import (
+    PublicPage,
+    bind_requester,
+    collect_pages,
+    map_bounded,
+    non_negative_int,
+)
+from .public_api_support import locations as _locations
+from .public_api_support import mapping as _mapping
+from .public_api_support import origin as _origin
+from .public_api_support import published_at as _published_at
+from .public_api_support import text as _text
 
 _PAGE_SIZE = 100
 _MAX_JOBS = 500
@@ -20,41 +28,11 @@ _LIST_PATH = "/recruit/campus/e/api/v1/open/positions/simple"
 _DETAIL_PATH = "/recruit/campus/e/api/v1/open/positions/find"
 
 
-def _origin(url: str) -> str:
-    parts = urlsplit(url)
-    return urlunsplit((parts.scheme, parts.netloc, "", "", ""))
-
-
-def _text(value: object) -> str | None:
-    if value is None:
-        return None
-    text = html.unescape(re.sub(r"<[^>]+>", "\n", str(value)))
-    text = re.sub(r"[ \t]+", " ", text)
-    text = re.sub(r"\n\s*", "\n", text).strip()
-    return text or None
-
-
-def _mapping(value: object, message: str) -> Mapping[str, object]:
-    if not isinstance(value, Mapping):
-        raise ValueError(message)
-    return value
-
-
 def _result(response: object) -> Mapping[str, object]:
     root = _mapping(response, "Kuaishou API response is not an object")
     if str(root.get("code")) != "0":
         raise ValueError(f"Kuaishou API returned code {root.get('code')!r}")
     return _mapping(root.get("result"), "Kuaishou API did not return result")
-
-
-def _count(value: object, field: str) -> int:
-    try:
-        result = int(str(value))
-    except (TypeError, ValueError) as exc:
-        raise ValueError(f"Kuaishou API did not return a valid {field}") from exc
-    if result < 0:
-        raise ValueError(f"Kuaishou API returned a negative {field}")
-    return result
 
 
 def _route_and_query(url: str) -> tuple[str, dict[str, list[str]]]:
@@ -111,82 +89,39 @@ def _source_job_id(item: Mapping[str, object]) -> str | None:
     return _text(item.get("id")) or _text(item.get("positionId"))
 
 
+def _list_page(
+    url: str,
+    request_json: JsonRequester,
+    page: int,
+) -> PublicPage:
+    result = _result(request_json(f"{_origin(url)}{_LIST_PATH}", "POST", _list_payload(url, page)))
+    total = non_negative_int(result.get("total"), "Kuaishou API did not return a valid job count")
+    raw_items = result.get("list")
+    if not isinstance(raw_items, list):
+        raise ValueError("Kuaishou API did not return a position list")
+    raw_pages = result.get("pages")
+    return PublicPage(
+        total=total,
+        page_count=(
+            non_negative_int(raw_pages, "Kuaishou API did not return a valid page count")
+            if raw_pages is not None
+            else None
+        ),
+        items=[_mapping(item, "Kuaishou API returned an invalid position") for item in raw_items],
+    )
+
+
 def _list_jobs(
     url: str,
     request_json: JsonRequester,
 ) -> tuple[list[Mapping[str, object]], int]:
-    total: int | None = None
-    reported_pages: int | None = None
-    items: list[Mapping[str, object]] = []
-    seen_ids: set[str] = set()
-    page = 1
-    max_pages = _MAX_JOBS // _PAGE_SIZE + 1
-    while page <= max_pages:
-        result = _result(
-            request_json(f"{_origin(url)}{_LIST_PATH}", "POST", _list_payload(url, page))
-        )
-        if total is None:
-            total = _count(result.get("total"), "job count")
-            if total > _MAX_JOBS:
-                raise ValueError(f"Kuaishou API returned {total} jobs, above the safe limit")
-            raw_pages = result.get("pages")
-            if raw_pages is not None:
-                reported_pages = _count(raw_pages, "page count")
-            if total == 0:
-                return [], 0
-        raw_items = result.get("list")
-        if not isinstance(raw_items, list):
-            raise ValueError("Kuaishou API did not return a position list")
-        mapped_items = [
-            _mapping(item, "Kuaishou API returned an invalid position") for item in raw_items
-        ]
-        new_items = 0
-        for item in mapped_items:
-            source_job_id = _source_job_id(item)
-            if not source_job_id:
-                raise ValueError("Kuaishou API returned a position without an id")
-            if source_job_id not in seen_ids:
-                seen_ids.add(source_job_id)
-                items.append(item)
-                new_items += 1
-        if len(items) >= total:
-            return items[:total], total
-        if not mapped_items or new_items == 0:
-            raise ValueError("Kuaishou API returned an incomplete or repeated page")
-        if reported_pages is not None and page >= reported_pages:
-            raise ValueError(f"Kuaishou API returned {len(items)} of {total} jobs")
-        page += 1
-    raise ValueError("Kuaishou API pagination exceeded the safe page limit")
-
-
-def _locations(value: object) -> list[str]:
-    if isinstance(value, list):
-        locations: list[str] = []
-        for child in value:
-            if isinstance(child, Mapping):
-                location = _text(child.get("name") or child.get("label"))
-            else:
-                location = _text(child)
-            if location:
-                locations.append(location)
-        return locations
-    return [item for item in re.split(r"[,，、/|;；\s]+", _text(value) or "") if item]
-
-
-def _published_at(value: object) -> datetime | None:
-    text = _text(value)
-    if not text:
-        return None
-    try:
-        if text.isdigit():
-            timestamp = float(text)
-            if timestamp > 10_000_000_000:
-                timestamp /= 1000
-            return datetime.fromtimestamp(timestamp, tz=UTC)
-        parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
-        return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
-    except (ValueError, OverflowError, OSError):
-        return None
+    return collect_pages(
+        lambda page: _list_page(url, request_json, page),
+        source="Kuaishou",
+        max_jobs=_MAX_JOBS,
+        max_pages=_MAX_JOBS // _PAGE_SIZE + 1,
+        job_id=_source_job_id,
+    )
 
 
 def _recruitment_type(*values: object) -> str | None:
@@ -327,15 +262,12 @@ def parse(
     """Collect all public Kuaishou positions for a campus list or detail page."""
     if not 1 <= max_workers <= _MAX_WORKERS:
         raise ValueError(f"max_workers must be between 1 and {_MAX_WORKERS}")
-    requester = request_json or (
-        lambda endpoint, method, payload: _request_json(endpoint, url, method, payload)
-    )
+    requester = bind_requester(url, request_json, _request_json)
     direct_id = _detail_id(url)
     if direct_id is not None:
         return [_job({"id": direct_id}, url, requester, 1)]
     items, total = _list_jobs(url, requester)
-    with ThreadPoolExecutor(max_workers=min(max_workers, len(items) or 1)) as executor:
-        return list(executor.map(lambda item: _job(item, url, requester, total), items))
+    return map_bounded(items, lambda item: _job(item, url, requester, total), max_workers)
 
 
 __all__ = ["parse"]

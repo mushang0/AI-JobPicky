@@ -1,0 +1,40 @@
+{
+  "code": 0,
+  "data": {
+    "records": [
+      {
+        "idRecruitPosition": 1870,
+        "projectId": 30,
+        "projectName": "2027届应届生校园招聘",
+        "recruitmentTypeName": "应届生",
+        "recruitmentType": "Graduate",
+        "positionType": "Software",
+        "positionName": "平台研发工程师",
+        "positionDesc": "负责平台服务研发与性能优化。",
+        "positionRequire": "计算机相关专业，本科及以上。",
+        "workCityName": "深圳市,成都市",
+        "releaseTime": "2026-08-01",
+        "positionStatus": 0
+      },
+      {
+        "idRecruitPosition": 1871,
+        "projectId": 29,
+        "projectName": "2027届寻梦实习招聘",
+        "recruitmentTypeName": "实习生",
+        "recruitmentType": "Intern",
+        "positionType": "AI/algorithm",
+        "positionName": "算法实习生",
+        "positionDesc": "参与模型训练和效果评估。",
+        "positionRequire": "熟悉 Python 或 C++。",
+        "workCityVOList": [{"workCityCode": "310100", "workCityName": "上海市"}],
+        "releaseTime": "2026-07-20",
+        "positionStatus": 0
+      }
+    ],
+    "total": 2,
+    "size": 10,
+    "current": 1,
+    "pages": 1
+  },
+  "msg": "success"
+}

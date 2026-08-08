@@ -1,0 +1,22 @@
+{
+  "pageVO": {
+    "totalRows": 1,
+    "curPage": 1,
+    "pageSize": 30,
+    "totalPages": 1
+  },
+  "result": [
+    {
+      "jobId": "24130",
+      "jobname": "计划及调度工程师",
+      "jobAddress": "China\\Guangdong-Shenzhen,China\\Guangdong-Dongguan",
+      "mainBusiness": "负责项目计划与资源协同。",
+      "jobRequire": "本科及以上学历，具备良好的沟通能力。",
+      "degree": "本科",
+      "dataSource": "1",
+      "releaseDate": "2026-08-01",
+      "expirationDate": "2026-12-31",
+      "jobType": "0"
+    }
+  ]
+}

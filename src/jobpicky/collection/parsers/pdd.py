@@ -2,15 +2,33 @@
 
 from __future__ import annotations
 
-import html
-import re
 from collections.abc import Mapping
-from concurrent.futures import ThreadPoolExecutor
-from datetime import UTC, datetime
 from urllib.parse import parse_qs, quote, urlsplit, urlunsplit
 
 from .public_api import JsonRequester
 from .public_api import request_json as _request_json
+from .public_api_support import (
+    PublicPage,
+    bind_requester,
+    collect_pages,
+    map_bounded,
+    non_negative_int,
+)
+from .public_api_support import (
+    locations as _locations,
+)
+from .public_api_support import (
+    mapping as _mapping,
+)
+from .public_api_support import (
+    origin as _origin,
+)
+from .public_api_support import (
+    published_at as _published_at,
+)
+from .public_api_support import (
+    text as _text,
+)
 
 _PAGE_SIZE = 10
 _MAX_JOBS = 500
@@ -19,45 +37,11 @@ _LIST_PATH = "/api/careers/api/recruit/position/list"
 _DETAIL_PATH = "/api/careers/api/recruit/position/detail"
 
 
-def _origin(url: str) -> str:
-    parts = urlsplit(url)
-    return urlunsplit((parts.scheme, parts.netloc, "", "", ""))
-
-
-def _text(value: object) -> str | None:
-    if value is None:
-        return None
-    text = html.unescape(re.sub(r"<[^>]+>", "\n", str(value)))
-    text = re.sub(r"[ \t]+", " ", text)
-    text = re.sub(r"\n\s*", "\n", text).strip()
-    return text or None
-
-
-def _locations(value: object) -> list[str]:
-    return [item for item in re.split(r"[,，、/|;；\s]+", _text(value) or "") if item]
-
-
-def _mapping(value: object) -> Mapping[str, object]:
-    if not isinstance(value, Mapping):
-        raise ValueError("PDD API response is not an object")
-    return value
-
-
 def _result(response: object) -> Mapping[str, object]:
-    root = _mapping(response)
+    root = _mapping(response, "PDD API response is not an object")
     if str(root.get("success")).lower() != "true":
         raise ValueError(f"PDD API returned failure {root.get('errorCode')!r}")
-    return _mapping(root.get("result"))
-
-
-def _count(value: object) -> int:
-    try:
-        result = int(str(value))
-    except (TypeError, ValueError) as exc:
-        raise ValueError("PDD API did not return a valid job count") from exc
-    if result < 0:
-        raise ValueError("PDD API returned a negative job count")
-    return result
+    return _mapping(root.get("result"), "PDD API did not return result")
 
 
 def _list_payload(url: str, page: int) -> dict[str, object]:
@@ -76,58 +60,38 @@ def _list_payload(url: str, page: int) -> dict[str, object]:
     return payload
 
 
+def _list_page(
+    url: str,
+    request_json: JsonRequester,
+    page: int,
+) -> PublicPage:
+    result = _result(
+        request_json(
+            f"{_origin(url)}{_LIST_PATH}",
+            "POST",
+            _list_payload(url, page),
+        )
+    )
+    raw_items = result.get("list")
+    if not isinstance(raw_items, list):
+        raise ValueError("PDD API did not return a position list")
+    return PublicPage(
+        total=non_negative_int(result.get("total"), "PDD API did not return a valid job count"),
+        items=[_mapping(item, "PDD API returned an invalid position") for item in raw_items],
+    )
+
+
 def _list_jobs(
     url: str,
     request_json: JsonRequester,
 ) -> tuple[list[Mapping[str, object]], int]:
-    origin = _origin(url)
-    total: int | None = None
-    items: list[Mapping[str, object]] = []
-    seen_ids: set[str] = set()
-    page = 1
-    while page <= _MAX_JOBS // _PAGE_SIZE + 1:
-        result = _result(
-            request_json(
-                f"{origin}{_LIST_PATH}",
-                "POST",
-                _list_payload(url, page),
-            )
-        )
-        if total is None:
-            total = _count(result.get("total"))
-            if total > _MAX_JOBS:
-                raise ValueError(f"PDD API returned {total} jobs, above the safe limit")
-            if total == 0:
-                return [], 0
-        page_items = result.get("list")
-        if not isinstance(page_items, list):
-            raise ValueError("PDD API did not return a position list")
-        mapped_items = [_mapping(item) for item in page_items if isinstance(item, Mapping)]
-        new_items = 0
-        for item in mapped_items:
-            job_id = _text(item.get("id"))
-            if job_id and job_id not in seen_ids:
-                seen_ids.add(job_id)
-                items.append(item)
-                new_items += 1
-        if not mapped_items or new_items == 0:
-            raise ValueError("PDD API returned an incomplete or repeated page")
-        if len(items) >= total:
-            return items[:total], total
-        page += 1
-    raise ValueError("PDD API pagination exceeded the safe page limit")
-
-
-def _published_at(value: object) -> datetime | None:
-    if value in (None, ""):
-        return None
-    try:
-        timestamp = float(value)  # type: ignore[arg-type]
-        if timestamp > 10_000_000_000:
-            timestamp /= 1000
-        return datetime.fromtimestamp(timestamp, tz=UTC)
-    except (TypeError, ValueError, OverflowError, OSError):
-        return None
+    return collect_pages(
+        lambda page: _list_page(url, request_json, page),
+        source="PDD",
+        max_jobs=_MAX_JOBS,
+        max_pages=_MAX_JOBS // _PAGE_SIZE + 1,
+        job_id=lambda item: _text(item.get("id")),
+    )
 
 
 def _recruitment_type(value: str | None) -> str | None:
@@ -218,15 +182,12 @@ def parse(
     """Collect all public PDD positions for a recruitment page."""
     if not 1 <= max_workers <= _MAX_WORKERS:
         raise ValueError(f"max_workers must be between 1 and {_MAX_WORKERS}")
-    requester = request_json or (
-        lambda endpoint, method, payload: _request_json(endpoint, url, method, payload)
-    )
+    requester = bind_requester(url, request_json, _request_json)
     direct_ids = parse_qs(urlsplit(url).query).get("positionId", [])
     if direct_ids and direct_ids[0].strip():
         return [_detail({"id": direct_ids[0]}, url, requester, 1)]
     items, total = _list_jobs(url, requester)
-    with ThreadPoolExecutor(max_workers=min(max_workers, len(items) or 1)) as executor:
-        return list(executor.map(lambda item: _detail(item, url, requester, total), items))
+    return map_bounded(items, lambda item: _detail(item, url, requester, total), max_workers)
 
 
 __all__ = ["parse"]

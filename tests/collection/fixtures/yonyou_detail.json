@@ -1,0 +1,18 @@
+{
+  "state": 200,
+  "type": "success",
+  "data": {
+    "postId": "post-2",
+    "postName": "算法工程师",
+    "workPlaceList": [{"code": "0/4/7/9", "name": "上海市"}],
+    "education": "硕士研究生及以上",
+    "publishDate": "2026-08-05 16:38:00",
+    "endDate": "2027-08-05 23:59:59",
+    "recruitType": 1,
+    "projectName": "2027届校招",
+    "department": "算法中心",
+    "subject": "计算机、数学等相关专业",
+    "workContent": "参与算法模型设计、训练与上线。",
+    "serviceCondition": "熟悉机器学习基础知识，具备良好的编程能力。"
+  }
+}
