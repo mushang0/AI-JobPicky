@@ -104,6 +104,16 @@ class PostgresFeishuSyncStateStore:
                 )
             )
 
+    async def reset(self, app_token: str, table_id: str) -> None:
+        """Forget processed records for one table before a development rebuild."""
+        async with self._session_factory() as session, session.begin():
+            await session.execute(
+                sa.delete(FEISHU_SYNC_STATE_TABLE).where(
+                    FEISHU_SYNC_STATE_TABLE.c.app_token == app_token,
+                    FEISHU_SYNC_STATE_TABLE.c.table_id == table_id,
+                )
+            )
+
 
 def should_process(state: FeishuSyncState | None, record_hash: str) -> bool:
     return state is None or state.record_hash != record_hash or state.status == "FAILED"

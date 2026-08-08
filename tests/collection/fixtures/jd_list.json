@@ -1,0 +1,36 @@
+{
+  "success": true,
+  "body": {
+    "totalNumber": 2,
+    "items": [
+      {
+        "publishId": 9039,
+        "reqId": 2442,
+        "positionName": "平台研发工程师",
+        "publishTime": "2026-07-01",
+        "jobDirection": "技术研发方向",
+        "jobDirectionCode": "01",
+        "workContent": "负责平台服务研发与性能优化。",
+        "qualification": "2027届毕业生，本科及以上学历。",
+        "education": "本科",
+        "requirementVoList": [
+          {"workCityCode": "00001", "workCity": "北京市-北京市"}
+        ],
+        "jobCategory": "技术类",
+        "planId": 56,
+        "positionDept": "京东科技"
+      },
+      {
+        "publishId": 9070,
+        "reqId": 2443,
+        "positionName": "解决方案工程师",
+        "publishTime": "2026-07-02",
+        "requirementVoList": [
+          {"workCityCode": "44030", "workCity": "广东省-深圳市"}
+        ],
+        "jobCategory": "解决方案类",
+        "positionDept": "京东物流"
+      }
+    ]
+  }
+}

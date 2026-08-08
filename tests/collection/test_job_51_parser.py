@@ -31,27 +31,37 @@ def test_51job_parser_reads_public_list_api() -> None:
     page = 'var params = {ctmid: "1234567", pagesize: 2000};'
 
     def request_json(url: str, _headers: object, payload: object) -> object:
-        assert url.endswith("job_list.php")
-        assert payload == {
-            "ctmid": "1234567",
-            "poscode": "",
-            "jobarea": "",
-            "pagesize": 2000,
-            "sort": "joborder",
-            "sequence": 1,
-        }
+        if url.endswith("job_list.php"):
+            assert payload == {
+                "ctmid": "1234567",
+                "poscode": "",
+                "jobarea": "",
+                "pagesize": 2000,
+                "sort": "joborder",
+                "sequence": 1,
+            }
+            return {
+                "status": "1",
+                "resultbody": {
+                    "totalnum": "1",
+                    "joblist": [
+                        {
+                            "jobid": "172953320",
+                            "jobname": "数据工程师",
+                            "jobareaname": "北京",
+                            "degreefrom": "硕士",
+                        }
+                    ],
+                },
+            }
+        assert url.endswith("job_detail.php")
+        assert payload == {"jobid": "172953320"}
         return {
             "status": "1",
             "resultbody": {
-                "totalnum": "1",
-                "joblist": [
-                    {
-                        "jobid": "172953320",
-                        "jobname": "数据工程师",
-                        "jobareaname": "北京",
-                        "degreefrom": "硕士",
-                    }
-                ],
+                "jobid": "172953320",
+                "jobname": "数据工程师",
+                "jobinfo": "负责数据平台建设。",
             },
         }
 
@@ -62,6 +72,7 @@ def test_51job_parser_reads_public_list_api() -> None:
     )
 
     assert [job["title"] for job in jobs] == ["数据工程师"]
+    assert jobs[0]["description"] == "负责数据平台建设。"
     assert jobs[0]["metadata"] == {"platform": "JOB_51", "record_kind": "job", "ctmid": "1234567"}
 
 

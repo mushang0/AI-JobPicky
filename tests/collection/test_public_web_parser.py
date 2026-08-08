@@ -3,6 +3,7 @@ from pathlib import Path
 from jobpicky.collection.parsers.public_web import _http_url, parse
 
 FIXTURE = Path(__file__).parent / "fixtures" / "public_job_page.html"
+NEXT_FLIGHT_FIXTURE = Path(__file__).parent / "fixtures" / "next_flight_job_page.html"
 
 
 def test_public_web_parser_quotes_non_ascii_request_url_parts() -> None:
@@ -23,6 +24,21 @@ def test_public_web_parser_reads_json_ld_job_posting() -> None:
     assert jobs[0]["salary_min"] == 12000
     assert jobs[0]["salary_max"] == 18000
     assert jobs[0]["detail_url"] == "https://careers.example.test/jobs/demo-job-1"
+
+
+def test_public_web_parser_reads_next_flight_job_records() -> None:
+    jobs = parse(
+        "https://careers.example.test/zh/join-us/job-search",
+        lambda _url: NEXT_FLIGHT_FIXTURE.read_text(),
+        require_description=True,
+    )
+
+    assert jobs[0]["source_job_id"] == "42"
+    assert jobs[0]["title"] == "嵌入式工程师"
+    assert jobs[0]["description"] == "负责驱动开发 本科及以上"
+    assert jobs[0]["locations"] == ["珠海"]
+    assert jobs[0]["recruitment_type"] == "校招"
+    assert jobs[0]["detail_url"] == "https://careers.example.test/zh/join-us/jobs/demo-job"
 
 
 def test_public_web_parser_reads_static_job_links() -> None:

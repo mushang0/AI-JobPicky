@@ -1,0 +1,16 @@
+{
+  "status": 1,
+  "message": "成功",
+  "data": {
+    "jobUnionId": "mt-job-002",
+    "name": "数据分析实习生",
+    "jobType": "1",
+    "jobSource": "1",
+    "jobStatus": "000",
+    "projectName": "日常实习",
+    "cityList": [{"name": "上海市"}],
+    "jobDuty": "参与数据分析项目。",
+    "jobRequirement": "具备良好的数据基础。",
+    "firstPostTime": 1760000000000
+  }
+}

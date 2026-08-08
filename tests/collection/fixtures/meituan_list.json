@@ -1,0 +1,32 @@
+{
+  "status": 1,
+  "message": "成功",
+  "data": {
+    "list": [
+      {
+        "jobUnionId": "mt-job-001",
+        "name": "平台研发工程师",
+        "jobType": "1",
+        "jobSource": "2",
+        "jobStatus": "000",
+        "projectName": "2027届北斗计划",
+        "cityList": [{"name": "北京市"}],
+        "jobDuty": "参与平台服务开发。",
+        "jobRequirement": "熟悉 Python。",
+        "firstPostTime": 1760000000000
+      },
+      {
+        "jobUnionId": "mt-job-002",
+        "name": "数据分析实习生",
+        "jobType": "1",
+        "jobSource": "1",
+        "jobStatus": "000",
+        "projectName": "日常实习",
+        "cityList": [{"name": "上海市"}],
+        "firstPostTime": 1760000000000
+      }
+    ],
+    "page": {"pageNo": 1, "pageSize": 500, "totalPage": 1, "totalCount": 2},
+    "traceId": null
+  }
+}

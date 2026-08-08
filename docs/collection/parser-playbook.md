@@ -154,6 +154,58 @@ uv run python scripts/verify_parser_pipeline.py \
 - Fixture：`tests/collection/fixtures/wechat_article.html`；回归：
   `tests/collection/test_wechat_parser.py`。
 
+## 京东校园招聘（JD）
+
+- 域名：`campus.jd.com`；默认 `type=present` 是校招，`type=internship` 是实习，不能把两者
+  混为同一批次。
+- 列表调用公开 `POST /api/wx/position/page?type=...`，请求体使用 0-based `pageIndex`、
+  `pageSize=100` 和公开筛选字段；以 `body.totalNumber` 计算页数并校验收集数量。
+- `publishId` 是稳定来源 ID；列表中的 `workContent` 与 `qualification` 已是公开 JD，缺失时才
+  调用 `POST /api/wx/position/detail/{publishId}`，详情请求体为空 JSON。
+- 详情链接保持官网 `.../api/wx/position/index?type=...#/details?...&id=...` 路由；列表或详情
+  缺少标题/JD 时明确失败，不把列表摘要当作 JD。
+- Fixture：`tests/collection/fixtures/jd_list.json`、`jd_detail.json`；回归：
+  `tests/collection/test_jd_parser.py`。
+
+## 滴滴校园招聘（DIDI）
+
+- 官网 `outreach.didichuxing.com/elite/` 的公开页面将校招入口指向官方 Moka
+  `app.mokahr.com/campus-recruitment/didiglobal/116021`。
+- 解析器只发现并校验这个官方入口，然后复用 Moka 的列表、分页、详情和 JD 质量门禁；不复制
+  一套滴滴字段映射，也不把社招入口混入校招结果。
+- 官网未公开 Moka 入口或 Moka 列表/详情失败时保持失败；Fixture：
+  `tests/collection/fixtures/didi_page.html`；回归：`tests/collection/test_didi_parser.py`。
+
+## 小红书校园招聘（XIAOHONGSHU）
+
+- 域名：`job.xiaohongshu.com`；校园页的 `campusRecruitTypes=term_intern` 映射为公开 API 的
+  `recruitType=intern`，无该参数的校园页使用 `recruitType=campus`；社招参数明确拒绝，不混入校招。
+- 列表调用公开 `POST /websiterecruit/position/pageQueryPosition`，保留 `themeCode` 等公开筛选，按
+  `data.total/totalPage` 分页；列表中的 `duty` 与 `qualification` 已是公开 JD，缺失时才调用
+  `GET /websiterecruit/position/queryPositionDetail?positionId=...`。
+- `positionId` 是稳定来源 ID，详情路由为 `/campus/position/{positionId}`；列表和详情缺少标题/JD 时明确失败。
+- Fixture：`tests/collection/fixtures/xiaohongshu_list.json`、`xiaohongshu_detail.json`；回归：
+  `tests/collection/test_xiaohongshu_parser.py`。
+
+## 中兴通讯校园招聘（ZTE）
+
+- 官网 `job.zte.com.cn/.../Recruitment_positions/freshstudent.html` 公开指向官方 Moka 校招站
+  `app.mokahr.com/campus-recruitment/zte/46903`。
+- 解析器只校验官网入口并归一化为无岗位筛选的 Moka 列表，再复用 Moka 的分页、岗位和 JD 解析；官网卡片上的
+  `project`、`zhineng` 等筛选不作为全量入口，避免只抓到单一分类。
+- 当前公开回放为 126 个岗位、126 个有 JD；入口发现失败或 Moka 列表/详情失败时保持失败。
+- Fixture：`tests/collection/fixtures/zte_page.html`；回归：`tests/collection/test_zte_parser.py`。
+
+## 用友校园招聘（YONYOU）
+
+- 域名：`career.yonyou.com/SU.../pb/school.html`；使用公开表单 POST `/wecruit/positionInfo/listPosition/SU...`
+  传递 `recruitType=1`，按 `pageForm.dataCount/totalPage` 校验校园岗位分页。
+- 列表返回 `postId`、岗位名和公开元数据；缺少 JD 时调用同套公开 POST
+  `/wecruit/positionInfo/listPositionDetail/SU...`，合并 `workContent` 与 `serviceCondition`。
+- 详情链接保持官网 `/SU.../pb/posDetail.html?postId=...&postType=campus`，不把社招类型替换成校招事实。
+- Fixture：`tests/collection/fixtures/yonyou_list.json`、`yonyou_detail.json`；回归：
+  `tests/collection/test_yonyou_parser.py`。
+
 ## 公司招聘网站（COMPANY_RECRUITMENT_SITE）
 
 - 先复用已验证的平台分类：`campus.boe.com`、`zhaopin.xdf.cn`、
@@ -172,7 +224,7 @@ uv run python scripts/verify_parser_pipeline.py \
   不把列表摘要、宣传页或浏览器渲染结果冒充稳定 JD。浏览器只用于调查页面链路，批处理仍使用确定性
   HTTP/API 解析。理想汽车、Sicarrier、长亭科技已验证可分别获得岗位和 JD。
 - 已增加公司画像目录 `src/jobpicky/collection/company_profiles.py`：先按规范化公司组和招聘平台
-  归类，再选择平台适配器；共享平台不按公司复制解析器。当前已验证七个高价值公共接口来源族，另有一个
+  归类，再选择平台适配器；共享平台不按公司复制解析器。当前已验证多组高价值公共接口来源族，另有一个
   已验证的 Phenom 嵌入数据来源族：
   - 阿里巴巴 `campus-talent.alibaba.com`：`POST /position/search` 按 `pageIndex` 分页，入口页面提供公开
     CSRF 引导 token；解析器只在内存中保留匿名 cookie/token，调用 `POST /position/detail` 补齐缺失 JD，保留
@@ -181,7 +233,14 @@ uv run python scripts/verify_parser_pipeline.py \
     `GET /httservice/getPostDetail?postId=...&recruitType=...` 获取公开 JD；保留 `recruitType`、`projectType`
     和搜索词筛选，不能把 SSR 的首屏 10 条误当成全量。
   - 腾讯 `join.qq.com`：`POST /api/v1/position/searchPosition` 获取列表，`GET
-    /api/v1/jobDetails/getJobDetailsByPostId?postId=...` 获取公开 JD，使用 `postId` 作为稳定来源 ID。
+    /api/v1/jobDetails/getJobDetailsByPostId?postId=...` 获取公开 JD，使用 `postId` 作为稳定来源 ID；
+    普通岗位读取 `desc`/`request`，青云课题回退到 `topicDetail`/`topicRequirement`；详情明确返回
+    `岗位已下架` 的 404 只跳过该岗位并记录 `closed_position_count`，其他详情异常仍失败。
+  - 美团 `zhaopin.meituan.com/web/{campus,beidou,qihang,trainee,longcat,social}`：`POST
+    /api/official/job/getJobList` 按页面招聘计划筛选，优先用受限的 `pageSize=500` 拉取并按 `data.page.totalPage`
+    校验分页；列表已带职责和任职资格时
+    直接使用，缺失时才调用 `POST /api/official/job/getJobDetail`。`jobUnionId` 是稳定来源 ID，岗位详情路由为
+    `/web/position/detail?jobUnionId=...`；列表超过 500 条、分页不完整或详情没有公开 JD 时保持失败。
   - 同花顺 `campus.10jqka.com.cn`：`GET /api/v3/school_recruitment/apply/apply_list` 分页，
     `GET /api/v3/school_recruitment/apply/apply_detail?id=...` 获取 `intro` 与 `requirement`；空数组
     过滤参数不能发送，否则会把公开列表误判为空。
@@ -195,16 +254,44 @@ uv run python scripts/verify_parser_pipeline.py \
   - 快手 `campus.kuaishou.cn/recruit/campus`：解析 hash 路由中的 `recruitSubProjectCodes`、岗位标签和筛选，
     调用公开 `POST /recruit/campus/e/api/v1/open/positions/simple` 分页；列表缺 JD 时调用
     `GET /recruit/campus/e/api/v1/open/positions/find?id=...`，直达 `#/campus/job-info/<id>` 只返回目标岗位。
+  - OPPO `careers.oppo.com/university/oppo/campus/post`：调用公开 `POST /openapi/position/pageNew`，按
+    `records`、`pages`、`total` 有界分页；列表通常已经包含 `positionDesc` 与 `positionRequire`，只有缺少公开 JD
+    时才调用 `GET /openapi/position/detail?id=...`，使用 `idRecruitPosition` 作为稳定来源 ID。
   - Phenom/BCG `careers.bcg.com`：岗位详情页公开嵌入 `phApp.ddo.jobDetail.data.job`，使用稳定 `jobId`、
     HTML JD、申请链接和职位元数据；当前只承诺直接详情页，不把通用搜索页误判成完整列表。
   - 自定义域名飞书招聘 `xiaomi.jobs.f.mioffice.cn`、`jobs.ecoflow.com`、`career.papergames.com`：复用飞书的
     `position/<id>/detail` API、`website-path` 头和渲染列表导航；自定义域名不代表另一套接口，先比对
     portal path 和 API 响应再归类。商汤域名当前因 TLS 连接不可复现，仍保持失败边界。
-  - 自定义域名 Moka `campus.sonoscape.com`、`campus.fingard.com`：复用服务端 `#init-data` 岗位清单，
-    直达 fragment 仍按岗位 ID 精确筛选；平台详情接口加密，描述为空时保留明确边界，不把列表标题当 JD。
-  七个 API 来源族共用受限标准库 HTTP 传输层：响应上限 8 MiB、请求超时 20 秒，详情并发最多 8 个；超过边界、
-  缺少 JD 或接口状态异常时明确失败，不把列表标题当作岗位事实。Fixture 和回归分别在
-  `tests/collection/fixtures/{alibaba,baidu,tencent,jqka,pdd,netease,kuaishou}_*.json`、
+  - 自定义域名 Moka `campus.sonoscape.com`、`campus.fingard.com`、`apply.careers.dji.com`：先读取
+    `#init-data` 中公开的组织、站点和 AES-IV 引导信息，再调用 `POST /api/outer/ats-apply/website/jobs/v2`
+    按 `limit=30`、`offset` 分页，使用 `jobStats.total` 校验全量；大疆“拓疆者”校园入口
+    `campus-recruitment/dji/143359` 当前为 139 个岗位、5 页，列表 `jobDescription` 已包含完整 JD，直达岗位或
+    列表缺 JD 时调用公开 `POST /api/outer/ats-apply/website/job`。飞书旧链接中的 `sourceToken` 不转发到分页请求，
+    输出详情链接也会去掉跟踪 token。
+  - 哔哩哔哩 `jobs.bilibili.com`：先以公开 `GET /api/auth/v1/csrf/token` 获取一次性运行时校验值，
+    再调用 `POST /api/campus/position/positionList`，按 `pageSize=100` 和响应中的 `total/pages` 收集校园岗位；
+    列表没有 JD 时才调用公开 `GET /api/campus/position/detail/{id}`。校招和实习由公开岗位类型字段映射，
+    运行时校验值只在内存中使用，不写入文件或结果。
+  - 华为 `career.huawei.com`：调用公开 `GET /reccampportal/services/portal/portalpub/getJob/newHr/page/{size}/{page}`，
+    以 `pageVO.totalRows/totalPages` 校验分页；列表中的 `mainBusiness`、`jobRequire` 已是公开 JD 字段，缺失时才调用
+    `GET /reccampportal/services/portal/portalpub/getJobDetail/newHr?jobId=...&dataSource=...`，并规范化华为地址字段。
+  - 京东 `campus.jd.com`：调用公开 `POST /api/wx/position/page?type=present|internship`，按
+    `body.totalNumber` 和 0-based `pageIndex` 有界分页；`workContent`/`qualification` 是公开 JD，
+    缺失时才调用 `POST /api/wx/position/detail/{publishId}`。
+  - 滴滴 `outreach.didichuxing.com`：只从官方页面发现 `didiglobal/116021` 的 Moka 校招入口，
+    复用 Moka 适配器；不为同一平台再复制公司级完整解析器。
+  - 小红书 `job.xiaohongshu.com`：`POST /websiterecruit/position/pageQueryPosition` 按公开的
+    `recruitType`、`themeCode`、`totalPage` 分页，使用 `positionId`；列表的 `duty`/`qualification` 已是 JD，缺失时
+    调用公开 `GET /websiterecruit/position/queryPositionDetail`。
+  - 用友 `career.yonyou.com/SU.../pb/school.html`：使用公开表单 POST `listPosition/SU...` 和
+    `listPositionDetail/SU...`，以 `pageForm.dataCount/totalPage` 校验分页，合并 `workContent`/`serviceCondition`。
+  - 中兴通讯 `job.zte.com.cn`：官网公开链接指向 `app.mokahr.com/campus-recruitment/zte/46903`，归一化官方
+    Moka 校招入口后复用 Moka 适配器；不复制平台级字段映射。
+  十四个公开 JSON API 来源族共用 `parsers/public_api_support.py`：文本、地点、时间、响应映射、
+  有界分页去重、来源 ID 校验、请求器绑定和详情并发只实现一次；各站点文件只保留接口 envelope、请求体
+  和字段映射。底层仍共用受限标准库 HTTP 传输层：响应上限 8 MiB、请求超时 20 秒，详情并发最多 8 个；
+  超过边界、缺少 JD 或接口状态异常时明确失败，不把列表标题当作岗位事实。Fixture 和回归分别在
+  `tests/collection/fixtures/{alibaba,baidu,tencent,meituan,jqka,pdd,netease,kuaishou,oppo}_*.json`、
   `tests/collection/fixtures/phenom_job.html` 和对应的 `tests/collection/test_*_parser.py`。
 - Fixture：`tests/collection/fixtures/public_job_page.html`；回归：
   `tests/collection/test_public_web_parser.py`、`tests/collection/test_link_classification.py`。

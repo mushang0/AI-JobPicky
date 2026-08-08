@@ -2,15 +2,22 @@
 
 from __future__ import annotations
 
-import html
-import math
-import re
 from collections.abc import Mapping
-from concurrent.futures import ThreadPoolExecutor
 from urllib.parse import quote, urlsplit, urlunsplit
 
 from .public_api import JsonRequester
 from .public_api import request_json as _request_json
+from .public_api_support import (
+    PublicPage,
+    bind_requester,
+    collect_pages,
+    map_bounded,
+    non_negative_int,
+)
+from .public_api_support import locations as _locations
+from .public_api_support import mapping as _mapping
+from .public_api_support import origin as _origin
+from .public_api_support import text as _text
 
 _PAGE_SIZE = 50
 _MAX_JOBS = 500
@@ -19,78 +26,58 @@ _LIST_PATH = "/api/v3/school_recruitment/apply/apply_list"
 _DETAIL_PATH = "/api/v3/school_recruitment/apply/apply_detail"
 
 
-def _origin(url: str) -> str:
-    parts = urlsplit(url)
-    return urlunsplit((parts.scheme, parts.netloc, "", "", ""))
-
-
-def _text(value: object) -> str | None:
-    if value is None:
-        return None
-    text = html.unescape(re.sub(r"<[^>]+>", "\n", str(value)))
-    text = re.sub(r"[ \t]+", " ", text)
-    text = re.sub(r"\n\s*", "\n", text).strip()
-    return text or None
-
-
-def _locations(value: object) -> list[str]:
-    text = _text(value) or ""
-    return [item for item in re.split(r"[,，、/|;；\s]+", text) if item]
-
-
-def _mapping(value: object) -> Mapping[str, object]:
-    if not isinstance(value, Mapping):
-        raise ValueError("Tonghuashun API response is not an object")
-    return value
-
-
 def _data(response: object) -> Mapping[str, object]:
-    root = _mapping(response)
+    root = _mapping(response, "Tonghuashun API response is not an object")
     if str(root.get("erro_code")) != "0":
         raise ValueError(f"Tonghuashun API returned error {root.get('erro_code')!r}")
-    data = _mapping(root.get("ex_data"))
+    data = _mapping(root.get("ex_data"), "Tonghuashun API did not return ex_data")
     if data.get("success") is False:
         raise ValueError("Tonghuashun API returned an unsuccessful response")
     return data
 
 
-def _positive_int(value: object, field: str) -> int:
-    try:
-        result = int(str(value))
-    except (TypeError, ValueError) as exc:
-        raise ValueError(f"Tonghuashun API did not return a valid {field}") from exc
-    if result < 0:
-        raise ValueError(f"Tonghuashun API returned a negative {field}")
-    return result
+def _list_page(
+    url: str,
+    request_json: JsonRequester,
+    page: int,
+) -> PublicPage:
+    data = _data(
+        request_json(
+            f"{_origin(url)}{_LIST_PATH}",
+            "GET",
+            {"page": page, "pageCount": _PAGE_SIZE},
+        )
+    )
+    raw_items = data.get("apply_show_do_list")
+    if not isinstance(raw_items, list):
+        raise ValueError("Tonghuashun API did not return apply_show_do_list")
+    raw_page_count = data.get("pages")
+    return PublicPage(
+        total=non_negative_int(
+            data.get("total"), "Tonghuashun API did not return a valid job count"
+        ),
+        page_count=(
+            non_negative_int(raw_page_count, "Tonghuashun API did not return a valid page count")
+            if raw_page_count is not None
+            else None
+        ),
+        items=[
+            _mapping(item, "Tonghuashun API returned an invalid position") for item in raw_items
+        ],
+    )
 
 
 def _list_jobs(
     url: str,
     request_json: JsonRequester,
 ) -> tuple[list[Mapping[str, object]], int]:
-    origin = _origin(url)
-    total: int | None = None
-    items: list[Mapping[str, object]] = []
-    page = 1
-    max_pages = math.ceil(_MAX_JOBS / _PAGE_SIZE)
-    while page <= max_pages:
-        payload = {"page": page, "pageCount": _PAGE_SIZE}
-        data = _data(request_json(f"{origin}{_LIST_PATH}", "GET", payload))
-        if total is None:
-            total = _positive_int(data.get("total"), "job count")
-            if total > _MAX_JOBS:
-                raise ValueError(f"Tonghuashun API returned {total} jobs, above the safe limit")
-        page_items = data.get("apply_show_do_list")
-        if not isinstance(page_items, list):
-            raise ValueError("Tonghuashun API did not return apply_show_do_list")
-        mapped_items = [_mapping(item) for item in page_items if isinstance(item, Mapping)]
-        if not mapped_items and len(items) < total:
-            raise ValueError("Tonghuashun API returned an incomplete page")
-        items.extend(mapped_items)
-        if len(items) >= total:
-            return items[:total], total
-        page += 1
-    raise ValueError("Tonghuashun API pagination exceeded the safe page limit")
+    return collect_pages(
+        lambda page: _list_page(url, request_json, page),
+        source="Tonghuashun",
+        max_jobs=_MAX_JOBS,
+        max_pages=_MAX_JOBS // _PAGE_SIZE + 1,
+        job_id=lambda item: _text(item.get("id")),
+    )
 
 
 def _recruitment_type(series_name: str | None, type_name: str | None) -> str | None:
@@ -174,13 +161,9 @@ def parse(
     """Collect all public Tonghuashun positions for a recruitment page."""
     if not 1 <= max_workers <= _MAX_WORKERS:
         raise ValueError(f"max_workers must be between 1 and {_MAX_WORKERS}")
-    requester = request_json or (
-        lambda endpoint, method, payload: _request_json(endpoint, url, method, payload)
-    )
+    requester = bind_requester(url, request_json, _request_json)
     items, total = _list_jobs(url, requester)
-    with ThreadPoolExecutor(max_workers=min(max_workers, len(items) or 1)) as executor:
-        jobs = list(executor.map(lambda item: _detail(item, url, requester, total), items))
-    return jobs
+    return map_bounded(items, lambda item: _detail(item, url, requester, total), max_workers)
 
 
 __all__ = ["parse"]

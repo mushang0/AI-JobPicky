@@ -121,7 +121,7 @@ COMPANY_PROFILES: tuple[CompanyProfile, ...] = (
         "大疆创新",
         ("大疆", "DJI"),
         ("careers.dji.com", "apply.careers.dji.com"),
-        "dji-careers",
+        "moka-careers",
         "P0",
     ),
     CompanyProfile("byd", "比亚迪", ("比亚迪",), ("job.byd.com",), "byd-campus", "P0"),

@@ -2,15 +2,23 @@
 
 from __future__ import annotations
 
-import html
-import re
 from collections.abc import Mapping
-from concurrent.futures import ThreadPoolExecutor
-from datetime import UTC, datetime
 from urllib.parse import parse_qs, quote, unquote, urlsplit, urlunsplit
 
 from .public_api import JsonRequester
 from .public_api import request_form_json as _request_form_json
+from .public_api_support import (
+    PublicPage,
+    bind_requester,
+    collect_pages,
+    map_bounded,
+    non_negative_int,
+)
+from .public_api_support import locations as _locations
+from .public_api_support import mapping as _mapping
+from .public_api_support import origin as _origin
+from .public_api_support import published_at as _published_at
+from .public_api_support import text as _text
 
 _PAGE_SIZE = 10
 _MAX_JOBS = 500
@@ -19,47 +27,11 @@ _LIST_PATH = "/httservice/getPostListNew"
 _DETAIL_PATH = "/httservice/getPostDetail"
 
 
-def _origin(url: str) -> str:
-    parts = urlsplit(url)
-    return urlunsplit((parts.scheme, parts.netloc, "", "", ""))
-
-
-def _text(value: object) -> str | None:
-    if value is None:
-        return None
-    text = html.unescape(re.sub(r"<[^>]+>", "\n", str(value)))
-    text = re.sub(r"[ \t]+", " ", text)
-    text = re.sub(r"\n\s*", "\n", text).strip()
-    return text or None
-
-
-def _locations(value: object) -> list[str]:
-    if isinstance(value, list):
-        return [item for child in value if (item := _text(child))]
-    return [item for item in re.split(r"[,，、/|;；\s]+", _text(value) or "") if item]
-
-
-def _mapping(value: object, message: str) -> Mapping[str, object]:
-    if not isinstance(value, Mapping):
-        raise ValueError(message)
-    return value
-
-
 def _data(response: object) -> Mapping[str, object]:
     root = _mapping(response, "Baidu API response is not an object")
     if root.get("status") != "ok":
         raise ValueError(f"Baidu API returned status {root.get('status')!r}")
     return _mapping(root.get("data"), "Baidu API did not return an object")
-
-
-def _count(value: object) -> int:
-    try:
-        result = int(str(value))
-    except (TypeError, ValueError) as exc:
-        raise ValueError("Baidu API did not return a valid job count") from exc
-    if result < 0:
-        raise ValueError("Baidu API returned a negative job count")
-    return result
 
 
 def _query_values(query: Mapping[str, list[str]], key: str) -> list[str]:
@@ -98,64 +70,38 @@ def _list_payload(url: str, page: int) -> dict[str, object]:
     }
 
 
+def _list_page(
+    url: str,
+    request_form_json: JsonRequester,
+    page: int,
+) -> PublicPage:
+    data = _data(
+        request_form_json(
+            f"{_origin(url)}{_LIST_PATH}",
+            "POST",
+            _list_payload(url, page),
+        )
+    )
+    raw_items = data.get("list")
+    if not isinstance(raw_items, list):
+        raise ValueError("Baidu API did not return a position list")
+    return PublicPage(
+        total=non_negative_int(data.get("total"), "Baidu API did not return a valid job count"),
+        items=[_mapping(item, "Baidu API returned an invalid position") for item in raw_items],
+    )
+
+
 def _list_jobs(
     url: str,
     request_form_json: JsonRequester,
 ) -> tuple[list[Mapping[str, object]], int]:
-    origin = _origin(url)
-    total: int | None = None
-    items: list[Mapping[str, object]] = []
-    seen_ids: set[str] = set()
-    page = 1
-    while page <= _MAX_JOBS // _PAGE_SIZE + 1:
-        data = _data(
-            request_form_json(
-                f"{origin}{_LIST_PATH}",
-                "POST",
-                _list_payload(url, page),
-            )
-        )
-        if total is None:
-            total = _count(data.get("total"))
-            if total > _MAX_JOBS:
-                raise ValueError(f"Baidu API returned {total} jobs, above the safe limit")
-            if total == 0:
-                return [], 0
-        page_items = data.get("list")
-        if not isinstance(page_items, list):
-            raise ValueError("Baidu API did not return a position list")
-        mapped_items = [
-            _mapping(item, "Baidu API returned an invalid position") for item in page_items
-        ]
-        new_items = 0
-        for item in mapped_items:
-            source_job_id = _text(item.get("postId")) or _text(item.get("jobId"))
-            if source_job_id and source_job_id not in seen_ids:
-                seen_ids.add(source_job_id)
-                items.append(item)
-                new_items += 1
-        if not mapped_items or new_items == 0:
-            raise ValueError("Baidu API returned an incomplete or repeated page")
-        if len(items) >= total:
-            return items[:total], total
-        page += 1
-    raise ValueError("Baidu API pagination exceeded the safe page limit")
-
-
-def _published_at(value: object) -> datetime | None:
-    text = _text(value)
-    if not text:
-        return None
-    try:
-        if text.isdigit():
-            timestamp = float(text)
-            if timestamp > 10_000_000_000:
-                timestamp /= 1000
-            return datetime.fromtimestamp(timestamp, tz=UTC)
-        parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
-        return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
-    except (ValueError, OverflowError, OSError):
-        return None
+    return collect_pages(
+        lambda page: _list_page(url, request_form_json, page),
+        source="Baidu",
+        max_jobs=_MAX_JOBS,
+        max_pages=_MAX_JOBS // _PAGE_SIZE + 1,
+        job_id=lambda item: _text(item.get("postId")) or _text(item.get("jobId")),
+    )
 
 
 def _recruitment_type(value: str) -> str | None:
@@ -278,9 +224,7 @@ def parse(
     """Collect all public Baidu positions for a recruitment page."""
     if not 1 <= max_workers <= _MAX_WORKERS:
         raise ValueError(f"max_workers must be between 1 and {_MAX_WORKERS}")
-    requester = request_json or (
-        lambda endpoint, method, payload: _request_form_json(endpoint, url, method, payload)
-    )
+    requester = bind_requester(url, request_json, _request_form_json)
     direct = _detail_parts(url)
     if direct is not None:
         recruit_type, source_job_id = direct
@@ -297,13 +241,11 @@ def parse(
     recruit_type = _recruit_type(url)
     project_type = _project_type(url)
     items, total = _list_jobs(url, requester)
-    with ThreadPoolExecutor(max_workers=min(max_workers, len(items) or 1)) as executor:
-        return list(
-            executor.map(
-                lambda item: _job(item, url, recruit_type, project_type, requester, total),
-                items,
-            )
-        )
+    return map_bounded(
+        items,
+        lambda item: _job(item, url, recruit_type, project_type, requester, total),
+        max_workers,
+    )
 
 
 __all__ = ["parse"]

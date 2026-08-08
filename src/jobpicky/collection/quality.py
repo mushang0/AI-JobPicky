@@ -69,6 +69,8 @@ _TITLE_QUALIFIER_RE = re.compile(r"\s+(?:intern|internship|实习)$", re.IGNOREC
 _TABLE_PROSE_RE = re.compile(
     r"岗位名称|招聘岗位信息|任职要求|公告正文|详见|点击链接|请点击|负责|工作内容|报名截止"
 )
+_LATIN_TITLE_RE = re.compile(r"[A-Za-z]")
+_CJK_TITLE_RE = re.compile(r"[\u3400-\u9fff]")
 _MAX_TABLE_TITLE_CHARS = 80
 
 
@@ -208,8 +210,11 @@ def _split_whitespace_job_titles(text: str) -> list[str]:
             }:
                 current.append(words[index + 1])
                 index += 1
-            groups.append(" ".join(current))
-            current = []
+                groups.append(" ".join(current))
+                current = []
+            elif index + 1 < len(words) and _looks_like_job_title_fragment(words[index + 1]):
+                groups.append(" ".join(current))
+                current = []
         index += 1
     if current:
         groups.append(" ".join(current))
@@ -219,8 +224,30 @@ def _split_whitespace_job_titles(text: str) -> list[str]:
 
 
 def _split_job_title_candidates(job_directions: str) -> list[str]:
+    bilingual_parts = _split_top_level(job_directions)
+    if (
+        len(bilingual_parts) == 2
+        and not any(_TABLE_PROSE_RE.search(part) for part in bilingual_parts)
+        and (
+            (
+                _LATIN_TITLE_RE.search(bilingual_parts[0])
+                and _CJK_TITLE_RE.search(bilingual_parts[1])
+            )
+            or (
+                _CJK_TITLE_RE.search(bilingual_parts[0])
+                and _LATIN_TITLE_RE.search(bilingual_parts[1])
+            )
+        )
+    ):
+        return [job_directions.strip()]
+    if (
+        "、" in job_directions
+        and len(bilingual_parts) > 1
+        and not all(_looks_like_job_title_fragment(part) for part in bilingual_parts)
+    ):
+        return [job_directions.strip()]
     candidates: list[str] = []
-    for raw_part in _split_top_level(job_directions):
+    for raw_part in bilingual_parts:
         part = _strip_leading_job_label(raw_part).strip()
         candidates.extend(_split_whitespace_job_titles(part))
     return candidates

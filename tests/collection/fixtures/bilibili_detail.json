@@ -1,0 +1,13 @@
+{
+  "code": 0,
+  "data": {
+    "id": 29759,
+    "positionName": "后端开发工程师",
+    "positionDescription": "<p>工作职责：负责服务端功能开发。</p><p>工作要求：熟悉 Python 或 Go。</p>",
+    "positionTypeName": "全职",
+    "workLocation": "深圳",
+    "pushTime": "2026-08-07 15:18:48",
+    "positionStatus": 1
+  },
+  "message": "success"
+}

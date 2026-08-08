@@ -57,6 +57,41 @@ def test_zhaopin_parser_reads_zhaokao_public_api() -> None:
     )
 
 
+def test_zhaopin_parser_maps_zhaokao_custom_job_fields() -> None:
+    page = ("https://example.zhaopin.com/zk/", (FIXTURES / "zhaopin_zk.html").read_text())
+
+    def request_json(url: str, _headers: object, _payload: object) -> object:
+        if url.endswith("/site/portal/pc/site"):
+            return {"code": 200, "data": {"siteName": "示例招聘站"}}
+        return {
+            "code": 200,
+            "data": [
+                {
+                    "id": "job-2",
+                    "jobName": "法务专员",
+                    "jobNumber": "08",
+                    "professionReq": "法律、法学相关专业",
+                    "customkey3eddbdf589ec": "负责合同审核与法律咨询。",
+                    "customkey19cc24ddb0c9": "统招本科及以上",
+                    "customkeyf1254700e2ff": "28周岁及以下",
+                    "customkey7cd38e40e519": "有法律职业资格证书者优先。",
+                    "status": 1,
+                }
+            ],
+        }
+
+    jobs = parse(ZK_URL, lambda _url: page, request_json)
+
+    assert jobs[0]["source_job_id"] == "08"
+    assert jobs[0]["description"] == (
+        "岗位职责：负责合同审核与法律咨询。\n"
+        "专业要求：法律、法学相关专业\n"
+        "学历要求：统招本科及以上\n"
+        "年龄要求：28周岁及以下\n"
+        "其他说明：有法律职业资格证书者优先。"
+    )
+
+
 def test_zhaopin_parser_reads_mobile_position_data() -> None:
     url = "https://m.zhaopin.com/xiaoyuan/position/detail?id=CC000059870J40784930211"
     page = (url, (FIXTURES / "zhaopin_mobile_position.html").read_text())

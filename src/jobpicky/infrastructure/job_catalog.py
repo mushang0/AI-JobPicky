@@ -132,7 +132,15 @@ def _normalized_text(value: str) -> str:
 
 def _identity_scope(job: CollectedJob) -> str:
     metadata = job.metadata
-    platform = metadata.get("platform_family") or metadata.get("parser")
+    platform = metadata.get("platform_family") or metadata.get("parser") or metadata.get("platform")
+    if not isinstance(platform, str) or not platform.strip():
+        for url in (job.detail_url, job.apply_url):
+            if not url:
+                continue
+            hostname = urlsplit(url).hostname
+            if hostname:
+                platform = f"host:{hostname.casefold().rstrip('.')}"
+                break
     if not isinstance(platform, str) or not platform.strip():
         platform = job.source_id
     return f"{_normalized_text(platform)}:{normalize_company_group_key(job.company_name, metadata)}"

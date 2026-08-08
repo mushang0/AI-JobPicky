@@ -1,0 +1,18 @@
+{
+  "code": 0,
+  "data": {
+    "idRecruitPosition": 1870,
+    "projectId": 30,
+    "projectName": "2027届应届生校园招聘",
+    "recruitmentTypeName": "应届生",
+    "recruitmentType": null,
+    "positionType": "Software",
+    "positionName": "平台研发工程师",
+    "positionDesc": "负责平台服务研发。",
+    "positionRequire": "熟悉 Python。",
+    "workCityVOList": [{"workCityCode": "440300", "workCityName": "深圳市"}],
+    "releaseTime": "2026-08-01",
+    "positionStatus": 0
+  },
+  "msg": "success"
+}

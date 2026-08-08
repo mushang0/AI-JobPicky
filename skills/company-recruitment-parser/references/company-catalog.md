@@ -16,10 +16,17 @@ This catalog is a prioritization aid, not a reason to fabricate support. Match a
 | Tonghuashun | 同花顺 | `campus.10jqka.com.cn` | 10jqka-campus |
 | CSCEC | 中建一局、中建八局、中建安装 | `*.cscec.com`, `job.cscec8b.com.cn` | hcm-cloud |
 | BCG | BCG中国区、BCG波士顿咨询 | `careers.bcg.com` | phenom-careers |
-| DJI | 大疆、DJI | `careers.dji.com` | dji-careers |
+| DJI | 大疆、DJI | `careers.dji.com`, `apply.careers.dji.com` | moka-careers |
 | BYD | 比亚迪、弗迪电池 | `job.byd.com` | byd-campus |
 | Li Auto | 理想汽车 | `www.lixiang.com` | li-auto-campus |
 | Meituan | 美团、LongCat | `zhaopin.meituan.com` | meituan-campus |
+| Huawei | 华为 | `career.huawei.com` | huawei-careers |
+| Bilibili | 哔哩哔哩 | `jobs.bilibili.com` | bilibili-careers |
+| JD | 京东 | `campus.jd.com` | jd-campus |
+| Didi | 滴滴 | `outreach.didichuxing.com` | didi-careers |
+| Xiaohongshu | 小红书 | `job.xiaohongshu.com` | xiaohongshu-careers |
+| ZTE | 中兴通讯 | `job.zte.com.cn` | zte-careers |
+| Yonyou | 用友 | `career.yonyou.com` | yonyou-careers |
 | SF Express | 顺丰 | `campus.sf-express.com` | sf-express-campus |
 | China Mobile | 中国移动、河北移动 | `job.10086.cn` | china-mobile-campus |
 | COMAC | 中国商飞、上海飞机 | `zhaopin.comac.cc` | comac-campus |
@@ -28,13 +35,13 @@ This catalog is a prioritization aid, not a reason to fabricate support. Match a
 | Ningbo Bank | 宁波银行 | `zhaopin.nbcb.com.cn` | ningbo-bank-careers |
 
 The verified public adapters currently cover Alibaba, Baidu, Tencent, PDD, NetEase campus and HR pages,
-Kuaishou, Tonghuashun, Phenom-backed BCG detail pages, custom-domain Feishu sites for Xiaomi, EcoFlow and
-PaperGames, and custom-domain Moka sites for Sonoscape and Fingard. Other catalog entries still route
+Kuaishou, Tonghuashun, OPPO, Huawei, Bilibili, JD, Didi, Xiaohongshu, ZTE, Yonyou, Phenom-backed BCG detail pages, custom-domain Feishu sites for Xiaomi, EcoFlow and
+PaperGames, and custom-domain Moka sites for Sonoscape, Fingard, and DJI. Other catalog entries still route
 through the conservative public-web fallback until their list and detail contracts are verified.
 
 ## P1 groups
 
-Huawei, JD, Didi, OPPO, Bilibili, Xiaohongshu, Ping An, ZTE, SenseTime, Hikvision, Yonyou, ICBC, CCB, SPDB, State Grid, Sinopec, China Aerospace, China Railway, Geely, Gree, Mercedes-Benz, L'Oréal, Unity, McKinsey, Roland Berger, and Citadel are present in the corpus and should be configured before they receive custom adapters. Geely's page shell resembles Moka, but its current TLS endpoint is not reproducible by the bounded HTTP client and therefore remains conservative fallback.
+Ping An, SenseTime, Hikvision, ICBC, CCB, SPDB, State Grid, Sinopec, China Aerospace, China Railway, Geely, Gree, Mercedes-Benz, L'Oréal, Unity, McKinsey, Roland Berger, and Citadel are present in the corpus and should be configured before they receive custom adapters. Geely's page shell resembles Moka, but its current TLS endpoint is not reproducible by the bounded HTTP client and therefore remains conservative fallback.
 
 ## Normalization rules
 

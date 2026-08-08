@@ -9,8 +9,9 @@ from collections.abc import Callable, Mapping
 from datetime import UTC, datetime
 from html.parser import HTMLParser
 from http.cookiejar import CookieJar
-from urllib.error import HTTPError
-from urllib.parse import urljoin, urlsplit, urlunsplit
+from time import sleep
+from urllib.error import HTTPError, URLError
+from urllib.parse import parse_qsl, urlencode, urljoin, urlsplit, urlunsplit
 from urllib.request import HTTPCookieProcessor, HTTPRedirectHandler, Request, build_opener
 
 from cryptography.hazmat.primitives import padding
@@ -27,7 +28,13 @@ _CLOSED_STATUSES = frozenset({"closed", "offline", "disabled", "draft", "deleted
 _REDIRECT_CODES = frozenset({301, 302, 303, 307, 308})
 _MAX_REDIRECTS = 5
 _MAX_HTML_BYTES = 10 * 1024 * 1024
+_LIST_PATH = "/api/outer/ats-apply/website/jobs/v2"
 _DETAIL_PATH = "/api/outer/ats-apply/website/job"
+_LIST_PAGE_SIZE = 30
+_MAX_LIST_JOBS = 500
+_MAX_API_ATTEMPTS = 2
+_API_RETRY_DELAY_SECONDS = 0.25
+_TRACKING_QUERY_KEYS = frozenset({"previewkey", "recommendcode", "sourcetoken"})
 _DEFAULT_LOCALE = "zh-CN"
 _BLOCK_TAGS = frozenset(
     {
@@ -61,6 +68,10 @@ _BLOCK_TAGS = frozenset(
 _IGNORED_TAGS = frozenset({"script", "style"})
 MokaDetailFetcher = Callable[
     [str, str, str, str, str],
+    Mapping[str, object],
+]
+MokaJobListFetcher = Callable[
+    [str, str, str, str, str, int, int, str | None],
     Mapping[str, object],
 ]
 
@@ -151,6 +162,82 @@ class MokaSession:
     def fetch_html(self, url: str) -> str:
         return self.fetch_page(url)[1]
 
+    def _fetch_encrypted_json(
+        self,
+        page_url: str,
+        path: str,
+        payload: Mapping[str, object],
+        aes_iv: str | None,
+        label: str,
+    ) -> Mapping[str, object]:
+        request = Request(
+            f"{_origin(page_url)}{path}",
+            data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
+            method="POST",
+            headers={
+                "Accept": "application/json",
+                "Accept-Language": "zh-CN,zh;q=0.9",
+                "Content-Type": "application/json",
+                "Origin": _origin(page_url),
+                "Referer": page_url,
+                "User-Agent": "Mozilla/5.0 (compatible; AI-JobPicky/0.1)",
+                "use-http-status": "0",
+            },
+        )
+        response = None
+        for attempt in range(_MAX_API_ATTEMPTS):
+            try:
+                response = self._opener.open(request, timeout=20)
+                break
+            except HTTPError as exc:
+                raise ValueError(f"Moka {label} API returned HTTP {exc.code}") from exc
+            except (TimeoutError, URLError):
+                if attempt == _MAX_API_ATTEMPTS - 1:
+                    raise
+                sleep(_API_RETRY_DELAY_SECONDS)
+        if response is None:
+            raise ValueError(f"Moka {label} API did not return a response")
+        with response:
+            body = response.read(_MAX_HTML_BYTES + 1)
+        if len(body) > _MAX_HTML_BYTES:
+            raise ValueError(f"Moka {label} API response exceeds the safe response limit")
+        try:
+            response_json = json.loads(body.decode("utf-8", "replace"))
+        except json.JSONDecodeError as exc:
+            raise ValueError(f"Moka {label} API did not return JSON") from exc
+        return _decrypt_detail_response(response_json, aes_iv)
+
+    def fetch_job_list(
+        self,
+        page_url: str,
+        mode: str,
+        org_id: str,
+        site_id: str,
+        locale: str,
+        limit: int,
+        offset: int,
+        aes_iv: str | None,
+    ) -> Mapping[str, object]:
+        payload: dict[str, object] = {
+            "orgId": org_id,
+            "siteId": int(site_id) if site_id.isdigit() else site_id,
+            "limit": limit,
+            "offset": offset,
+            "needStat": True,
+            "keyword": "",
+            "site": "social" if mode == "social-recruitment" else "campus",
+            "locale": locale,
+        }
+        if mode != "social-recruitment":
+            payload["isCampusJob"] = True
+        return self._fetch_encrypted_json(
+            page_url,
+            _LIST_PATH,
+            payload,
+            aes_iv,
+            "list",
+        )
+
     def fetch_job_detail(
         self,
         page_url: str,
@@ -166,33 +253,13 @@ class MokaSession:
             "jobId": job_id,
             "locale": locale,
         }
-        request = Request(
-            f"{_origin(page_url)}{_DETAIL_PATH}",
-            data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
-            method="POST",
-            headers={
-                "Accept": "application/json",
-                "Accept-Language": "zh-CN,zh;q=0.9",
-                "Content-Type": "application/json",
-                "Origin": _origin(page_url),
-                "Referer": page_url,
-                "User-Agent": "Mozilla/5.0 (compatible; AI-JobPicky/0.1)",
-                "use-http-status": "0",
-            },
+        return self._fetch_encrypted_json(
+            page_url,
+            _DETAIL_PATH,
+            payload,
+            aes_iv,
+            "detail",
         )
-        try:
-            response = self._opener.open(request, timeout=20)
-        except HTTPError as exc:
-            raise ValueError(f"Moka detail API returned HTTP {exc.code}") from exc
-        with response:
-            body = response.read(_MAX_HTML_BYTES + 1)
-        if len(body) > _MAX_HTML_BYTES:
-            raise ValueError("Moka detail API response exceeds the safe response limit")
-        try:
-            response_json = json.loads(body.decode("utf-8", "replace"))
-        except json.JSONDecodeError as exc:
-            raise ValueError("Moka detail API did not return JSON") from exc
-        return _decrypt_detail_response(response_json, aes_iv)
 
 
 def _origin(url: str) -> str:
@@ -315,7 +382,14 @@ def entry_identity(url: str) -> str | None:
 def _detail_url(url: str, job_id: str) -> str:
     parts = urlsplit(url)
     fragment = f"/job/{job_id}"
-    return urlunsplit((parts.scheme, parts.netloc, parts.path, parts.query, fragment))
+    query = urlencode(
+        [
+            (key, value)
+            for key, value in parse_qsl(parts.query, keep_blank_values=True)
+            if key.casefold() not in _TRACKING_QUERY_KEYS
+        ]
+    )
+    return urlunsplit((parts.scheme, parts.netloc, parts.path, query, fragment))
 
 
 def _is_open(job: Mapping[str, object]) -> bool:
@@ -335,12 +409,92 @@ def _recruitment_type(mode: str) -> str:
     return "社招" if mode == "social-recruitment" else "校招"
 
 
+def _non_negative_int(value: object, message: str) -> int:
+    if isinstance(value, bool):
+        raise ValueError(message)
+    if not isinstance(value, (int, str)):
+        raise ValueError(message)
+    try:
+        result = int(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(message) from exc
+    if result < 0:
+        raise ValueError(message)
+    return result
+
+
+def _list_items(response: Mapping[str, object]) -> list[Mapping[str, object]]:
+    raw_jobs = response.get("jobs")
+    if not isinstance(raw_jobs, list):
+        raise ValueError("Moka list API has no job list")
+    jobs: list[Mapping[str, object]] = []
+    for raw_job in raw_jobs:
+        jobs.append(_mapping(raw_job, "Moka list API returned an invalid job"))
+    return jobs
+
+
+def _fetch_all_list_jobs(
+    fetch_job_list: MokaJobListFetcher,
+    page_url: str,
+    mode: str,
+    org_id: str,
+    site_id: str,
+    locale: str,
+    aes_iv: str | None,
+) -> tuple[list[object], int]:
+    first_response = fetch_job_list(
+        page_url,
+        mode,
+        org_id,
+        site_id,
+        locale,
+        _LIST_PAGE_SIZE,
+        0,
+        aes_iv,
+    )
+    stats = _mapping(first_response.get("jobStats"), "Moka list API has no job statistics")
+    total = _non_negative_int(stats.get("total"), "Moka list API has no valid job count")
+    if total > _MAX_LIST_JOBS:
+        raise ValueError("Moka list API exceeds the safe job limit")
+
+    all_jobs: list[object] = []
+    seen_ids: set[str] = set()
+    for offset in range(0, total, _LIST_PAGE_SIZE):
+        response = (
+            first_response
+            if offset == 0
+            else fetch_job_list(
+                page_url,
+                mode,
+                org_id,
+                site_id,
+                locale,
+                _LIST_PAGE_SIZE,
+                offset,
+                aes_iv,
+            )
+        )
+        page_jobs = _list_items(response)
+        for job in page_jobs:
+            job_id = _text(job.get("id"))
+            if not job_id:
+                raise ValueError("Moka list API returned a job without an id")
+            if job_id in seen_ids:
+                raise ValueError("Moka list API returned duplicate jobs")
+            seen_ids.add(job_id)
+            all_jobs.append(job)
+    if len(all_jobs) != total:
+        raise ValueError("Moka list API returned an incomplete job list")
+    return all_jobs, total
+
+
 def _normalise(
     job: Mapping[str, object],
     page_url: str,
     mode: str,
     org_id: str,
     site_id: str,
+    list_count: int | None = None,
 ) -> dict[str, object]:
     source_job_id = _text(job.get("id"))
     title = _text(job.get("title"))
@@ -364,6 +518,9 @@ def _normalise(
         }.items()
         if value is not None
     }
+    if list_count is not None:
+        metadata["list_count"] = list_count
+        metadata["list_api_route"] = _LIST_PATH
     return {
         "source_job_id": source_job_id,
         "title": title,
@@ -407,13 +564,14 @@ def _enrich_job_detail(
     site_id: str,
     locale: str,
     fetch_job_detail: MokaDetailFetcher,
+    populated_status: str = "init-data",
 ) -> None:
     metadata = job.get("metadata")
     if not isinstance(metadata, dict):
         metadata = {}
         job["metadata"] = metadata
     if job.get("description"):
-        metadata["detail_status"] = "init-data"
+        metadata["detail_status"] = populated_status
         return
     try:
         detail = fetch_job_detail(page_url, org_id, site_id, str(job["source_job_id"]), locale)
@@ -453,14 +611,15 @@ def parse(
         mode = "social-recruitment" if "social" in page_url.casefold() else "campus-recruitment"
     else:
         mode, org_id, site_id = route
-    raw_jobs = data.get("jobs")
-    if not isinstance(raw_jobs, list):
+    initial_jobs = data.get("jobs")
+    if not isinstance(initial_jobs, list):
         raise ValueError("Moka init-data has no job list")
     locale = _text(data.get("locale")) or _DEFAULT_LOCALE
     detail_fetcher = fetch_job_detail
+    list_fetcher: MokaJobListFetcher | None = None
+    aes_iv = _text(data.get("aesIv"))
     if detail_fetcher is None and session is not None:
         moka_session = session
-        aes_iv = _text(data.get("aesIv"))
 
         def load_job_detail(
             detail_page_url: str,
@@ -481,18 +640,75 @@ def parse(
         detail_fetcher = load_job_detail
 
     target_id = _target_job_id(url)
+    raw_jobs: list[object] = initial_jobs
+    list_count: int | None = None
+    direct_from_api = False
+    if session is not None:
+        moka_session = session
+
+        def load_job_list(
+            list_page_url: str,
+            list_mode: str,
+            list_org_id: str,
+            list_site_id: str,
+            list_locale: str,
+            list_limit: int,
+            list_offset: int,
+            list_aes_iv: str | None,
+        ) -> Mapping[str, object]:
+            return moka_session.fetch_job_list(
+                list_page_url,
+                list_mode,
+                list_org_id,
+                list_site_id,
+                list_locale,
+                list_limit,
+                list_offset,
+                list_aes_iv,
+            )
+
+        list_fetcher = load_job_list
+
+    if target_id is not None and detail_fetcher is not None:
+        raw_jobs = [
+            detail_fetcher(page_url, org_id, site_id, target_id, locale),
+        ]
+        direct_from_api = session is not None
+    elif target_id is None and list_fetcher is not None:
+        raw_jobs, list_count = _fetch_all_list_jobs(
+            list_fetcher,
+            page_url,
+            mode,
+            org_id,
+            site_id,
+            locale,
+            aes_iv,
+        )
+
     jobs: list[dict[str, object]] = []
     for raw_job in raw_jobs:
         if not isinstance(raw_job, Mapping) or not _is_open(raw_job):
             continue
         if target_id is not None and _text(raw_job.get("id")) != target_id:
             continue
-        normalized = _normalise(raw_job, page_url, mode, org_id, site_id)
-        if detail_fetcher is not None:
-            _enrich_job_detail(normalized, page_url, org_id, site_id, locale, detail_fetcher)
+        normalized = _normalise(raw_job, page_url, mode, org_id, site_id, list_count)
+        if direct_from_api:
+            metadata = normalized["metadata"]
+            if isinstance(metadata, dict):
+                metadata["detail_status"] = "api"
+        elif detail_fetcher is not None:
+            _enrich_job_detail(
+                normalized,
+                page_url,
+                org_id,
+                site_id,
+                locale,
+                detail_fetcher,
+                "list-api" if list_count is not None else "init-data",
+            )
         jobs.append(normalized)
     if target_id is not None and not jobs:
-        raise ValueError("Moka target job is closed or absent from init-data")
+        raise ValueError("Moka target job is closed or absent from public data")
     if not jobs:
         raise ValueError("Moka init-data contains no open jobs")
     return jobs
